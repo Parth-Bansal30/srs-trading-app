@@ -9,7 +9,9 @@ advances, khata and daily summaries — in English, Hindi and Hinglish.
 |---|---|
 | `prototype/v6/` | The approved Version 6 prototype, frozen. Open `final.html` in a browser to use it. Never edited. |
 | `packages/core/` | The business rules (weight, cutting, GST/kacha, finishing, khata, slip numbers) as a standalone module, with tests. |
-| `docs/` | Known issues and technical notes. |
+| `supabase/` | The database: migrations (the only way it changes) and database tests. |
+| `scripts/` | Tools to apply migrations and run database tests. |
+| `docs/` | Database guide, known issues and technical notes. |
 
 ## Proof the numbers match the prototype
 `packages/core/test/parity.test.js` runs the real prototype code next to the new module and
@@ -26,4 +28,5 @@ Tests run automatically on GitHub for every change (see the Actions tab).
 
 ## Status
 - ✅ Milestone 1 — project on GitHub, prototype frozen, business rules extracted and proven identical
-- ⏳ Milestone 2 — database foundation (Supabase / PostgreSQL)
+- ✅ Milestone 2 — database foundation: 18 tables, company separation, permissions, stage rules, permanent money records, rate history, audit history — all tested (see `docs/DATABASE.md`)
+- ⏳ Milestone 3 — logins (PIN for staff)

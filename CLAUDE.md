@@ -19,9 +19,15 @@ Design docs live in the claude.ai project "SRS trading application":
 ## Commands
 - `npm test` — all core tests on Indian time (full prototype comparison).
 - `npm run test:utc` — same tests with a UTC clock (as on a server).
+- `npm run db:status` / `db:migrate` / `db:test` / `db:replay-check` — database (see `docs/DATABASE.md`).
+  They talk to the dev project over HTTPS using the token in `.env`; `NODE_USE_ENV_PROXY=1` is set in the
+  scripts so Node's fetch goes through the shell's proxy.
 
 ## Layout
 - `prototype/v6/` — frozen prototype (reference only)
 - `packages/core/` — business rules + tests
-- `docs/` — known issues and technical notes
+- `supabase/migrations/` — the database, built only from these files (append-only)
+- `supabase/tests/` — database tests (always rolled back)
+- `scripts/` — migration and database-test tools
+- `docs/` — database guide, known issues and technical notes
 - `.github/workflows/ci.yml` — runs the tests on every push

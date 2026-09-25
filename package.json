@@ -1,12 +1,20 @@
 {
   "name": "srs-trading-app",
   "private": true,
-  "description": "SRS Trading App — steel trading orders, cutting, weighing, GST/kacha billing and khata.",
+  "description": "SRS Trading App \u2014 steel trading orders, cutting, weighing, GST/kacha billing and khata.",
   "type": "module",
-  "workspaces": ["packages/*"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "cd packages/core && TZ=Asia/Kolkata node --test \"test/**/*.test.js\"",
-    "test:utc": "cd packages/core && TZ=UTC node --test \"test/**/*.test.js\""
+    "test:utc": "cd packages/core && TZ=UTC node --test \"test/**/*.test.js\"",
+    "db:status": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-migrate.mjs --status",
+    "db:migrate": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-migrate.mjs",
+    "db:test": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-test.mjs",
+    "db:replay-check": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-replay-check.mjs"
   }
 }

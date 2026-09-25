@@ -33,8 +33,12 @@ select pg_temp.refused($q$update public.orders set status = 'estimate' where id 
 select pg_temp.refused($q$insert into public.orders (company_id, internal_no, slip_no, slip_scheme, customer_id, status)
   values ('11111111-1111-1111-1111-111111111111', 1099, '1099', 'never', 'a2000000-0000-0000-0000-000000000001', 'accepted')$q$,
   'creating an order that skips the estimate stage', '23514');
-select pg_temp.refused($q$update public.orders set in_khata = true where id = 'a3000000-0000-0000-0000-000000000001'$q$,
+select pg_temp.refused($q$update public.orders set pay_mode = 'later' where id = 'a3000000-0000-0000-0000-000000000001'$q$,
   'changing a finished order', '23001');
+select pg_temp.refused($q$update public.orders set in_khata = true, pay_mode = 'later' where id = 'a3000000-0000-0000-0000-000000000001'$q$,
+  'changing a finished order while moving it into the khata', '23001');
+select pg_temp.refused($q$update public.orders set in_khata = false where id = 'a3000000-0000-0000-0000-000000000002'$q$,
+  'taking a finished order out of the khata', '23001');
 select pg_temp.refused($q$update public.orders set total_amount = 1 where id = 'a3000000-0000-0000-0000-000000000002'$q$,
   'changing the total of a finished bill', '23001');
 select pg_temp.refused($q$update public.orders set slip_no = '9999' where id = 'a3000000-0000-0000-0000-000000000004'$q$,

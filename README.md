@@ -10,7 +10,8 @@ advances, khata and daily summaries — in English, Hindi and Hinglish.
 | `prototype/v6/` | The approved Version 6 prototype, frozen. Open `final.html` in a browser to use it. Never edited. |
 | `packages/core/` | The business rules (weight, cutting, GST/kacha, finishing, khata, slip numbers) as a standalone module, with tests. |
 | `supabase/` | The database: migrations (the only way it changes) and database tests. |
-| `scripts/` | Tools to apply migrations and run database tests. |
+| `supabase/functions/` | Backend functions: `api` (every business change) and `staff-admin`. |
+| `scripts/` | Tools to apply migrations, run database/end-to-end tests, deploy, and fill the dev project. |
 | `docs/` | Database guide, known issues and technical notes. |
 
 ## Proof the numbers match the prototype
@@ -30,4 +31,5 @@ Tests run automatically on GitHub for every change (see the Actions tab).
 - ✅ Milestone 1 — project on GitHub, prototype frozen, business rules extracted and proven identical
 - ✅ Milestone 2 — database foundation: 18 tables, company separation, permissions, stage rules, permanent money records, rate history, audit history — all tested (see `docs/DATABASE.md`)
 - ✅ Milestone 3 — logins: mobile number + SMS code, then a server-checked PIN; staff management (see `docs/LOGIN.md`)
-- ⏳ Milestone 4 — backend domain operations (create order, weigh, finish, payments)
+- ✅ Milestone 4 — backend operations: create/edit/accept orders, advances, weighing (incl. weigh-together), finishing, payments, cancellations, cash count, rates, customers, settings, Ask Claude — through one checked door with retry safety (see `docs/API.md`)
+- ⏳ Milestone 5 — the real app screens on the real database

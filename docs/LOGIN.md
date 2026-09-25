@@ -35,7 +35,7 @@
 - **Mobile numbers** are stored as `+91XXXXXXXXXX`; typed with or without +91, 0 or spaces.
 
 ## Development test numbers (dev project only — never real SMS, code `123456`)
-`+91 90000 00001`–`00005` (for the app during development) and `+91 90000 00901`–`00903` (automated login test).
+`+91 90000 00001`–`00005` (the practice SRS Trading (Dev) company: Papa, Parth, Ramesh, Suresh, Anil), `+91 90000 00901`–`00903` (automated login test) and `00904`–`00906` (automated business test).
 They expire on 31 March 2027. **They must never be added to the production project.**
 
 ## Tests

@@ -5,3 +5,5 @@ node_modules/
 .DS_Store
 supabase/.temp/
 dist/
+# copy of packages/core made before each deploy (scripts/sync-core.mjs)
+supabase/functions/_shared/core/

@@ -417,3 +417,7 @@ enabled = true
 [functions.staff-admin]
 # Our own function checks the login (signed in + PIN unlocked + permission) itself.
 verify_jwt = false
+
+[functions.api]
+# Our own function checks the login (signed in + PIN unlocked) and permissions itself.
+verify_jwt = false

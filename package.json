@@ -17,6 +17,11 @@
     "db:test": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-test.mjs",
     "db:replay-check": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-replay-check.mjs",
     "auth:e2e": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/auth-e2e.mjs",
-    "functions:deploy": "sh -c 'export SUPABASE_ACCESS_TOKEN=$(sed -n \"s/^SUPABASE_ACCESS_TOKEN=//p\" .env); npx --yes supabase@2 functions deploy --project-ref xwyhgsukvspwinsskyjo --use-api'"
+    "functions:deploy": "node scripts/sync-core.mjs && sh -c 'export SUPABASE_ACCESS_TOKEN=$(sed -n \"s/^SUPABASE_ACCESS_TOKEN=//p\" .env); $HOME/tools/sb/node_modules/.bin/supabase functions deploy --project-ref xwyhgsukvspwinsskyjo --use-api --workdir .'",
+    "test:api": "node --test supabase/functions/api/ops.test.mjs",
+    "core:sync": "node scripts/sync-core.mjs",
+    "domain:e2e": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/domain-e2e.mjs",
+    "db:parity-check": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-parity-check.mjs",
+    "seed:dev": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/seed-dev.mjs"
   }
 }

@@ -15,7 +15,7 @@ Design docs live in the claude.ai project "SRS trading application":
 5. **Never commit secrets.** `.env` holds the Supabase access token and is git-ignored — check `git status` before every commit. Never print or paste tokens.
 6. **Database changes only through versioned migrations** in `supabase/migrations/` (from Milestone 2). No manual dashboard edits to staging/production.
 7. **Nothing is readable until a login session is unlocked with the PIN** (`docs/LOGIN.md`). Dev test phone numbers must never reach production.
-8. **Screens never write money-related tables directly** — they call domain operations (createOrder, recordWeight, finalizeOrder, recordPayment, …) that the backend validates (from Milestone 4).
+8. **Screens never write money-related tables directly** — they call domain operations (createOrder, recordWeight, finalizeOrder, recordPayment, …) that the backend validates: the `api` Edge Function (`supabase/functions/api`, see `docs/API.md`). Every change carries a request key. After changing `packages/core`, redeploy with `npm run functions:deploy` (it copies core first).
 
 ## Commands
 - `npm test` — all core tests on Indian time (full prototype comparison).

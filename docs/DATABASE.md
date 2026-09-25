@@ -48,6 +48,7 @@ PostgreSQL on Supabase. Dev project: `srs-trading-dev` (Mumbai). Built only from
 | Platform | `audit_log` | Who changed what, when, before/after. Permanent |
 | | `private.slip_counters` | Next internal and slip numbers (handed out one at a time) |
 | | `private.idempotency_keys` | Stops a retried save from happening twice |
+| | `private.ai_usage` | Ask Claude questions per company per day (for the daily limit) |
 | | `private.jobs` | Background work queue (PDFs, WhatsApp, exports…). Worker comes later |
 
 **Prototype → database names:** payment kind `pay` → `pickup`, `due` → `khata`. An order payment's
@@ -60,6 +61,9 @@ npm run db:migrate        # apply pending migrations, each all-or-nothing, recor
 npm run db:test           # database tests; every test is rolled back, leaves no data
 npm run db:replay-check   # rebuild everything from the migrations inside a cancelled transaction
 npm run auth:e2e          # real login flow over the internet with dev test numbers
+npm run domain:e2e        # full order lifecycle over the internet through the api function
+npm run db:parity-check   # database slip numbers = @srs/core (2,000 moments, 6 time zones)
+npm run seed:dev          # practice copy of SRS Trading in the dev project
 npm run functions:deploy  # deploy backend functions (supabase/functions)
 ```
 Migrations are **append-only**: to change something, add a new file. `db:migrate` stops if an
@@ -70,4 +74,5 @@ applied file was edited.
 - `02_who_sees_what` — 6 test users × every table: exact row counts (60 checks)
 - `03_cannot_break_it` — ~45 things that must be refused (stages, finished bills, payments, rates, cross-company links) and the allowed paths
 - `05_login_and_pin` — login, PIN rules, lockouts, staff management (see `docs/LOGIN.md`)
+- `06_domain_operations` — the backend operations: permissions, companies never mix, retries never happen twice, slip numbers (starting number, daily/yearly in the shop's time zone), weighing, finishing, payment cancellation, cash count, settings, AI limit (see `docs/API.md`)
 - `04_structure_guards` — whole-database checks that catch any future table missing RLS, `company_id`, safe links, indexes, write protection or edit protection

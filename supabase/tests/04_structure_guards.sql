@@ -61,12 +61,20 @@ begin
     where c.relname = t and p.proname = 'forbid_change' and not tg.tgisinternal);
   if bad is not null then raise exception 'Permanent tables missing edit/delete protection: %', bad; end if;
 
-  -- 10. Staff-management functions can only be called by the backend, never by the app.
+  -- 10. Staff-management (admin_*) and business operations (api_*) can only be called by the backend, never by the app.
   select string_agg(p.proname, ', ') into bad
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname like 'admin\_%'
+  where n.nspname = 'public' and (p.proname like 'admin\_%' or p.proname like 'api\_%')
     and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute'));
-  if bad is not null then raise exception 'Staff-management functions callable by app users: %', bad; end if;
+  if bad is not null then raise exception 'Backend-only functions callable by app users: %', bad; end if;
+
+  -- 12. Every function that runs with raised rights has a fixed search_path (no hijacking by look-alike names).
+  select string_agg(n.nspname || '.' || p.proname, ', ') into bad
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname in ('public','app','private') and p.prosecdef
+    and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+    and not exists (select 1 from unnest(coalesce(p.proconfig, '{}'::text[])) c where c like 'search\_path=%');
+  if bad is not null then raise exception 'Raised-rights functions without a fixed search_path: %', bad; end if;
 
   -- 11. Login functions are not callable without signing in.
   select string_agg(p.proname, ', ') into bad

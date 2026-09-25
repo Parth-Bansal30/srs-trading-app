@@ -33,6 +33,6 @@ for (const f of files) {
     console.error(`  ✗ ${f}\n    ${e.message.split('\n').slice(0, 3).join('\n    ')}`);
   }
 }
-const left = await query(`select (select count(*) from public.companies where name <> 'E2E Test Company') as companies`).catch(() => [{ companies: 'n/a' }]);
-console.log(`${files.length - failed}/${files.length} test files passed. Test companies left behind: ${left[0].companies} (tests always roll back; the separate E2E login-test company is kept on purpose).`);
+const left = await query(`select (select count(*) from public.companies where name like 'Test Company %') as companies`).catch(() => [{ companies: 'n/a' }]);
+console.log(`${files.length - failed}/${files.length} test files passed. Test companies left behind: ${left[0].companies} (tests always roll back; the E2E companies used by auth:e2e and domain:e2e are kept on purpose).`);
 process.exit(failed ? 1 : 0);

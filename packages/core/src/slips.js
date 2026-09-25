@@ -17,6 +17,16 @@ function partsIn(iso, timeZone) {
   return { y: Number(p.year), m: Number(p.month) - 1, d: Number(p.day) };
 }
 const pad = (n) => String(n).padStart(2, '0');
+
+/**
+ * The shop's calendar date ('YYYY-MM-DD') for a moment in time, in the shop's time zone.
+ * Use this for anything filed "by day" (cash count, daily summary) — never the UTC date.
+ * Fixes docs/KNOWN-ISSUES.md #1 (prototype saved the 2 am cash count under yesterday).
+ */
+export function businessDate(iso, timeZone = DEFAULT_TIMEZONE) {
+  const p = partsIn(iso, timeZone);
+  return `${p.y}-${pad(p.m + 1)}-${pad(p.d)}`;
+}
 const fyStart = ({ y, m }) => (m >= 3 ? y : y - 1);
 
 /** Which counter a slip belongs to, e.g. '2026-09-22' (daily), '2026-09' (monthly), '2026-2027' (yearly). */

@@ -116,6 +116,39 @@ test('weigh together: one reading split by expected weight (from the prototype\'
   assert.equal(c.canWeighTogether([{ matId: 'EN8' }, { matId: 'EN9' }]), false); // different grades never together
 });
 
+test('weigh together: parts add up to the scale reading exactly (the 3 × 3.33 = 9.99 case is fixed)', () => {
+  assert.deepEqual(c.splitBatchWeight([1, 1, 1], 10), [3.34, 3.33, 3.33]);
+  assert.deepEqual(c.splitBatchWeight([5, 3], 7.01), [4.38, 2.63]);
+  assert.deepEqual(c.splitBatchWeight([2, 2], 0), [0, 0]);
+  assert.deepEqual(c.splitBatchWeight([0, 0], 5), [2.5, 2.5]);
+});
+
+test('weigh together: 20,000 random batches (2–25 pieces, up to 5 tonnes) — exact total, every part within 10 g of its share', () => {
+  let seed = 11;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  for (let k = 0; k < 20000; k++) {
+    const n = 2 + Math.floor(rnd() * 24);
+    const est = Array.from({ length: n }, () => +(0.05 + rnd() * (rnd() < 0.2 ? 800 : 60)).toFixed(3));
+    const reading = +(rnd() * (rnd() < 0.1 ? 5000 : 400)).toFixed(2);
+    const parts = c.splitBatchWeight(est, reading);
+    const unitsSum = parts.reduce((a, p) => a + Math.round(p * 100), 0);
+    assert.equal(unitsSum, Math.round(reading * 100), `batch ${k}: parts must add up to ${reading}`);
+    const totalEst = est.reduce((a, b) => a + b, 0);
+    parts.forEach((p, i) => {
+      const share = (est[i] / totalEst) * reading;
+      assert.ok(Math.abs(p - share) < 0.0100001, `batch ${k} piece ${i}: ${p} vs share ${share}`);
+      assert.ok(p >= 0);
+    });
+  }
+});
+
+test('cash count and daily reports are filed under the SHOP\'s date, not the UTC date', () => {
+  // 2:00 am IST on 23 Sep = 20:30 UTC on 22 Sep. The prototype filed this under 22 Sep.
+  assert.equal(c.businessDate('2026-09-22T20:30:00Z'), '2026-09-23');
+  assert.equal(c.businessDate('2026-09-22T18:29:59Z'), '2026-09-22');
+  assert.equal(c.businessDate('2026-09-22T18:30:00Z'), '2026-09-23');
+});
+
 test('order stages: estimate → accepted → weighed → done, no skipping or going back', () => {
   assert.ok(c.canTransition('estimate', 'accepted'));
   assert.ok(c.canTransition('accepted', 'weighed'));

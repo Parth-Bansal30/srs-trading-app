@@ -1,0 +1,10 @@
+{
+  "name": "@srs/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SRS Trading business rules: weight, cutting, pricing, GST/kacha, khata, slip numbers.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "scripts": { "test": "node --test \"test/**/*.test.js\"" }
+}

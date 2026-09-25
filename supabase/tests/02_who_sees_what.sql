@@ -28,12 +28,12 @@ end $$;
 grant execute on function pg_temp.look(text) to authenticated;
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000a","role":"authenticated"}'; select pg_temp.look('owner_a');
-set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000b","role":"authenticated"}'; select pg_temp.look('weigher_a');
-set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000c","role":"authenticated"}'; select pg_temp.look('sales_nokacha_a');
-set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000d","role":"authenticated"}'; select pg_temp.look('accounts_a');
-set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-00000000000a","role":"authenticated"}'; select pg_temp.look('owner_b');
-set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000000","role":"authenticated"}'; select pg_temp.look('stranger');
+set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000a","session_id":"a0000000-0000-0000-0000-00000000000a","role":"authenticated"}'; select pg_temp.look('owner_a');
+set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000b","session_id":"a0000000-0000-0000-0000-00000000000b","role":"authenticated"}'; select pg_temp.look('weigher_a');
+set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000c","session_id":"a0000000-0000-0000-0000-00000000000c","role":"authenticated"}'; select pg_temp.look('sales_nokacha_a');
+set local request.jwt.claims = '{"sub":"a0000000-0000-0000-0000-00000000000d","session_id":"a0000000-0000-0000-0000-00000000000d","role":"authenticated"}'; select pg_temp.look('accounts_a');
+set local request.jwt.claims = '{"sub":"b0000000-0000-0000-0000-00000000000a","session_id":"b0000000-0000-0000-0000-00000000000a","role":"authenticated"}'; select pg_temp.look('owner_b');
+set local request.jwt.claims = '{"sub":"c0000000-0000-0000-0000-000000000000","session_id":"c0000000-0000-0000-0000-000000000000","role":"authenticated"}'; select pg_temp.look('stranger');
 reset role;
 
 do $$

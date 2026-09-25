@@ -31,3 +31,11 @@ insert into public.people (id, company_id, auth_user_id, display_name, role, per
      '{"new":true,"orders":true,"money":true,"kacha":true}', false),
   ('bbbbbbb1-0000-0000-0000-000000000000', '22222222-2222-2222-2222-222222222222', 'b0000000-0000-0000-0000-00000000000a', 'Owner B', 'owner',
      '{"new":true,"orders":true,"weigh":true,"khata":true,"today":true,"rates":true,"people":true,"settings":true,"money":true,"kacha":true}', true);
+
+-- Every test user has one login session on one device. Active staff have already
+-- unlocked theirs with their PIN (the stranger is signed in but isn't staff anywhere).
+insert into auth.sessions (id, user_id) select id, id from auth.users where email like '%@test.local';
+insert into private.session_unlocks (session_id, company_id, person_id, expires_at)
+  select p.auth_user_id, p.company_id, p.id, now() + interval '1 hour'
+  from public.people p join auth.users u on u.id = p.auth_user_id
+  where u.email like '%@test.local' and p.active;

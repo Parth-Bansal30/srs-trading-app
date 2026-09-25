@@ -14,12 +14,14 @@ Design docs live in the claude.ai project "SRS trading application":
 4. **Dates use the shop's time zone** (`Asia/Kolkata` default), never the device or server clock.
 5. **Never commit secrets.** `.env` holds the Supabase access token and is git-ignored — check `git status` before every commit. Never print or paste tokens.
 6. **Database changes only through versioned migrations** in `supabase/migrations/` (from Milestone 2). No manual dashboard edits to staging/production.
-7. **Screens never write money-related tables directly** — they call domain operations (createOrder, recordWeight, finalizeOrder, recordPayment, …) that the backend validates (from Milestone 4).
+7. **Nothing is readable until a login session is unlocked with the PIN** (`docs/LOGIN.md`). Dev test phone numbers must never reach production.
+8. **Screens never write money-related tables directly** — they call domain operations (createOrder, recordWeight, finalizeOrder, recordPayment, …) that the backend validates (from Milestone 4).
 
 ## Commands
 - `npm test` — all core tests on Indian time (full prototype comparison).
 - `npm run test:utc` — same tests with a UTC clock (as on a server).
 - `npm run db:status` / `db:migrate` / `db:test` / `db:replay-check` — database (see `docs/DATABASE.md`).
+- `npm run auth:e2e` — real login flow (dev test numbers); `npm run functions:deploy` — deploy Edge Functions.
   They talk to the dev project over HTTPS using the token in `.env`; `NODE_USE_ENV_PROXY=1` is set in the
   scripts so Node's fetch goes through the shell's proxy.
 

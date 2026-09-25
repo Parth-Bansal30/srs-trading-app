@@ -29,4 +29,5 @@ Tests run automatically on GitHub for every change (see the Actions tab).
 ## Status
 - ✅ Milestone 1 — project on GitHub, prototype frozen, business rules extracted and proven identical
 - ✅ Milestone 2 — database foundation: 18 tables, company separation, permissions, stage rules, permanent money records, rate history, audit history — all tested (see `docs/DATABASE.md`)
-- ⏳ Milestone 3 — logins (PIN for staff)
+- ✅ Milestone 3 — logins: mobile number + SMS code, then a server-checked PIN; staff management (see `docs/LOGIN.md`)
+- ⏳ Milestone 4 — backend domain operations (create order, weigh, finish, payments)

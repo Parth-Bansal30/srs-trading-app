@@ -17,11 +17,20 @@ const guards = fs.readFileSync(path.join(ROOT, 'supabase/tests/04_structure_guar
 
 // Everything our migrations own lives in schemas app/private or in these public tables.
 const ours = await query(`select string_agg(format('%I.%I', schemaname, tablename), ', ') as t from pg_tables where schemaname = 'public'`);
+// our functions in public (login, staff management) — not ones that belong to an extension
+const fns = await query(`select string_agg(format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)), ', ') as f
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`);
 const drop = `
   ${ours[0].t ? `drop table if exists ${ours[0].t} cascade;` : ''}
+  ${fns[0].f ? `drop function if exists ${fns[0].f} cascade;` : ''}
   drop schema if exists app cascade;
   drop schema if exists private cascade;
-  do $$ begin assert (select count(*) from pg_tables where schemaname in ('public','private')) = 0, 'clean slate expected'; end $$;`;
+  do $$ begin
+    assert (select count(*) from pg_tables where schemaname in ('public','private')) = 0, 'clean slate expected (tables)';
+    assert (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
+            and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')) = 0, 'clean slate expected (functions)';
+  end $$;`;
 
 const t0 = Date.now();
 try {

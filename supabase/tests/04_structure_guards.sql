@@ -61,10 +61,24 @@ begin
     where c.relname = t and p.proname = 'forbid_change' and not tg.tgisinternal);
   if bad is not null then raise exception 'Permanent tables missing edit/delete protection: %', bad; end if;
 
+  -- 10. Staff-management functions can only be called by the backend, never by the app.
+  select string_agg(p.proname, ', ') into bad
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname like 'admin\_%'
+    and (has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute'));
+  if bad is not null then raise exception 'Staff-management functions callable by app users: %', bad; end if;
+
+  -- 11. Login functions are not callable without signing in.
+  select string_agg(p.proname, ', ') into bad
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('login_status','set_pin','unlock','lock_session')
+    and has_function_privilege('anon', p.oid, 'execute');
+  if bad is not null then raise exception 'Login functions callable without signing in: %', bad; end if;
+
   -- 9. Security helper functions can't be tricked by a changed search path.
   select string_agg(p.proname, ', ') into bad
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'app' and p.prosecdef
+  where n.nspname in ('app','public') and p.prosecdef
     and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) cfg where cfg like 'search_path=%');
   if bad is not null then raise exception 'Security-definer functions without a fixed search_path: %', bad; end if;
 end $$;

@@ -6,7 +6,7 @@ PostgreSQL on Supabase. Dev project: `srs-trading-dev` (Mumbai). Built only from
 ## The big rules (enforced by the database itself)
 1. **Every company's data is separate.** Every company-owned row has `company_id`; links between
    tables include `company_id`, so a row can never point at another company's data.
-2. **Signed-in users can only read, and only their own company.** Row Level Security is on for
+2. **Signed-in users can only read, only their own company, and only after unlocking with their PIN.** Row Level Security is on for
    every table. All changes go through backend domain operations (Milestone 4).
 3. **Who sees what** (from each person's permissions):
    - grade names and customers: every staff member
@@ -32,6 +32,7 @@ PostgreSQL on Supabase. Dev project: `srs-trading-dev` (Mumbai). Built only from
 | | `company_settings` | GST %, no-bill %, smallest inch, slip numbering, densities, slip header |
 | | `people` | Staff: name, role, permissions, language. *Who* someone is |
 | | `private.auth_credentials` | *How* they log in: PIN today; phone/email/passkey/MFA later. Never exposed |
+| | `private.session_unlocks` | Which phone/tablet logins are unlocked with a PIN right now (see `docs/LOGIN.md`) |
 | Catalog | `materials` | Grades (EN8, SS304…), family, density override, info notes |
 | | `material_rates` | Rate **history** (₹/kg and cutting ₹/sq in/cut) with the time each took effect |
 | | `current_material_rates` (view) | Latest rate that has started |
@@ -58,6 +59,8 @@ npm run db:status         # which migrations are applied / pending (changes noth
 npm run db:migrate        # apply pending migrations, each all-or-nothing, recorded in history
 npm run db:test           # database tests; every test is rolled back, leaves no data
 npm run db:replay-check   # rebuild everything from the migrations inside a cancelled transaction
+npm run auth:e2e          # real login flow over the internet with dev test numbers
+npm run functions:deploy  # deploy backend functions (supabase/functions)
 ```
 Migrations are **append-only**: to change something, add a new file. `db:migrate` stops if an
 applied file was edited.
@@ -66,4 +69,5 @@ applied file was edited.
 - `01_tenancy` — companies and staff are isolated; no direct writes; bad values refused
 - `02_who_sees_what` — 6 test users × every table: exact row counts (60 checks)
 - `03_cannot_break_it` — ~45 things that must be refused (stages, finished bills, payments, rates, cross-company links) and the allowed paths
+- `05_login_and_pin` — login, PIN rules, lockouts, staff management (see `docs/LOGIN.md`)
 - `04_structure_guards` — whole-database checks that catch any future table missing RLS, `company_id`, safe links, indexes, write protection or edit protection

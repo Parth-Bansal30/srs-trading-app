@@ -65,6 +65,26 @@ export function stableStringify(v) {
   return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(v[k])}`).join(',')}}`;
 }
 
+/**
+ * The khata data from api_khata_data in @srs/core's shape. Old-balance corrections are netted out
+ * (an entry and its correction disappear together), so the ledger never sees a negative "bill".
+ */
+export function coreKhataFromDb(k) {
+  const reversed = new Set((k.old_dues || []).filter((d) => d.reverses_id).map((d) => d.reverses_id));
+  return {
+    orders: (k.orders || []).map((o) => ({
+      id: o.id, slipNo: o.slip_no, cust: o.customer_id, status: o.status, bill: o.bill, inKhata: o.in_khata,
+      billTotal: o.total == null ? null : Number(o.total), doneAt: o.done_at, at: o.created_at,
+    })),
+    payments: (k.payments || []).map((p) => ({
+      id: p.id, cust: p.customer_id, oid: p.order_id, amt: Number(p.amount), mode: p.mode, kind: p.kind, side: p.side, at: p.at, note: p.note,
+    })),
+    oldDues: (k.old_dues || []).filter((d) => !d.reverses_id && !reversed.has(d.id)).map((d) => ({
+      id: d.id, cust: d.customer_id, side: d.side, date: d.date, amt: Number(d.amount), ref: d.ref,
+    })),
+  };
+}
+
 /** A database order (from api_order_context / api_weighing_list) in @srs/core's shape. */
 export function coreItemFromDb(i) {
   return {
@@ -85,7 +105,7 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
     const mats = new Map((ctx.materials || []).map((m) => [m.id, m]));
     const familyDensity = { ...core.DEFAULT_FAMILY_DENSITY, ...(ctx.settings.family_density || {}) };
     const minInch = ctx.settings.min_inch;
-    const mayPrice = core.can(caller.perms, 'money'); // like the prototype: only money people see and change rates
+    const mayPrice = core.can(caller.perms, 'price'); // owner decision 26 Sept: only people with "change rate on slip"
     return rawItems.map((it, i) => {
       const n = i + 1;
       const m = mats.get(it?.material_id);
@@ -388,6 +408,130 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
       return rpc('api_change_settings', { p_caller: caller.id, p_key: key, p_hash: hash, p_changes: a.changes });
     },
 
+    // ---------- cancelling, advances, old balances (owner decisions 26 Sept 2026) ----------
+    async cancelOrder(caller, a, key, hash) {
+      need(caller, 'new');
+      const reason = text(a.reason);
+      if (!reason) throw bad('Write why the order is cancelled.');
+      return rpc('api_cancel_order', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'), p_reason: reason });
+    },
+
+    /** action: 'refund' (give money back) · 'move' (to target_order_id) · 'credit' (keep for the customer on side). */
+    async adjustAdvance(caller, a, key, hash) {
+      need(caller, 'money');
+      const args = { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'),
+        p_action: a.action, p_amount: amount(a.amount, 'amount'), p_mode: null, p_target: null, p_side: null, p_note: text(a.note) };
+      if (a.action === 'refund') {
+        args.p_mode = payMethod(a.mode);
+        if (!args.p_note) throw bad('Write why the money is returned.');
+      } else if (a.action === 'move') {
+        args.p_target = uuid(a.target_order_id, 'Choose the order to move it to.');
+      } else if (a.action === 'credit') {
+        if (!BILLS.includes(a.side)) throw bad('Choose which account keeps the credit.');
+        if (a.side === 'kacha') need(caller, 'kacha');
+        args.p_side = a.side;
+      } else {
+        throw bad('Choose: return, move to another order, or keep as credit.');
+      }
+      return rpc('api_adjust_advance', args);
+    },
+
+    /** Give back credit a customer holds in the khata (how much is available is worked out with @srs/core). */
+    async refundCredit(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      const customer = uuid(a.customer_id, 'Which customer?');
+      if (!BILLS.includes(a.side)) throw bad('Choose the account.');
+      if (a.side === 'kacha') need(caller, 'kacha');
+      const k = coreKhataFromDb(await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer }));
+      const l = core.customerLedger({ custId: customer, ...k, sides: [a.side], allSides: ['pakka', 'kacha'] });
+      const note = text(a.note);
+      if (!note) throw bad('Write why the money is returned.');
+      return rpc('api_refund_credit', {
+        p_caller: caller.id, p_key: key, p_hash: hash, p_customer: customer, p_side: a.side,
+        p_amount: amount(a.amount, 'amount'), p_mode: payMethod(a.mode), p_note: note, p_available: l.bySide[a.side]?.adv ?? 0,
+      });
+    },
+
+    /** An old balance from the paper khata: a lump sum (no ref) or one old slip (ref = its number). */
+    async addOldDue(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      if (!BILLS.includes(a.side)) throw bad('Choose Pakka or Kacha.');
+      if (a.side === 'kacha') need(caller, 'kacha');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.date ?? ''))) throw bad('Enter the date of the old balance.');
+      return rpc('api_add_old_due', {
+        p_caller: caller.id, p_key: key, p_hash: hash, p_customer: uuid(a.customer_id, 'Which customer?'), p_side: a.side,
+        p_ref: text(a.ref, 40), p_date: a.date, p_amount: amount(a.amount, 'amount owed'), p_note: text(a.note),
+      });
+    },
+
+    async reverseOldDue(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      const note = text(a.note);
+      if (!note) throw bad('Write why this is being corrected.');
+      return rpc('api_reverse_old_due', { p_caller: caller.id, p_key: key, p_hash: hash, p_old_due: uuid(a.old_due_id, 'Which entry?'), p_note: note });
+    },
+
+    // ---------- khata and reminders ----------
+    /** Every customer's account worked out with @srs/core (who owes, credit held, oldest due). */
+    async khata(caller, a) {
+      need(caller, 'money');
+      const customer = a?.customer_id && isUuid(a.customer_id) ? a.customer_id : null;
+      const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer });
+      const k = coreKhataFromDb(raw);
+      const sides = core.visibleSides(caller.perms);
+      return raw.customers.map((c) => {
+        const l = core.customerLedger({ custId: c.id, ...k, sides, allSides: sides });
+        return { customer: c, due: l.due, credit: l.adv, pending_advance: l.pend, oldest: l.oldest, by_side: l.bySide,
+          entries: customer ? l.entries : undefined };
+      }).filter((x) => customer || x.due > 0 || x.credit > 0);
+    },
+
+    /** Customers to ASK about (unpaid slips older than the setting, not reminded recently). Nothing is sent here. */
+    async reminderList(caller, a) {
+      need(caller, 'money', 'khata');
+      const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
+      const k = coreKhataFromDb(raw);
+      const now = new Date().toISOString();
+      const last = new Map((raw.last_reminders || []).map((r) => [`${r.customer_id}:${r.side}`, r.at]));
+      const out = [];
+      for (const c of raw.customers) {
+        for (const side of core.visibleSides(caller.perms)) {
+          const due = core.dueSlips({ custId: c.id, side, ...k, now, timeZone: raw.timezone });
+          const opts = { afterDays: raw.settings.reminder_after_days, repeatDays: raw.settings.reminder_repeat_days,
+            lastReminderAt: last.get(`${c.id}:${side}`) || null, now, timeZone: raw.timezone };
+          if (!core.needsReminder(due, opts)) continue;
+          out.push({ customer: { id: c.id, name: c.name, phone: c.phone }, side, due: due.due, slips: due.slips,
+            oldest_days: due.oldestDays, has_phone: !!core.normalizeIndianMobile(c.phone),
+            preview: core.reminderMessage({ lang: a?.lang, shop: raw.shop, customer: c.name, due }) });
+        }
+      }
+      return out.sort((x, y) => y.oldest_days - x.oldest_days);
+    },
+
+    /**
+     * The owner tapped "Yes, send". The message is rebuilt on the server from the real figures
+     * (never taken from the phone), logged, and returned with a WhatsApp link that opens the chat.
+     */
+    async sendReminder(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      const customer = uuid(a.customer_id, 'Which customer?');
+      if (!BILLS.includes(a.side)) throw bad('Which account?');
+      if (a.side === 'kacha') need(caller, 'kacha');
+      const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer });
+      const c = raw.customers[0];
+      if (!c) throw bad('Customer not found.');
+      const phone = core.normalizeIndianMobile(c.phone);
+      if (!phone) throw new ApiError(400, 'no_phone', 'Add this customer’s WhatsApp number first.');
+      const due = core.dueSlips({ custId: customer, side: a.side, ...coreKhataFromDb(raw), now: new Date().toISOString(), timeZone: raw.timezone });
+      if (!(due.due > 0)) throw new ApiError(409, 'nothing_due', 'Nothing is pending for this customer now.');
+      const message = core.reminderMessage({ lang: a.lang, shop: raw.shop, customer: c.name, due });
+      const res = await rpc('api_record_reminder', {
+        p_caller: caller.id, p_key: key, p_hash: hash, p_customer: customer, p_side: a.side, p_channel: 'whatsapp_link',
+        p_phone: phone, p_message: message, p_total_due: due.due, p_slip_refs: due.slips.map((s) => s.ref || 'old'),
+      });
+      return { ...res, message, whatsapp_link: core.whatsappLink(phone, message) };
+    },
+
     // ---------- Ask Claude (steel guide) ----------
     async askSteelQuestion(caller, a) {
       const q = text(a.question, 1000);
@@ -419,7 +563,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['weighingList', 'askSteelQuestion']);
+export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList']);
 
 /** Database error code → HTTP answer the app can show. */
 export function mapDbError(code, message) {

@@ -185,7 +185,39 @@ const [{ exp }] = await query(`select coalesce(sum(amount),0)::numeric as exp fr
 check('expected cash = today\'s cash payments', Number(cash.data.data?.expected) === Number(exp), `${cash.data.data?.expected} vs ${exp}`);
 check('weigher can\'t do the cash count', (await api(weigher, 'saveCashCount', { counted: 1 })).status === 403);
 
-console.log('\n9. Ask Claude and the PIN lock');
+console.log('\n9. Advance returned / moved / kept as credit, cancelling, old balances, reminders');
+const oA = (await api(owner, 'createOrder', { customer_id: CUST, items: [items[0]], accept: true, advance: { amount: 10000, mode: 'Cash' } })).data.data.order_id;
+const oB = (await api(owner, 'createOrder', { customer_id: CUST, items: [items[0]], accept: true })).data.data.order_id;
+check('returning money needs a reason', (await api(owner, 'adjustAdvance', { order_id: oA, action: 'refund', amount: 4000, mode: 'UPI' })).status === 400);
+const rf = await api(owner, 'adjustAdvance', { order_id: oA, action: 'refund', amount: 4000, mode: 'UPI', note: 'e2e: will pay whole bill by bank' });
+check('4,000 of the 10,000 advance returned by UPI', rf.status === 200 && Number(rf.data.data.paid.advance) === 6000, short(rf.data));
+const mvA = await api(owner, 'adjustAdvance', { order_id: oA, action: 'move', amount: 2000, target_order_id: oB });
+check('2,000 moved to another slip of the same customer', mvA.status === 200, short(mvA.data));
+check('sales without kacha permission can\'t keep kacha credit',
+  (await api(sales, 'adjustAdvance', { order_id: oA, action: 'credit', amount: 1000, side: 'kacha' })).status === 403);
+const cr = await api(owner, 'adjustAdvance', { order_id: oA, action: 'credit', amount: 1000, side: 'pakka' });
+check('1,000 kept as credit for the customer', cr.status === 200, short(cr.data));
+check('can\'t cancel while 3,000 advance is still on the slip', (await api(owner, 'cancelOrder', { order_id: oA, reason: 'e2e' })).status === 400);
+await api(owner, 'adjustAdvance', { order_id: oA, action: 'refund', amount: 3000, mode: 'Cash', note: 'e2e: order cancelled' });
+const cx = await api(owner, 'cancelOrder', { order_id: oA, reason: 'e2e: customer changed his mind' });
+check('then the order is cancelled', cx.status === 200 && cx.data.data.status === 'cancelled', short(cx.data));
+const ago = (d) => core.businessDate(new Date(Date.now() - d * 86400000).toISOString(), 'Asia/Kolkata');
+const od = await api(owner, 'addOldDue', { customer_id: CUST, side: 'kacha', date: ago(40), amount: 20000, note: 'e2e paper khata' });
+check('old balance from the paper khata entered', od.status === 200, short(od.data));
+const kh = await api(owner, 'khata', { customer_id: CUST });
+const acct = kh.data.data?.[0];
+check('khata: old balance counted, 1,000 credit held', acct && acct.by_side.kacha.due >= 20000 && acct.credit >= 1000, short(acct?.by_side));
+const rl = await api(owner, 'reminderList', { lang: 'en' });
+const mine = (rl.data.data || []).find((x) => x.customer.id === CUST && x.side === 'kacha');
+check('the app ASKS about a reminder for the 40-day-old balance', !!mine, short(rl.data).slice(0, 160));
+check('…and the message never mentions the bill type', mine && !/kacha|pakka/i.test(mine.preview));
+const sr = await api(owner, 'sendReminder', { customer_id: CUST, side: 'kacha', lang: 'hn' });
+check('owner taps Yes: logged, WhatsApp link ready', sr.status === 200 && /^https:\/\/wa\.me\/919810000001\?text=/.test(sr.data.data?.whatsapp_link || ''), short(sr.data));
+const rl2 = await api(owner, 'reminderList', {});
+check('not asked again right after sending', !(rl2.data.data || []).some((x) => x.customer.id === CUST && x.side === 'kacha'));
+check('sales (no khata permission) can\'t see reminders', (await api(sales, 'reminderList', {})).status === 403);
+
+console.log('\n10. Ask Claude and the PIN lock');
 const ask = await api(sales, 'askSteelQuestion', { question: 'EN8 or EN24 for a gear shaft?' });
 check('Ask Claude answers, or says it isn\'t switched on yet', ask.status === 200 || ask.data.error === 'ai_not_configured', short(ask.data));
 await call('POST', '/rest/v1/rpc/lock_session', { jwt: owner, body: {} });

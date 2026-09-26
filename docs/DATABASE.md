@@ -48,10 +48,12 @@ PostgreSQL on Supabase. Dev project: `srs-trading-dev` (Mumbai). Built only from
 | Platform | `audit_log` | Who changed what, when, before/after. Permanent |
 | | `private.slip_counters` | Next internal and slip numbers (handed out one at a time) |
 | | `private.idempotency_keys` | Stops a retried save from happening twice |
+| Khata | `old_dues` | Old balances from the paper khata (lump sums or old slips, per side). Permanent; corrected by an exact opposite entry |
+| | `reminders` | Every payment reminder someone approved: who, when, number, exact text. Permanent |
 | | `private.ai_usage` | Ask Claude questions per company per day (for the daily limit) |
 | | `private.jobs` | Background work queue (PDFs, WhatsApp, exports…). Worker comes later |
 
-**Prototype → database names:** payment kind `pay` → `pickup`, `due` → `khata`. An order payment's
+**Prototype → database names:** payment kind `pay` → `pickup`, `due` → `khata`. New kinds: `refund` (money returned, negative) and `transfer` (advance moved off an order, negative, mode `Adjust`; the matching entry points back with `from_payment_id`). Orders can be `cancelled`. An order payment's
 pakka/kacha side comes from its order's bill; only khata payments store a side.
 
 ## Commands
@@ -74,5 +76,6 @@ applied file was edited.
 - `02_who_sees_what` — 6 test users × every table: exact row counts (60 checks)
 - `03_cannot_break_it` — ~45 things that must be refused (stages, finished bills, payments, rates, cross-company links) and the allowed paths
 - `05_login_and_pin` — login, PIN rules, lockouts, staff management (see `docs/LOGIN.md`)
+- `07_advances_old_dues_reminders` — returning/moving/keeping an advance, cancelling, old balances, reminders log, change-rate permission
 - `06_domain_operations` — the backend operations: permissions, companies never mix, retries never happen twice, slip numbers (starting number, daily/yearly in the shop's time zone), weighing, finishing, payment cancellation, cash count, settings, AI limit (see `docs/API.md`)
 - `04_structure_guards` — whole-database checks that catch any future table missing RLS, `company_id`, safe links, indexes, write protection or edit protection

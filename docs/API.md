@@ -42,7 +42,7 @@ Authorization: Bearer <the person's login token>
 ## Operations (`op`)
 | op | Who (permission) | What it does |
 |---|---|---|
-| `createOrder` | new (+money for advance/typed rate) | `{customer_id, items, accept?, advance?}` → slip number, estimate. Rates: customer special rate, else current rate; people with **money** may type a rate (like the prototype). Density: grade's own, else family. Rules (min inch, densities, time zone) are **snapshotted** on the order |
+| `createOrder` | new (+money for advance, +**price** for a typed rate) | `{customer_id, items, accept?, advance?}` → slip number, estimate. Rates: customer special rate, else current rate; only people with the **price** permission ("change rate on slip", owners by default) may type a different rate. Density: grade's own, else family. Rules (min inch, densities, time zone) are **snapshotted** on the order |
 | `updateOrder` | new | edit an estimate (items replaced, same checks) |
 | `acceptOrder` | new | estimate → accepted, optional advance |
 | `addAdvance` | money | advance on an accepted/weighed order |
@@ -55,6 +55,13 @@ Authorization: Bearer <the person's login token>
 | `changeMaterialRate` · `createMaterial` · `updateMaterial` · `setCustomerRate` | rates | rate history is kept for ever; `rate: null` removes a special rate |
 | `createCustomer` · `updateCustomer` | new | |
 | `changeSettings` | settings | GST %, kacha %, min inch, slip numbering, weight warning %, **starting slip number** (only before the first order), AI daily limit, company name/GSTIN/phone/address |
+| `cancelOrder` | new | cancel an accepted/weighed order with a reason — only once its advance is settled (estimates are simply deleted) |
+| `adjustAdvance` | money (+kacha) | `{order_id, action, amount, …}`: **refund** (give money back by Cash/UPI/Bank/Cheque, reason required — also the extra paid on a finished order), **move** (to `target_order_id`, same customer, open order), **credit** (keep for the customer on `side`). Moves and credit are marked `Adjust`, so they never touch the cash count |
+| `refundCredit` | money + khata | give back credit a customer holds in the khata (available amount worked out by `@srs/core`) |
+| `addOldDue` · `reverseOldDue` | money + khata (+kacha) | old balances from the paper khata: a lump sum (no `ref`) or one old slip (`ref` = old slip number), dated; corrected only by an exact opposite entry |
+| `khata` | money | every customer's account worked out by `@srs/core` (due, credit, oldest due, per side); with `customer_id` also the full entries |
+| `reminderList` | money + khata | customers to **ask** about: slips unpaid/part-paid for `reminder_after_days` (default 25), not reminded in the last `reminder_repeat_days` (default 7). Nothing is sent. Message preview is neutral (no bill type) |
+| `sendReminder` | money + khata (+kacha) | the owner tapped Yes: the message is rebuilt on the server from real figures, logged in `reminders`, and returned with a WhatsApp link (`wa.me`) that opens the chat on the phone. WhatsApp Cloud API (same number via Meta "coexistence") comes later |
 | `askSteelQuestion` | any staff | the prototype's steel guide, through the backend so the AI key never sits in the app. Daily limit per company (default 100) |
 
 Slip numbers are handed out by the database one at a time (20 phones at once → 20 different

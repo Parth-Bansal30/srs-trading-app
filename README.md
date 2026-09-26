@@ -32,4 +32,5 @@ Tests run automatically on GitHub for every change (see the Actions tab).
 - ✅ Milestone 2 — database foundation: 18 tables, company separation, permissions, stage rules, permanent money records, rate history, audit history — all tested (see `docs/DATABASE.md`)
 - ✅ Milestone 3 — logins: mobile number + SMS code, then a server-checked PIN; staff management (see `docs/LOGIN.md`)
 - ✅ Milestone 4 — backend operations: create/edit/accept orders, advances, weighing (incl. weigh-together), finishing, payments, cancellations, cash count, rates, customers, settings, Ask Claude — through one checked door with retry safety (see `docs/API.md`)
+- ✅ Owner decisions (26 Sept): advance return/move/credit, order cancelling, old balances from the paper khata, payment reminders with approval (neutral wording, WhatsApp), separate "change rate on slip" permission
 - ⏳ Milestone 5 — the real app screens on the real database

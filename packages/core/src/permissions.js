@@ -1,5 +1,9 @@
-/** What a person can do. Same flags and role presets as the prototype. */
-export const PERMS = Object.freeze(['new', 'orders', 'weigh', 'khata', 'today', 'rates', 'people', 'settings', 'money', 'kacha']);
+/**
+ * Permissions: the prototype's 10, plus 'price' (added 26 Sept 2026, owner decision):
+ * "change the rate on a slip". The rate is picked up automatically; only people with
+ * 'price' may type a different one. Owners have it; the owner can give it to anyone.
+ */
+export const PERMS = Object.freeze(['new', 'orders', 'weigh', 'khata', 'today', 'rates', 'people', 'settings', 'money', 'kacha', 'price']);
 
 const allOn = () => Object.fromEntries(PERMS.map((p) => [p, true]));
 

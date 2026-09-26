@@ -55,7 +55,7 @@ begin
 
   -- 8. Money and history tables are protected against edits and deletes.
   select string_agg(t, ', ') into bad
-  from unnest(array['payments','cash_closes','material_rates','customer_rates','audit_log','weigh_batches']) t
+  from unnest(array['payments','cash_closes','material_rates','customer_rates','audit_log','weigh_batches','old_dues','reminders']) t
   where not exists (
     select 1 from pg_trigger tg join pg_class c on c.oid = tg.tgrelid join pg_proc p on p.oid = tg.tgfoid
     where c.relname = t and p.proname = 'forbid_change' and not tg.tgisinternal);

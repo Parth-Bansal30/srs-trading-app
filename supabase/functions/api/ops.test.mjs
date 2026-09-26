@@ -200,3 +200,91 @@ test('request fingerprint ignores key order; database errors map to clear answer
   assert.equal(mapDbError('23514', 'x').status, 400);
   assert.equal(mapDbError('XX000', 'x'), null);
 });
+
+// ---------- owner decisions of 26 Sept 2026 ----------
+const khataRaw = () => ({
+  timezone: 'Asia/Kolkata', shop: 'SRS Trading',
+  settings: { reminder_after_days: 25, reminder_repeat_days: 7 },
+  customers: [{ id: CUST, name: 'Rana Tools', phone: '98111 22334', active: true }],
+  orders: [
+    { id: ORDER, slip_no: '1042', customer_id: CUST, status: 'done', bill: 'kacha', in_khata: true, total: 12500, done_at: '2026-08-01T08:00:00Z', created_at: '2026-07-30T08:00:00Z' },
+    { id: I1, slip_no: '1080', customer_id: CUST, status: 'done', bill: 'pakka', in_khata: true, total: 9000, done_at: new Date().toISOString(), created_at: new Date().toISOString() },
+  ],
+  payments: [
+    { id: 'p1', customer_id: CUST, order_id: null, amount: 5000, mode: 'UPI', kind: 'khata', side: 'kacha', at: '2026-08-10T08:00:00Z' },
+    { id: 'p2', customer_id: CUST, order_id: null, amount: 700, mode: 'Adjust', kind: 'khata', side: 'pakka', at: '2026-08-10T08:00:00Z' },
+  ],
+  old_dues: [
+    { id: 'd1', customer_id: CUST, side: 'kacha', ref: null, date: '2026-06-01', amount: 20000, reverses_id: null },
+    { id: 'd2', customer_id: CUST, side: 'kacha', ref: null, date: '2026-06-02', amount: 999, reverses_id: null },
+    { id: 'd3', customer_id: CUST, side: 'kacha', ref: null, date: '2026-06-02', amount: -999, reverses_id: 'd2' },
+  ],
+  last_reminders: [],
+});
+function fakeKhata(raw = khataRaw()) {
+  const calls = [];
+  const rpc = async (fn, args) => { calls.push({ fn, args }); return fn === 'api_khata_data' ? structuredClone(raw) : { ok: true, reminder_id: 'r1' }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  return { ops, calls, last: (fn) => calls.filter((c) => c.fn === fn).at(-1)?.args };
+}
+
+test('change rate on a slip needs the "price" permission (money alone is not enough)', async () => {
+  const db = fakeDb();
+  await db.ops.createOrder(sales, { customer_id: CUST, items: [{ ...newItems[0], rate: 90 }] }, 'k', 'h');
+  assert.equal(db.last('api_create_order').p_items[0].sell_rate, 72, 'sales without price: standard rate kept');
+  await db.ops.createOrder({ ...sales, perms: { ...sales.perms, price: 1 } }, { customer_id: CUST, items: [{ ...newItems[0], rate: 90 }] }, 'k', 'h');
+  assert.equal(db.last('api_create_order').p_items[0].sell_rate, 90, 'once the owner gives price');
+});
+
+test('adjusting an advance: each choice checked before the database', async () => {
+  const { ops, calls, last } = fakeDb();
+  await rejects(ops.adjustAdvance(owner, { order_id: ORDER, action: 'refund', amount: 1000, mode: 'UPI' }, 'k', 'h'), 400); // no reason
+  await rejects(ops.adjustAdvance(owner, { order_id: ORDER, action: 'refund', amount: 1000, mode: 'Adjust', note: 'x' }, 'k', 'h'), 400);
+  await rejects(ops.adjustAdvance(owner, { order_id: ORDER, action: 'move', amount: 1000 }, 'k', 'h'), 400);
+  await rejects(ops.adjustAdvance(sales, { order_id: ORDER, action: 'credit', amount: 1000, side: 'kacha' }, 'k', 'h'), 403);
+  await rejects(ops.adjustAdvance(owner, { order_id: ORDER, action: 'delete', amount: 1000 }, 'k', 'h'), 400);
+  await rejects(ops.adjustAdvance(weigher, { order_id: ORDER, action: 'refund', amount: 1000, mode: 'Cash', note: 'x' }, 'k', 'h'), 403);
+  assert.equal(calls.length, 0);
+  await ops.adjustAdvance(owner, { order_id: ORDER, action: 'refund', amount: '10000', mode: 'UPI', note: 'customer will pay by bank transfer' }, 'k', 'h');
+  assert.deepEqual(last('api_adjust_advance'), { p_caller: 'p-owner', p_key: 'k', p_hash: 'h', p_order: ORDER, p_action: 'refund', p_amount: 10000,
+    p_mode: 'UPI', p_target: null, p_side: null, p_note: 'customer will pay by bank transfer' });
+  await rejects(ops.cancelOrder(owner, { order_id: ORDER, reason: '  ' }, 'k', 'h'), 400);
+});
+
+test('old balances and credit refunds', async () => {
+  const raw = khataRaw(); raw.orders = raw.orders.filter((o) => o.bill !== 'pakka'); // no pakka bill to use the credit up
+  const k = fakeKhata(raw);
+  await rejects(k.ops.addOldDue(owner, { customer_id: CUST, side: 'kacha', date: '1 June', amount: 100 }, 'k', 'h'), 400);
+  await rejects(k.ops.addOldDue(sales, { customer_id: CUST, side: 'pakka', date: '2026-06-01', amount: 100 }, 'k', 'h'), 403);
+  await k.ops.addOldDue(owner, { customer_id: CUST, side: 'kacha', ref: ' 553 ', date: '2026-06-01', amount: '5000' }, 'k', 'h');
+  assert.equal(k.last('api_add_old_due').p_ref, '553');
+  await k.ops.refundCredit(owner, { customer_id: CUST, side: 'pakka', amount: 500, mode: 'Cash', note: 'returned extra' }, 'k', 'h');
+  assert.equal(k.last('api_refund_credit').p_available, 700, 'credit available worked out by the ledger');
+});
+
+test('khata: old balances counted, corrections netted out', async () => {
+  const k = fakeKhata();
+  const [row] = await k.ops.khata(owner, {});
+  assert.equal(row.by_side.kacha.due, 20000 + 12500 - 5000);
+  assert.equal(row.by_side.pakka.due, 9000 - 700);
+  const [acc] = await k.ops.khata({ ...owner, perms: { money: 1, khata: 1 } }, {});
+  assert.equal(acc.by_side.kacha, undefined, 'no kacha for someone without the permission');
+});
+
+test('reminders: only old dues are proposed, message rebuilt on the server, never mentions the bill type', async () => {
+  const k = fakeKhata();
+  const list = await k.ops.reminderList(owner, { lang: 'en' });
+  assert.equal(list.length, 1, 'kacha side is old; the pakka bill is from today');
+  assert.equal(list[0].side, 'kacha');
+  assert.equal(list[0].due, 27500);
+  assert.doesNotMatch(list[0].preview, /kacha|pakka/i);
+  const sent = await k.ops.sendReminder(owner, { customer_id: CUST, side: 'kacha', lang: 'hn' }, 'k', 'h');
+  assert.ok(sent.whatsapp_link.startsWith('https://wa.me/919811122334?text='));
+  assert.equal(k.last('api_record_reminder').p_total_due, 27500);
+  assert.equal(k.last('api_record_reminder').p_message, sent.message);
+  const snoozed = khataRaw(); snoozed.last_reminders = [{ customer_id: CUST, side: 'kacha', at: new Date().toISOString() }];
+  assert.equal((await fakeKhata(snoozed).ops.reminderList(owner, {})).length, 0, 'not asked again right after a reminder');
+  const noPhone = khataRaw(); noPhone.customers[0].phone = null;
+  await rejects(fakeKhata(noPhone).ops.sendReminder(owner, { customer_id: CUST, side: 'kacha' }, 'k', 'h'), 400, 'no_phone');
+  await rejects(k.ops.reminderList(sales, {}), 403);
+});

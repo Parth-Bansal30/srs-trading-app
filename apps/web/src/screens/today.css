@@ -1,0 +1,12 @@
+.today-head{display:flex;align-items:center;gap:8px;margin:4px 2px 16px}
+.hello{font-size:26px;font-weight:800;letter-spacing:-.03em;margin-top:2px}
+.avatar{width:42px;height:42px;border-radius:14px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex:none}
+.hero{background:var(--brand);color:var(--on-brand);border-radius:22px;padding:18px 18px 16px;position:relative;overflow:hidden}
+.hero-glow{position:absolute;right:-40px;top:-60px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(224,138,43,.30),transparent 70%);pointer-events:none}
+.hero-cap{font-size:13px;font-weight:600;opacity:.7}
+.hero-num{font-size:38px;font-weight:800;letter-spacing:-.04em;margin:6px 0 14px;min-height:46px}
+.hero-row{display:flex;gap:8px}
+.hero-box{flex:1;background:rgba(255,255,255,.07);border-radius:14px;padding:10px 12px;min-width:0}
+.hero-box .cap{font-size:11px;opacity:.65;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero-box .v{font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap}
+.ask{margin-top:14px;background:var(--surface);width:100%;border-radius:14px;text-align:left}

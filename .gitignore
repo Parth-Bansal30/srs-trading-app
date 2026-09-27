@@ -7,3 +7,7 @@ supabase/.temp/
 dist/
 # copy of packages/core made before each deploy (scripts/sync-core.mjs)
 supabase/functions/_shared/core/
+# web app: build output; the dev env files hold only PUBLIC values (dev database address + public key)
+apps/web/dist-single/
+!apps/web/.env.development
+!apps/web/.env.single

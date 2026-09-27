@@ -1,0 +1,57 @@
+/* Shared building blocks (cards, buttons, chips, fields). Colours come from tokens.css. */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;font-size:15px;line-height:1.35}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+a{color:inherit;text-decoration:none}
+.num{font-feature-settings:'tnum' 1;letter-spacing:-.01em}
+.muted{color:var(--ink-2)}.faint{color:var(--ink-3)}
+.grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:10px}
+.ellip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.card{background:var(--surface);border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--line)}
+.pad{padding:16px}
+
+.chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.tone-pakka{background:var(--pakka-soft);color:var(--pakka)}.tone-kacha{background:var(--kacha-soft);color:var(--kacha)}
+.tone-ok{background:var(--ok-soft);color:var(--ok)}.tone-bad{background:var(--bad-soft);color:var(--bad)}
+.tone-warn{background:var(--warn-soft);color:var(--warn)}.tone-neutral{background:var(--neutral-soft);color:var(--neutral)}
+.tone-accent{background:var(--accent-soft);color:var(--accent)}
+
+.btn{min-height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:17px;padding:0 18px;transition:transform .08s,opacity .15s;user-select:none}
+.btn:active{transform:scale(.98)}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.btn-accent{background:var(--accent);color:var(--accent-ink)}
+.btn-brand{background:var(--brand);color:var(--on-brand)}
+.btn-ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line-2)}
+.btn-wa{background:var(--wa);color:#fff}
+.btn-block{width:100%}
+.link{color:var(--accent);font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:6px;min-height:40px}
+
+.sec{display:flex;justify-content:space-between;align-items:baseline;margin:20px 2px 10px}
+.sec h3{font-size:15px;font-weight:700;letter-spacing:-.01em}
+
+.iconbox{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.li{display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:var(--tap);width:100%;text-align:left}
+.li+.li{border-top:1px solid var(--line)}
+.li .t{font-weight:600;font-size:15px}.li .s{font-size:13px;color:var(--ink-2);margin-top:2px}
+
+.seg{display:flex;background:var(--sunk);border-radius:12px;padding:3px;gap:3px}
+.seg>button{flex:1;min-height:38px;border-radius:10px;font-size:14px;font-weight:600;color:var(--ink-2)}
+.seg>button.on{background:var(--surface);color:var(--ink);box-shadow:var(--sh)}
+
+.field{background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--r-sm);min-height:52px;display:flex;align-items:center;padding:0 14px;gap:10px;font-size:17px}
+.field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.field input{border:none;outline:none;background:transparent;flex:1;min-width:0;font-size:inherit;font-weight:600;height:48px}
+.lbl{font-size:12px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.error{color:var(--bad);font-size:14px;font-weight:600;margin-top:10px}
+
+.round{width:40px;height:40px;border-radius:14px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink);flex:none}
+.pill{height:40px;border-radius:14px;background:var(--surface);border:1px solid var(--line);display:inline-flex;align-items:center;gap:6px;padding:0 12px;font-weight:700;font-size:13px}
+
+.skeleton{background:linear-gradient(90deg,var(--sunk),var(--surface-2),var(--sunk));background-size:200% 100%;animation:sk 1.2s infinite;border-radius:10px}
+@keyframes sk{to{background-position:-200% 0}}
+
+.toast{position:fixed;left:50%;bottom:calc(var(--tabbar-h) + 24px);transform:translateX(-50%);background:var(--brand);color:var(--on-brand);padding:12px 18px;border-radius:14px;font-weight:600;box-shadow:var(--sh-lg);z-index:50;max-width:90vw}

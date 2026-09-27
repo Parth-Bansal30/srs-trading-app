@@ -22,6 +22,9 @@
     "core:sync": "node scripts/sync-core.mjs",
     "domain:e2e": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/domain-e2e.mjs",
     "db:parity-check": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-parity-check.mjs",
-    "seed:dev": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/seed-dev.mjs"
+    "seed:dev": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/seed-dev.mjs",
+    "web:dev": "cd apps/web && npx vite",
+    "web:build": "cd apps/web && npx vite build --mode development",
+    "web:single": "cd apps/web && npx vite build --mode single"
   }
 }

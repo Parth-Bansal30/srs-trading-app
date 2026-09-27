@@ -1,0 +1,26 @@
+{
+  "name": "@srs/web",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "description": "The SRS Trading app (phone + laptop).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --mode development",
+    "build:single": "vite build --mode single",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/noto-sans-devanagari": "^5.3.0",
+    "@preact/signals": "^2.11.2",
+    "@supabase/supabase-js": "^2.117.2",
+    "lucide-preact": "^1.48.0",
+    "preact": "^10.29.8"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "vite": "^8.3.1",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

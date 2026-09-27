@@ -1,0 +1,62 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   COLOURS, FONTS, SIZES — change the look of the whole app here.
+   Every screen uses these names (var(--accent) etc.), never raw colours.
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* light (default) */
+  --bg: #F4F2EE;          /* "paper" background — softer than white all day */
+  --surface: #FFFFFF;     /* cards */
+  --surface-2: #FAF9F7;   /* inputs */
+  --sunk: #EFEDE8;        /* pressed / segmented background */
+  --ink: #14161B;         /* main text */
+  --ink-2: #4B505A;       /* secondary text */
+  --ink-3: #868B94;       /* hints */
+  --line: #E6E2DB;
+  --line-2: #D9D4CB;
+  --brand: #1B2130;       /* graphite: headers, main buttons */
+  --on-brand: #F5F3EE;
+  --accent: #E08A2B;      /* saffron: the ONE action that matters on a screen */
+  --accent-ink: #2B1700;
+  --accent-soft: #FCEEDC;
+  --pakka: #2C5CC5;  --pakka-soft: #E8EEFC;   /* GST bill — always blue */
+  --kacha: #9A5B0E;  --kacha-soft: #F6EAD6;   /* No bill — always sand */
+  --ok: #1C8456;     --ok-soft: #E2F3EA;
+  --bad: #C2412F;    --bad-soft: #FBE7E3;
+  --warn: #A86A00;   --warn-soft: #FFF3D6;
+  --neutral: #4B505A; --neutral-soft: #EFEDE8;
+  --wa: #1FA855;
+
+  --font: 'Inter', 'Noto Sans Devanagari', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --r: 18px;          /* card corners */
+  --r-sm: 12px;       /* input corners */
+  --tap: 48px;        /* smallest tap target */
+  --sh: 0 1px 2px rgba(20,22,27,.04), 0 2px 8px rgba(20,22,27,.05);
+  --sh-lg: 0 10px 30px rgba(20,22,27,.12);
+  --tabbar-h: 72px;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0E1014; --surface: #171A20; --surface-2: #1C2027; --sunk: #12151A;
+  --ink: #F1F2F4; --ink-2: #AAB0BB; --ink-3: #737A86; --line: #252932; --line-2: #30353F;
+  --brand: #20252F; --on-brand: #F1F2F4;
+  --accent: #F0A04B; --accent-ink: #221100; --accent-soft: #3A2811;
+  --pakka: #7FA2F2; --pakka-soft: #1C2A48; --kacha: #E7B266; --kacha-soft: #3A2A12;
+  --ok: #4CC38A; --ok-soft: #15352A; --bad: #F08476; --bad-soft: #3E1D19; --warn: #F2C14E; --warn-soft: #3A2F10;
+  --neutral: #AAB0BB; --neutral-soft: #20242C;
+  --sh: 0 1px 2px rgba(0,0,0,.3); --sh-lg: 0 10px 30px rgba(0,0,0,.5);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1014; --surface: #171A20; --surface-2: #1C2027; --sunk: #12151A;
+    --ink: #F1F2F4; --ink-2: #AAB0BB; --ink-3: #737A86; --line: #252932; --line-2: #30353F;
+    --brand: #20252F; --on-brand: #F1F2F4;
+    --accent: #F0A04B; --accent-ink: #221100; --accent-soft: #3A2811;
+    --pakka: #7FA2F2; --pakka-soft: #1C2A48; --kacha: #E7B266; --kacha-soft: #3A2A12;
+    --ok: #4CC38A; --ok-soft: #15352A; --bad: #F08476; --bad-soft: #3E1D19; --warn: #F2C14E; --warn-soft: #3A2F10;
+    --neutral: #AAB0BB; --neutral-soft: #20242C;
+    --sh: 0 1px 2px rgba(0,0,0,.3); --sh-lg: 0 10px 30px rgba(0,0,0,.5);
+    color-scheme: dark;
+  }
+}

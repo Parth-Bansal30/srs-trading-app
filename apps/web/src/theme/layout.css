@@ -1,0 +1,26 @@
+/* App frame: phone = content + bottom bar; laptop (≥1024px) = left menu + content. */
+.app{min-height:100%;display:flex}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.page{flex:1;padding:12px 18px calc(var(--tabbar-h) + 28px);max-width:640px;width:100%;margin:0 auto}
+.topbar{display:flex;align-items:center;gap:10px;padding:12px 18px 8px;max-width:640px;width:100%;margin:0 auto}
+.topbar .title{font-size:19px;font-weight:800;letter-spacing:-.02em}
+.topbar .sub{font-size:12px;font-weight:600;color:var(--ink-3)}
+
+.tabbar{position:fixed;left:0;right:0;bottom:0;height:calc(var(--tabbar-h) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--surface);border-top:1px solid var(--line);display:flex;align-items:flex-start;justify-content:space-around;z-index:20}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:var(--ink-3);width:68px;padding-top:10px;position:relative}
+.tab.on{color:var(--ink)}
+.tab .badge{position:absolute;top:4px;right:12px}
+.fab{width:62px;height:62px;border-radius:22px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;margin-top:-22px;box-shadow:0 8px 20px rgba(224,138,43,.40)}
+.badge{min-width:18px;height:18px;border-radius:9px;background:var(--bad);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+
+.sidebar{display:none}
+@media (min-width:1024px){
+  .tabbar{display:none}
+  .sidebar{display:flex;flex-direction:column;gap:4px;width:236px;flex:none;background:var(--brand);color:var(--on-brand);padding:22px 14px;position:sticky;top:0;height:100vh}
+  .side-item{display:flex;align-items:center;gap:12px;height:42px;padding:0 12px;border-radius:12px;font-weight:600;font-size:14px;opacity:.72}
+  .side-item.on{background:rgba(255,255,255,.10);opacity:1}
+  .side-item .badge{margin-left:auto;background:var(--accent);color:var(--accent-ink)}
+  .page{max-width:1100px;padding-bottom:40px}
+  .topbar{max-width:1100px}
+  .toast{bottom:32px}
+}

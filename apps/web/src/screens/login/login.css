@@ -1,0 +1,18 @@
+.login{min-height:100vh;display:flex;flex-direction:column;max-width:460px;margin:0 auto;padding:0 22px env(safe-area-inset-bottom)}
+.login-top{display:flex;align-items:center;gap:12px;padding:18px 0 8px}
+.brandmark{width:40px;height:40px;border-radius:13px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px}
+.login-app{font-weight:800;font-size:17px;letter-spacing:-.02em}
+.login-body{flex:1;display:flex;flex-direction:column;justify-content:center;padding:24px 0 48px}
+.login-title{font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1.15}
+.login-sub{color:var(--ink-2);font-size:16px;margin:8px 0 22px}
+.field.big{min-height:64px;font-size:22px;border-radius:16px}
+.field.big input{height:60px;font-size:24px;font-weight:700;letter-spacing:.04em}
+.field.code input{text-align:center;letter-spacing:.5em;font-size:28px}
+.notice{border-radius:12px;padding:12px 14px;font-weight:600;margin-bottom:16px;font-size:14px}
+.dots{display:flex;gap:16px;justify-content:center;margin:8px 0 26px}
+.dots span{width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2);transition:all .12s}
+.dots span.on{background:var(--ink);border-color:var(--ink);transform:scale(1.08)}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:340px;margin:0 auto}
+.key{height:68px;border-radius:20px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--sh);font-size:28px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.key:active{background:var(--sunk);transform:scale(.97)}
+.key.del{background:transparent;border:none;box-shadow:none;color:var(--ink-2)}

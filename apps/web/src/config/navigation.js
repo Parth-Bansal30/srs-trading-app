@@ -19,7 +19,8 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
-  { id: 'reports', route: '/reports', word: 'nav_reports', icon: 'ChartColumn', perm: 'today' },
+  { id: 'reports', route: '/reports', word: 'tile_today', icon: 'ChartColumn', perm: 'money' },
+  { id: 'guide', route: '/guide', word: 'nav_guide', icon: 'Sparkles' },
   { id: 'settings', route: '/settings', word: 'nav_settings', icon: 'Settings', perm: 'settings' },
 ];
 

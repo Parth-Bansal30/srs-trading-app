@@ -15,6 +15,14 @@ import { Slips } from './screens/slips/Slips.jsx';
 import { Slip } from './screens/slips/Slip.jsx';
 import { WeighList, Weigh } from './screens/weigh/Weigh.jsx';
 import { Pickup } from './screens/pickup/Pickup.jsx';
+import { Khata } from './screens/khata/Khata.jsx';
+import { Customer } from './screens/khata/Customer.jsx';
+import { Reminders } from './screens/khata/Reminders.jsx';
+import { Rates } from './screens/admin/Rates.jsx';
+import { People } from './screens/admin/People.jsx';
+import { Settings } from './screens/admin/Settings.jsx';
+import { Summary } from './screens/admin/Summary.jsx';
+import { Guide } from './screens/Guide.jsx';
 import { toastMsg } from './ui/toast.js';
 import { FULL_SCREEN } from './config/navigation.js';
 
@@ -29,6 +37,14 @@ const SCREENS = {
   '/weigh': () => <WeighList />,
   '/weigh/:id': ({ id }) => <Weigh id={id} key={id} />,
   '/pickup/:id': ({ id }) => <Pickup id={id} key={id} />,
+  '/khata': () => <Khata />,
+  '/customer/:id': ({ id }) => <Customer id={id} key={id} />,
+  '/reminders': () => <Reminders />,
+  '/rates': () => <Rates />,
+  '/people': () => <People />,
+  '/settings': () => <Settings />,
+  '/reports': () => <Summary />,
+  '/guide': () => <Guide />,
 };
 function match(path) {
   for (const [pattern, render] of Object.entries(SCREENS)) {

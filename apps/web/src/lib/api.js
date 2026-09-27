@@ -34,7 +34,8 @@ export async function call(op, args = {}, { key = newKey(), tries = 3 } = {}) {
     }
     const body = await res.json().catch(() => ({}));
     if (res.ok && body.ok) return body.data;
-    if (res.status >= 500 && i < tries - 1) { lastErr = new ApiError(res.status, body.error, body.message); await sleep(800 * (i + 1)); continue; }
+    // only real server hiccups are retried (not "AI switched off" and the like)
+    if (res.status >= 500 && (!body.error || body.error === 'server_error') && i < tries - 1) { lastErr = new ApiError(res.status, body.error, body.message); await sleep(800 * (i + 1)); continue; }
     throw new ApiError(res.status, body.error || 'error', body.message || 'Something went wrong.');
   }
   throw lastErr;

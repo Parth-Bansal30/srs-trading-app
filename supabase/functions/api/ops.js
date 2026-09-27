@@ -482,7 +482,8 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
       return raw.customers.map((c) => {
         const l = core.customerLedger({ custId: c.id, ...k, sides, allSides: sides });
         return { customer: c, due: l.due, credit: l.adv, pending_advance: l.pend, oldest: l.oldest, by_side: l.bySide,
-          entries: customer ? l.entries : undefined };
+          entries: customer ? l.entries : undefined,
+          slips: customer ? Object.fromEntries(raw.orders.map((o) => [o.id, o.slip_no])) : undefined };
       }).filter((x) => customer || x.due > 0 || x.credit > 0);
     },
 
@@ -506,6 +507,21 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
         }
       }
       return out.sort((x, y) => y.oldest_days - x.oldest_days);
+    },
+
+    /** The message that WOULD be sent (nothing is logged or sent). */
+    async reminderPreview(caller, a) {
+      need(caller, 'money', 'khata');
+      const customer = uuid(a.customer_id, 'Which customer?');
+      if (!BILLS.includes(a.side)) throw bad('Which account?');
+      if (a.side === 'kacha') need(caller, 'kacha');
+      const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer });
+      const c = raw.customers[0];
+      if (!c) throw bad('Customer not found.');
+      const due = core.dueSlips({ custId: customer, side: a.side, ...coreKhataFromDb(raw), now: new Date().toISOString(), timeZone: raw.timezone });
+      return { customer: { id: c.id, name: c.name, phone: c.phone }, side: a.side, due: due.due, slips: due.slips, oldest_days: due.oldestDays,
+        has_phone: !!core.normalizeIndianMobile(c.phone), repeat_days: raw.settings.reminder_repeat_days,
+        preview: core.reminderMessage({ lang: a.lang, shop: raw.shop, customer: c.name, due }) };
     },
 
     /**
@@ -563,7 +579,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList']);
+export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview']);
 
 /** Database error code → HTTP answer the app can show. */
 export function mapDbError(code, message) {

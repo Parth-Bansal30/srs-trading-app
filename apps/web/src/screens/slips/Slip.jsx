@@ -1,0 +1,210 @@
+// One slip: items, weights, amounts, money taken — and the next step for its stage.
+import { useEffect, useState } from 'preact/hooks';
+import { whatsappLink, r2 } from '@srs/core';
+import { t } from '../../lib/i18n.js';
+import { can, company } from '../../lib/session.js';
+import { loadOrder, dimText, lengthsText, shapeName, totalPcs, slipText } from '../../lib/orders.js';
+import { loadCatalog } from '../../lib/catalog.js';
+import { db } from '../../lib/backend.js';
+import { useAction } from '../../lib/action.js';
+import { money, kg, shortDate, time } from '../../lib/format.js';
+import { go } from '../../lib/router.js';
+import { toast } from '../../ui/toast.js';
+import { STAGES, BILLS, PAY_METHODS } from '../../config/options.js';
+import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
+import { Sheet } from '../../ui/Sheet.jsx';
+
+const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata', refund: 'kind_refund', transfer: 'kind_transfer', reversal: 'kind_reversal' };
+
+export function Slip({ id }) {
+  const [o, setO] = useState(undefined);
+  const [sheet, setSheet] = useState(null); // 'advance' | 'adjust' | 'cancel' | 'accept'
+  const tz = company.value?.timezone;
+  const load = () => loadOrder(id).then(setO).catch(() => setO(null));
+  useEffect(() => { load(); }, [id]);
+  const done = (msg) => { setSheet(null); toast(msg || t('done_ok')); load(); };
+
+  if (o === undefined) return <><TopBar title="…" /><div class="page"><Skeleton h={120} /><Skeleton h={200} style="margin-top:12px" /></div></>;
+  if (o === null) return <><TopBar title={t('nav_slips')} /><div class="page muted">{t('err_generic')}</div></>;
+
+  const st = STAGES[o.status];
+  const extra = o.status === 'done' ? r2(o.paid - Number(o.total_amount)) : 0;
+  const share = async () => {
+    const cat = await loadCatalog();
+    const text = slipText(o, { shop: cat.settings?.slip_header?.name || company.value?.name, showWeight: cat.settings?.show_weight_on_slip !== false, tz });
+    window.open(whatsappLink(o.customers?.phone, text) || `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  return (
+    <>
+      <TopBar title={`#${o.slip_no} · ${o.customers?.name}`} sub={`${shortDate(o.created_at, tz)} · ${time(o.created_at, tz)}`}
+        right={<Chip tone={o.status === 'done' ? BILLS[o.bill_type]?.tone : st.tone}>{o.status === 'done' ? t(BILLS[o.bill_type]?.word) : t(st.word)}</Chip>} />
+      <div class="page" style="padding-bottom:calc(var(--tabbar-h) + 150px)">
+        {o.status === 'cancelled' && <div class="card pad tone-bad" style="margin-bottom:12px;font-weight:600">{t('cancelled_because', o.cancel_reason)}</div>}
+
+        <div class="sec" style="margin-top:4px"><h3>{t('items_title')}</h3>{o.total_weight && <span class="muted num">{t('weight_total')} {kg(o.total_weight)}</span>}</div>
+        <div class="card">
+          {o.order_items.map((it, i) => (
+            <div class="li">
+              <div class="iconbox tone-neutral num" style="font-weight:800">{i + 1}</div>
+              <div class="grow">
+                <div class="t">{it.grade_code} · {shapeName(it.shape)} {dimText(it)}</div>
+                <div class="s num">{lengthsText(it)} · {totalPcs(it)} {t('pcs')}</div>
+              </div>
+              <div style="text-align:right">
+                {it.actual_weight ? <div class="num" style="font-weight:700">{kg(it.actual_weight)}</div> : <span class="faint" style="font-size:13px">{t('waiting_weight')}</span>}
+                {can('money') && <div class="faint num" style="font-size:12px">{money(it.sell_rate)}/kg{it.special_rate ? ' ★' : ''}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {can('money') && o.status === 'done' && (
+          <div class="card" style="margin-top:12px;padding:6px 16px">
+            <Line a={t('material')} b={money(o.material_amount, true)} />
+            <Line a={t('cutting')} b={money(o.cutting_amount, true)} />
+            {o.bill_type === 'pakka' && <Line a={t('gst_line', Number(o.gst_pct))} b={money(o.gst_amount, true)} />}
+            <Line a={<b>{t('total')}</b>} b={<b>{money(o.total_amount, true)}</b>} top />
+            <Line a={t('paid_so_far')} b={money(o.paid, true)} />
+            {Number(o.total_amount) - o.paid > 0 && <Line a={<b style="color:var(--bad)">{t('bal_to_pay')}</b>} b={<b style="color:var(--bad)">{money(Number(o.total_amount) - o.paid, true)}</b>} />}
+          </div>
+        )}
+
+        {can('money') && (
+          <>
+            <div class="sec"><h3>{t('payments_title')}</h3>{o.status !== 'done' && o.advance > 0 && <span class="num" style="font-weight:700">{t('adj_on_slip', money(o.advance))}</span>}</div>
+            <div class="card">
+              {o.payments.length === 0 ? <div class="li muted">{t('no_payments')}</div> : o.payments.map((p) => (
+                <div class="li" style={p.reversed ? 'opacity:.5' : ''}>
+                  <div class={`iconbox tone-${Number(p.amount) < 0 ? 'bad' : 'ok'}`}><Icon name={PAY_METHODS.find((m) => m.id === p.mode)?.icon || 'RefreshCw'} size={18} /></div>
+                  <div class="grow"><div class="t">{t(KIND_WORD[p.kind] || p.kind)} · {p.mode === 'Adjust' ? '—' : t(PAY_METHODS.find((m) => m.id === p.mode)?.word || p.mode)}</div>
+                    <div class="s">{shortDate(p.received_at, tz)} · {time(p.received_at, tz)}{p.note ? ` · ${p.note}` : ''}</div></div>
+                  <div class="num" style={`font-weight:700;color:${Number(p.amount) < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{money(p.amount)}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div class="actionbar">
+        {o.status === 'estimate' && can('new') && (
+          <div class="row"><button class="btn btn-ghost" onClick={() => go(`/new?edit=${o.id}`)}><Icon name="FileText" size={18} />{t('act_edit')}</button>
+            <button class="btn btn-accent grow" onClick={() => setSheet('accept')}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button></div>
+        )}
+        {o.status === 'accepted' && (
+          <div class="row">{can('money') && <button class="btn btn-ghost" onClick={() => setSheet('advance')}>{t('adv_add')}</button>}
+            {can('weigh') && <button class="btn btn-accent grow" onClick={() => go(`/weigh/${o.id}`)}><Icon name="Scale" size={20} />{t('act_weigh')}</button>}</div>
+        )}
+        {o.status === 'weighed' && can('money') && (
+          <div class="row"><button class="btn btn-ghost" onClick={() => setSheet('advance')}>{t('adv_add')}</button>
+            <button class="btn btn-accent grow" onClick={() => go(`/pickup/${o.id}`)}><Icon name="PackageCheck" size={20} />{t('act_pickup')}</button></div>
+        )}
+        {o.status === 'done' && <button class="btn btn-wa btn-block" onClick={share}><Icon name="MessageCircle" size={20} stroke={2.4} />{t('act_share')}</button>}
+        <div class="row" style="justify-content:center;gap:18px;margin-top:6px">
+          {['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
+          {o.status === 'done' && extra > 0 && can('money') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
+          {['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
+        </div>
+      </div>
+
+      <AcceptSheet open={sheet === 'accept'} o={o} onClose={() => setSheet(null)} onDone={() => done(t('accepted_msg', o.slip_no))} />
+      <AdvanceSheet open={sheet === 'advance'} o={o} onClose={() => setSheet(null)} onDone={() => done()} />
+      <AdjustSheet open={sheet === 'adjust'} o={o} extra={extra} onClose={() => setSheet(null)} onDone={() => done()} />
+      <CancelSheet open={sheet === 'cancel'} o={o} onClose={() => setSheet(null)} onDone={() => done()} onAdjust={() => setSheet('adjust')} />
+    </>
+  );
+}
+
+const Line = ({ a, b, top }) => <div class="row" style={`justify-content:space-between;padding:9px 0;${top ? 'border-top:1px solid var(--line)' : ''}`}><span class="muted">{a}</span><span class="num">{b}</span></div>;
+
+function MoneyInput({ value, onInput }) {
+  return <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={value} onInput={(e) => onInput(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>;
+}
+function Methods({ value, onPick }) {
+  return <div class="pick">{PAY_METHODS.map((p) => <button class={value === p.id ? 'on' : ''} onClick={() => onPick(p.id)}><Icon name={p.icon} size={18} />{t(p.word)}</button>)}</div>;
+}
+const Err = ({ a }) => a.error && <div class="error">{a.error.message}</div>;
+
+function AcceptSheet({ open, o, onClose, onDone }) {
+  const [amt, setAmt] = useState(''); const [mode, setMode] = useState('Cash'); const [note, setNote] = useState('');
+  const a = useAction('acceptOrder');
+  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), mode, note } : null }).then(onDone).catch(() => {});
+  return (
+    <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button>}>
+      {can('money') && <><div class="muted" style="margin-bottom:12px">{t('adv_note')}</div><div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
+        {Number(amt) > 0 && <><div class="lbl" style="margin-top:14px">{t('how_paid')}</div><Methods value={mode} onPick={setMode} />
+          <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} /></>}</>}
+      <Err a={a} />
+    </Sheet>
+  );
+}
+
+function AdvanceSheet({ open, o, onClose, onDone }) {
+  const [amt, setAmt] = useState(''); const [mode, setMode] = useState('Cash'); const [note, setNote] = useState('');
+  const a = useAction('addAdvance');
+  return (
+    <Sheet open={open} onClose={onClose} title={t('adv_add')}
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0)} onClick={() => a.run({ order_id: o.id, amount: Number(amt), mode, note }).then(onDone).catch(() => {})}>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</button>}>
+      <div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
+      <div class="lbl" style="margin-top:14px">{t('how_paid')}</div><Methods value={mode} onPick={setMode} />
+      <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
+      <Err a={a} />
+    </Sheet>
+  );
+}
+
+function AdjustSheet({ open, o, extra, onClose, onDone }) {
+  const onlyRefund = o.status === 'done';
+  const avail = onlyRefund ? extra : o.advance;
+  const [action, setAction] = useState('refund');
+  const [amt, setAmt] = useState('');
+  const [mode, setMode] = useState('Cash');
+  const [note, setNote] = useState('');
+  const [target, setTarget] = useState(null);
+  const [side, setSide] = useState('pakka');
+  const [others, setOthers] = useState(null);
+  const a = useAction('adjustAdvance');
+  useEffect(() => {
+    if (!open) return;
+    setAmt(String(avail));
+    db.from('orders').select('id,slip_no,status,created_at').eq('customer_id', o.customer_id).in('status', ['accepted', 'weighed']).neq('id', o.id).order('created_at', { ascending: false })
+      .then(({ data }) => setOthers(data || []));
+  }, [open]);
+  const ok = Number(amt) > 0 && Number(amt) <= avail && (action !== 'refund' || note.trim()) && (action !== 'move' || target);
+  const submit = () => a.run({ order_id: o.id, action, amount: Number(amt), mode: action === 'refund' ? mode : undefined,
+    note: note || undefined, target_order_id: action === 'move' ? target : undefined, side: action === 'credit' ? side : undefined }).then(onDone).catch(() => {});
+  return (
+    <Sheet open={open} onClose={onClose} title={onlyRefund ? t('act_return_extra') : t('act_adjust')}
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !ok} onClick={submit}>{t(action === 'refund' ? 'adj_refund' : action === 'move' ? 'adj_move' : 'adj_credit')} {Number(amt) > 0 ? money(amt) : ''}</button>}>
+      <div class="muted" style="margin-bottom:12px">{t('adj_on_slip', money(avail))}</div>
+      {!onlyRefund && <div class="seg" style="margin-bottom:14px">{[['refund', 'adj_refund'], ['move', 'adj_move'], ['credit', 'adj_credit']].map(([id, w]) => <button class={action === id ? 'on' : ''} onClick={() => setAction(id)}>{t(w)}</button>)}</div>}
+      <div class="lbl">{t('amount')}</div><MoneyInput value={amt} onInput={setAmt} />
+      {action === 'refund' && <><div class="lbl" style="margin-top:14px">{t('how_paid')}</div><Methods value={mode} onPick={setMode} /></>}
+      {action === 'move' && <><div class="lbl" style="margin-top:14px">{t('adj_which_slip')}</div>
+        {others?.length === 0 ? <div class="muted">{t('adj_no_other')}</div> : <div class="pick">{(others || []).map((x) => <button class={target === x.id ? 'on' : ''} onClick={() => setTarget(x.id)}>#{x.slip_no}</button>)}</div>}</>}
+      {action === 'credit' && can('kacha') && <><div class="lbl" style="margin-top:14px">{t('adj_account')}</div>
+        <div class="seg"><button class={side === 'pakka' ? 'on' : ''} onClick={() => setSide('pakka')}>{t('bill_gst_short')}</button><button class={side === 'kacha' ? 'on' : ''} onClick={() => setSide('kacha')}>{t('bill_none_short')}</button></div></>}
+      <div class="lbl" style="margin-top:14px">{action === 'refund' ? t('reason') : t('pay_note')}</div>
+      <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('reason_ph')} />
+      <Err a={a} />
+    </Sheet>
+  );
+}
+
+function CancelSheet({ open, o, onClose, onDone, onAdjust }) {
+  const [reason, setReason] = useState('');
+  const a = useAction('cancelOrder');
+  const blocked = o.advance > 0;
+  return (
+    <Sheet open={open} onClose={onClose} title={t('act_cancel')}
+      footer={blocked ? <button class="btn btn-ghost btn-block" onClick={onAdjust}>{t('act_adjust')}</button>
+        : <button class="btn btn-block" style="background:var(--bad);color:#fff" disabled={a.busy || !reason.trim()} onClick={() => a.run({ order_id: o.id, reason }).then(onDone).catch(() => {})}>{t('act_cancel')}</button>}>
+      {blocked ? <div class="notice tone-warn" style="border-radius:12px;padding:12px">{t('cancel_needs_adv', money(o.advance))}</div> : <>
+        <div class="lbl">{t('reason')}</div>
+        <input class="textarea" value={reason} onInput={(e) => setReason(e.currentTarget.value)} placeholder={t('cancel_reason_ph')} autofocus />
+      </>}
+      <Err a={a} />
+    </Sheet>
+  );
+}

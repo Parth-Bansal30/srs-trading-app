@@ -10,12 +10,35 @@ import { PhoneStep, CodeStep, SetPinStep, UnlockStep, NotStaffStep } from './scr
 import { Today } from './screens/Today.jsx';
 import { More } from './screens/More.jsx';
 import { Soon } from './screens/Soon.jsx';
+import { NewOrder } from './screens/order/NewOrder.jsx';
+import { Slips } from './screens/slips/Slips.jsx';
+import { Slip } from './screens/slips/Slip.jsx';
+import { WeighList, Weigh } from './screens/weigh/Weigh.jsx';
+import { Pickup } from './screens/pickup/Pickup.jsx';
+import { toastMsg } from './ui/toast.js';
+import { FULL_SCREEN } from './config/navigation.js';
 
 // Which screen for which address. Add a screen: one line here (+ a menu entry in config/navigation.js).
+// ":id" parts of the address are passed to the screen.
 const SCREENS = {
   '/': () => <Today />,
   '/more': () => <More />,
+  '/new': () => <NewOrder />,
+  '/slips': () => <Slips />,
+  '/slip/:id': ({ id }) => <Slip id={id} key={id} />,
+  '/weigh': () => <WeighList />,
+  '/weigh/:id': ({ id }) => <Weigh id={id} key={id} />,
+  '/pickup/:id': ({ id }) => <Pickup id={id} key={id} />,
 };
+function match(path) {
+  for (const [pattern, render] of Object.entries(SCREENS)) {
+    const a = pattern.split('/'); const b = path.split('/');
+    if (a.length !== b.length) continue;
+    const params = {};
+    if (a.every((seg, i) => (seg.startsWith(':') ? (params[seg.slice(1)] = decodeURIComponent(b[i]), true) : seg === b[i]))) return render(params);
+  }
+  return null;
+}
 const soonFor = (path) => {
   const m = [...MENU, ...TABS].find((x) => x.route.split('?')[0] === path);
   return <Soon word={m?.word || 'soon'} />;
@@ -56,12 +79,14 @@ export function App() {
   if (step === 'error') return <div class="login"><div class="login-body"><div class="error">{t('err_generic')}</div><button class="btn btn-ghost" onClick={boot}>{t('retry')}</button></div></div>;
 
   const path = route.value.path;
-  const screen = SCREENS[path] ? SCREENS[path]() : soonFor(path);
+  const screen = match(path) || soonFor(path);
+  const full = FULL_SCREEN.some((p) => path === p || path.startsWith(p));
   return (
     <div class="app">
       <Sidebar path={path} />
       <main class="main">{screen}</main>
-      <TabBar path={path} />
+      {!full && <TabBar path={path} />}
+      {toastMsg.value && <div class="toast">{toastMsg.value}</div>}
     </div>
   );
 }

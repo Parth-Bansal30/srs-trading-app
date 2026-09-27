@@ -1,0 +1,16 @@
+.witem{padding:14px;margin-bottom:10px;border:1.5px solid var(--line)}
+.witem.picked{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.wt{font-size:18px;font-weight:700}
+.tick{width:34px;height:34px;border-radius:10px;border:2px solid var(--line-2);display:flex;align-items:center;justify-content:center;color:var(--accent-ink);flex:none}
+.tick.on{background:var(--accent);border-color:var(--accent)}
+.tick[disabled]{opacity:.3}
+.wbox{flex:1;min-width:0;min-height:62px;border-radius:14px;background:var(--surface-2);border:1.5px solid var(--line);display:flex;align-items:center;padding:0 14px;gap:8px}
+.wbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.wbox input{border:none;background:transparent;outline:none;flex:1;min-width:0;font-size:28px;font-weight:800;height:58px}
+.wbox input::placeholder{font-size:16px;font-weight:600;color:var(--ink-3)}
+.wbox span{font-weight:700;color:var(--ink-3);display:flex}
+.wbox.ok{background:var(--ok-soft);border-color:var(--ok)}
+.wbox.ok span{color:var(--ok)}
+.wbox.batch{background:var(--accent-soft);border-color:var(--accent)}
+.together{border:2px solid var(--accent);margin-top:4px}
+.witem .exp{flex:0 0 92px}

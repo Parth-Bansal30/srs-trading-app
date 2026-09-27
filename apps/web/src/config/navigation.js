@@ -30,3 +30,6 @@ export const NEEDS = [
   { id: 'remind', count: 'reminders', word: 'need_remind', icon: 'BellRing', tone: 'bad', route: '/reminders', perm: 'khata' },
   { id: 'estimates', count: 'estimates', word: 'need_estimates', icon: 'FileClock', tone: 'neutral', route: '/slips?stage=estimate', perm: 'new' },
 ];
+
+// Screens that use the whole screen (their own bottom buttons), so the bottom bar hides.
+export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/'];

@@ -7,7 +7,7 @@ import { db } from '../../lib/backend.js';
 import { forgetCatalog } from '../../lib/catalog.js';
 import { useAction } from '../../lib/action.js';
 import { toast } from '../../ui/toast.js';
-import { TopBar, Skeleton } from '../../ui/kit.jsx';
+import { TopBar, Skeleton, Icon } from '../../ui/kit.jsx';
 
 export function Settings() {
   const [s, setS] = useState(null);       // saved
@@ -18,10 +18,10 @@ export function Settings() {
   const load = async () => {
     const [{ data: st }, { data: c }, { count }] = await Promise.all([
       db.from('company_settings').select('*').maybeSingle(),
-      db.from('companies').select('name,legal_name,gstin,phone,address,timezone').maybeSingle(),
+      db.from('companies').select('name,legal_name,gstin,phone,address,city,timezone').maybeSingle(),
       db.from('orders').select('id', { count: 'exact', head: true }),
     ]);
-    const flat = { ...st, company_name: c?.name, gstin: c?.gstin || '', company_phone: c?.phone || '', address: c?.address || '' };
+    const flat = { ...st, company_name: c?.name, gstin: c?.gstin || '', company_phone: c?.phone || '', address: c?.address || '', city: c?.city || '', upi_id: st?.upi_id || '' };
     setS(flat); setV(flat); setCo(c); setHasOrders((count ?? 1) > 0);
   };
   useEffect(() => { load(); }, []);
@@ -37,6 +37,8 @@ export function Settings() {
   if (v.gstin !== s.gstin) comp.gstin = v.gstin;
   if (v.company_phone !== s.company_phone) comp.phone = v.company_phone;
   if (v.address !== s.address) comp.address = v.address;
+  if (v.city !== s.city) comp.city = v.city;
+  if ((v.upi_id || '').trim() !== (s.upi_id || '')) changes.upi_id = (v.upi_id || '').trim() || null;
   if (Object.keys(comp).length) changes.company = comp;
   const dirty = Object.keys(changes).length > 0;
   const save = () => a.run({ changes }).then(async () => { toast(t('saved')); forgetCatalog(); await load(); refresh(); }).catch(() => {});
@@ -60,6 +62,10 @@ export function Settings() {
             <div class="grow"><div class="lbl">{t('gstin')}</div><div class="field"><input disabled={!edit} value={v.gstin} onInput={(e) => setV({ ...v, gstin: e.currentTarget.value.toUpperCase() })} /></div></div>
           </div>
           <div class="lbl" style="margin-top:12px">{t('address')}</div><input class="textarea" disabled={!edit} value={v.address} onInput={set('address')} />
+          <div class="lbl" style="margin-top:12px">{t('reg_city')}</div><div class="field"><input disabled={!edit} value={v.city} onInput={set('city')} /></div>
+          <div class="lbl" style="margin-top:12px">{t('upi_id')}</div>
+          <div class="field"><Icon name="IndianRupee" size={18} /><input disabled={!edit} value={v.upi_id} autocapitalize="off" autocorrect="off" spellcheck={false} placeholder="shopname@okaxis" onInput={set('upi_id')} /></div>
+          {/sample/i.test(v.upi_id || '') && <div class="notice tone-warn" style="margin-top:8px;border-radius:12px;padding:10px 12px;font-size:13px">{t('upi_sample_note')}</div>}
         </div>
 
         <div class="sec"><h3>{t('money_rules')}</h3></div>

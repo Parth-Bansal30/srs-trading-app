@@ -6,6 +6,7 @@ import {
   Sun, Moon, SunMoon, RefreshCw, WifiOff, CircleCheck, MessageCircle, Phone, Info, X, Search, Clock, IndianRupee,
   Store, Cylinder, Donut, Hammer, Trees, Grid2x2, Cable, Package, UserPlus, Crown, PartyPopper, CirclePlay, ShieldCheck,
   Send, UserSearch, LockKeyhole, ArrowRight, BadgeCheck, Gift, MessageSquare, Trash2,
+  Printer, FileDown, Eye, Share2, Pencil, Contact, StickyNote, CalendarRange, Download,
 } from 'lucide-preact';
 
 export const ICONS = {
@@ -15,4 +16,5 @@ export const ICONS = {
   Sun, Moon, SunMoon, RefreshCw, WifiOff, CircleCheck, MessageCircle, Phone, Info, X, Search, Clock, IndianRupee,
   Store, Cylinder, Donut, Hammer, Trees, Grid2x2, Cable, Package, UserPlus, Crown, PartyPopper, CirclePlay, ShieldCheck,
   Send, UserSearch, LockKeyhole, ArrowRight, BadgeCheck, Gift, MessageSquare, Trash2,
+  Printer, FileDown, Eye, Share2, Pencil, Contact, StickyNote, CalendarRange, Download,
 };

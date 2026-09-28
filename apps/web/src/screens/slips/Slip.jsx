@@ -1,18 +1,19 @@
 // One slip: items, weights, amounts, money taken — and the next step for its stage.
 import { useEffect, useState } from 'preact/hooks';
-import { whatsappLink, r2 } from '@srs/core';
+import { r2 } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
-import { loadOrder, dimText, lengthsText, shapeName, totalPcs, slipText } from '../../lib/orders.js';
-import { loadCatalog } from '../../lib/catalog.js';
+import { loadOrder, dimText, lengthsText, shapeName, totalPcs } from '../../lib/orders.js';
 import { db } from '../../lib/backend.js';
 import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate, time } from '../../lib/format.js';
-import { go } from '../../lib/router.js';
+import { go, route } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { STAGES, BILLS, PAY_METHODS } from '../../config/options.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
+import { GiveSlip } from '../docs/GiveSlip.jsx';
+import '../docs/docs-screens.css';
 
 const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata', refund: 'kind_refund', transfer: 'kind_transfer', reversal: 'kind_reversal' };
 
@@ -29,17 +30,23 @@ export function Slip({ id }) {
 
   const st = STAGES[o.status];
   const extra = o.status === 'done' ? r2(o.paid - Number(o.total_amount)) : 0;
-  const share = async () => {
-    const cat = await loadCatalog();
-    const text = slipText(o, { shop: cat.settings?.slip_header?.name || company.value?.name, showWeight: cat.settings?.show_weight_on_slip !== false, tz });
-    window.open(whatsappLink(o.customers?.phone, text) || `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  };
+  const justDone = o.status === 'done' && route.value.query.done === '1';
+  const showBar = o.status !== 'cancelled' && (o.status !== 'done' || justDone || (extra > 0 && can('money')));
+  const due = o.status === 'done' ? Math.max(0, r2(Number(o.total_amount) - o.paid)) : 0;
 
   return (
     <>
       <TopBar title={`#${o.slip_no} · ${o.customers?.name}`} sub={`${shortDate(o.created_at, tz)} · ${time(o.created_at, tz)}`}
         right={<Chip tone={o.status === 'done' ? BILLS[o.bill_type]?.tone : st.tone}>{o.status === 'done' ? t(BILLS[o.bill_type]?.word) : t(st.word)}</Chip>} />
       <div class="page" style="padding-bottom:calc(var(--tabbar-h) + 150px)">
+        {justDone && (
+          <div class="done-banner">
+            <div class="ic"><Icon name="Check" size={26} stroke={3} /></div>
+            <div><div style="font-weight:800;font-size:17px">{t('pickup_done')}</div>
+              <div class="muted" style="font-size:13px">{due > 0 ? t('pickup_done_due', t(BILLS[o.bill_type]?.word), money(due, true)) : t('pickup_done_paid', t(BILLS[o.bill_type]?.word))}</div></div>
+          </div>
+        )}
+        {o.status === 'done' && can('money') && <GiveSlip o={o} autoOpen={route.value.query.send === '1'} />}
         {o.status === 'cancelled' && <div class="card pad tone-bad" style="margin-bottom:12px;font-weight:600">{t('cancelled_because', o.cancel_reason)}</div>}
 
         <div class="sec" style="margin-top:4px"><h3>{t('items_title')}</h3>{o.total_weight && <span class="muted num">{t('weight_total')} {kg(o.total_weight)}</span>}</div>
@@ -87,7 +94,7 @@ export function Slip({ id }) {
         )}
       </div>
 
-      <div class="actionbar">
+      {showBar && <div class="actionbar">
         {o.status === 'estimate' && can('new') && (
           <div class="row"><button class="btn btn-ghost" onClick={() => go(`/new?edit=${o.id}`)}><Icon name="FileText" size={18} />{t('act_edit')}</button>
             <button class="btn btn-accent grow" onClick={() => setSheet('accept')}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button></div>
@@ -100,13 +107,13 @@ export function Slip({ id }) {
           <div class="row"><button class="btn btn-ghost" onClick={() => setSheet('advance')}>{t('adv_add')}</button>
             <button class="btn btn-accent grow" onClick={() => go(`/pickup/${o.id}`)}><Icon name="PackageCheck" size={20} />{t('act_pickup')}</button></div>
         )}
-        {o.status === 'done' && <button class="btn btn-wa btn-block" onClick={share}><Icon name="MessageCircle" size={20} stroke={2.4} />{t('act_share')}</button>}
+        {justDone && can('new') && <button class="btn btn-brand btn-block" onClick={() => go('/new')}><Icon name="Plus" size={20} stroke={2.4} />{t('next_order')}</button>}
         <div class="row" style="justify-content:center;gap:18px;margin-top:6px">
           {['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
           {o.status === 'done' && extra > 0 && can('money') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
           {['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
         </div>
-      </div>
+      </div>}
 
       <AcceptSheet open={sheet === 'accept'} o={o} onClose={() => setSheet(null)} onDone={() => done(t('accepted_msg', o.slip_no))} />
       <AdvanceSheet open={sheet === 'advance'} o={o} onClose={() => setSheet(null)} onDone={() => done()} />

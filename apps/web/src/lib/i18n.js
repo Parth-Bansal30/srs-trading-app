@@ -15,12 +15,17 @@ export function setLang(l) {
 }
 
 export function t(key, ...args) {
+  return tIn(lang.value, key, ...args);
+}
+
+/** The same word in a chosen language — for things sent to a customer (slip, statement, message). */
+export function tIn(l, key, ...args) {
   const v = WORDS[key];
   if (!v) {
     if (import.meta.env.DEV) console.warn(`[words] missing: ${key}`);
     return key;
   }
-  let s = v[INDEX[lang.value]] ?? v[0];
+  let s = v[INDEX[l] ?? 0] ?? v[0];
   args.forEach((a, i) => { s = s.split(`{${i}}`).join(String(a)); });
   return s;
 }

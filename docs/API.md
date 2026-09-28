@@ -62,6 +62,8 @@ Authorization: Bearer <the person's login token>
 | `khata` | money | every customer's account worked out by `@srs/core` (due, credit, oldest due, per side); with `customer_id` also the full entries |
 | `reminderList` | money + khata | customers to **ask** about: slips unpaid/part-paid for `reminder_after_days` (default 25), not reminded in the last `reminder_repeat_days` (default 7). Nothing is sent. Message preview is neutral (no bill type) |
 | `sendReminder` | money + khata (+kacha) | the owner tapped Yes: the message is rebuilt on the server from real figures, logged in `reminders`, and returned with a WhatsApp link (`wa.me`) that opens the chat on the phone. WhatsApp Cloud API (same number via Meta "coexistence") comes later |
+| `slipDoc` | money (+kacha for a no-bill slip) | the customer's copy of a finished slip, built on the server from the saved figures (no rates per kg, no notes, never the word kacha), saved in `shared_docs` behind a secret link `#/d/<token>` — one link per slip and language, refreshed on every call. `send: true` marks it sent on WhatsApp. `upi: false` leaves out the pay-by-UPI QR |
+| `statementDoc` | money + khata | account statement for `from`–`to` (shop dates) and `which` bills (both / pakka / kacha): opening balance, every slip and payment with the running balance, closing — the khata's numbers. Slips paid in full at pickup are listed with “paid for slip #…”. `preview: true` only works it out (nothing saved); otherwise a new copy + link is saved each time |
 | `askSteelQuestion` | any staff | the prototype's steel guide, through the backend so the AI key never sits in the app. Daily limit per company (default 100) |
 
 Slip numbers are handed out by the database one at a time (20 phones at once → 20 different

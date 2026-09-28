@@ -15,8 +15,11 @@
     "@fontsource/noto-sans-devanagari": "^5.3.0",
     "@preact/signals": "^2.11.2",
     "@supabase/supabase-js": "^2.117.2",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^4.2.1",
     "lucide-preact": "^1.48.0",
-    "preact": "^10.29.8"
+    "preact": "^10.29.8",
+    "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",

@@ -1,9 +1,9 @@
 // Pickup: GST bill or No bill (both amounts shown), advance taken off, how it's paid → finish → send slip.
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { finishCalc, finishProblem, whatsappLink } from '@srs/core';
+import { finishCalc, finishProblem } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
-import { loadOrder, slipText } from '../../lib/orders.js';
+import { loadOrder } from '../../lib/orders.js';
 import { loadCatalog } from '../../lib/catalog.js';
 import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate } from '../../lib/format.js';
@@ -45,12 +45,8 @@ export function Pickup({ id }) {
     try {
       await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, pay_method: method, note });
       toast(t('completed_msg', o.slip_no));
-      if (share) {
-        const done = await loadOrder(o.id);
-        const text = slipText(done, { shop: cat.settings?.slip_header?.name || company.value?.name, showWeight: cat.settings?.show_weight_on_slip !== false, tz });
-        window.open(whatsappLink(done.customers?.phone, text) || `https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-      }
-      go(`/slip/${o.id}`);
+      // the slip page shows "Pickup done" and the WhatsApp / Print / PDF buttons (share → the send sheet opens)
+      go(`/slip/${o.id}?done=1${share ? '&send=1' : ''}`);
     } catch (e) { if (e.code === 'changed') { toast(t('changed_retry')); load(); } }
   };
 

@@ -51,6 +51,9 @@ export function NewOrder() {
       } else {
         const d = store.json(DRAFT);
         if (d?.items?.length) { setItems(d.items); setCustomer(d.customer); } else setItems([blankItem(c.settings?.default_unit)]);
+        // "New order" from a customer's page: that customer is already chosen
+        const pre = route.value.query.customer && c.customers.find((x) => x.id === route.value.query.customer);
+        if (pre) setCustomer({ id: pre.id, name: pre.name, phone: pre.phone });
       }
     });
   }, [editId]);

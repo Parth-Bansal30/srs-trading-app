@@ -288,3 +288,125 @@ test('reminders: only old dues are proposed, message rebuilt on the server, neve
   await rejects(fakeKhata(noPhone).ops.sendReminder(owner, { customer_id: CUST, side: 'kacha' }, 'k', 'h'), 400, 'no_phone');
   await rejects(k.ops.reminderList(sales, {}), 403);
 });
+
+// ---------- slips and statements for the customer ----------
+function docDb({ bill = 'pakka', upi = { id: 'srs.sample@upi', name: 'SRS Trading' }, showWeight = true, paidSlip = false } = {}) {
+  const calls = [];
+  const header = {
+    shop: { name: 'SRS Trading', address: 'Shop 12, Steel Market, New Delhi 110001', phone: '90000 00100', gstin: '07AAACE1234F1Z8', city: 'New Delhi' },
+    upi, show_weight: showWeight, timezone: 'Asia/Kolkata',
+    customer: { id: CUST, name: 'Rana Tools', phone: '9814022113', gstin: '03AAKFR5521L1Z4', address: 'Focal Point' },
+  };
+  const khata = {
+    timezone: 'Asia/Kolkata', shop: 'SRS Trading', settings: { reminder_after_days: 25, reminder_repeat_days: 7 },
+    customers: [{ id: CUST, name: 'Rana Tools', phone: '9814022113', active: true }],
+    orders: [
+      { id: 'o1', slip_no: '1034', customer_id: CUST, status: 'done', bill: 'pakka', in_khata: true, total: 12450.6, done_at: '2026-09-05T06:00:00Z' },
+      { id: 'o2', slip_no: '1047', customer_id: CUST, status: 'done', bill: 'kacha', in_khata: true, total: 4388, done_at: '2026-09-18T06:00:00Z' },
+    ],
+    payments: [{ id: 'p1', customer_id: CUST, order_id: null, amount: 15000, mode: 'UPI', kind: 'khata', side: 'pakka', note: 'Paytm - Dad', at: '2026-09-12T08:00:00Z' }],
+    old_dues: [{ id: 'd1', customer_id: CUST, side: 'kacha', ref: null, date: '2026-08-20', amount: 8500, reverses_id: null, note: 'from the red book' }],
+    last_reminders: [],
+  };
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_slip_data') {
+      return { ...header, order: { id: ORDER, slip_no: '1061', done_at: '2026-09-28T06:12:00Z', bill, gst_pct: 18, total_weight: 37.2,
+        material: 3018, cutting: 133.7, gst: bill === 'pakka' ? 567.31 : 0, total: bill === 'pakka' ? 3719.01 : 3151.7 },
+        items: [{ grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], weight: 25.8, lengths: [{ len: '300', pcs: 12 }, { len: '150', pcs: 4 }] }],
+        payments: [{ at: '2026-09-26T08:00:00Z', amount: 2000, mode: 'UPI', kind: 'advance' }] };
+    }
+    if (fn === 'api_doc_header') return structuredClone(header);
+    if (fn === 'api_khata_data') {
+      const kk = structuredClone(khata);
+      if (paidSlip) {
+        kk.orders.push({ id: 'o3', slip_no: '1050', customer_id: CUST, status: 'done', bill: 'pakka', in_khata: false, total: 2000, done_at: '2026-09-20T06:00:00Z' });
+        kk.payments.push({ id: 'p9', customer_id: CUST, order_id: 'o3', amount: 2000, mode: 'Cash', kind: 'pickup', side: 'pakka', note: null, at: '2026-09-20T06:00:00Z' });
+      }
+      return kk;
+    }
+    if (fn === 'api_save_doc') return { id: 'd1', token: 'tok-12345678901234567890', sent_at: args.p_send ? 'now' : null, send_count: args.p_send ? 1 : 0 };
+    return { ok: true };
+  };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, newKey: () => '99999999-0000-4000-8000-000000000001' });
+  return { ops, calls, last: (fn) => calls.filter((c) => c.fn === fn).at(-1)?.args };
+}
+
+test('slipDoc: the customer copy has totals, paid and balance — never rates, notes or the word kacha', async () => {
+  const { ops, last } = docDb();
+  const r = await ops.slipDoc(owner, { order_id: ORDER, lang: 'hi', send: true }, 'k', 'h');
+  assert.equal(r.token, 'tok-12345678901234567890');
+  const d = r.doc;
+  assert.equal(d.slip.gst, true);
+  assert.equal(d.slip.total, 3719.01);
+  assert.equal(d.slip.paid, 2000);
+  assert.equal(d.slip.balance, 1719.01);
+  assert.deepEqual(d.upi, { id: 'srs.sample@upi', name: 'SRS Trading', amount: 1719.01, note: 'Slip 1061' });
+  assert.equal(d.shop.gstin, '07AAACE1234F1Z8');
+  assert.equal(d.customer.gstin, '03AAKFR5521L1Z4');
+  assert.equal(d.slip.items[0].pcs, 16);
+  const text = JSON.stringify(d);
+  assert.ok(!/kacha|sell_rate|cut_rate|rate/i.test(text), text);
+  const s = last('api_save_doc');
+  assert.equal(s.p_kind, 'slip'); assert.equal(s.p_send, true); assert.equal(s.p_no_bill, false); assert.equal(s.p_lang, 'hi');
+});
+
+test('slipDoc: no-bill slip has no GST numbers; paid in full → no QR; weight hidden when the setting is off', async () => {
+  const { ops, last } = docDb({ bill: 'kacha', showWeight: false });
+  const r = await ops.slipDoc(owner, { order_id: ORDER }, 'k', 'h');
+  assert.equal(r.doc.slip.gst, false);
+  assert.equal(r.doc.shop.gstin, null);
+  assert.equal(r.doc.customer.gstin, null);
+  assert.equal(r.doc.slip.items[0].weight, null);
+  assert.equal(r.doc.slip.total_weight, null);
+  assert.equal(last('api_save_doc').p_no_bill, true);
+  assert.ok(!/kacha/i.test(JSON.stringify(r.doc)));
+  const { ops: o2 } = docDb({ upi: null });
+  assert.equal((await o2.slipDoc(owner, { order_id: ORDER }, 'k', 'h')).doc.upi, null);
+  await rejects(docDb().ops.slipDoc(weigher, { order_id: ORDER }, 'k', 'h'), 403);
+});
+
+test('statementDoc: period, running balance and closing match the khata; notes never included', async () => {
+  const { ops, last } = docDb();
+  const r = await ops.statementDoc(owner, { customer_id: CUST, from: '2026-09-01', to: '2026-09-30', which: 'both', send: true }, 'k', 'h');
+  const d = r.doc;
+  assert.equal(d.opening, 8500);
+  assert.equal(d.bought, 16838.6);
+  assert.equal(d.paid, 15000);
+  assert.equal(d.closing, 10338.6);
+  assert.deepEqual(d.rows.map((x) => [x.type, x.slip, x.bal]), [['slip', '1034', 20950.6], ['pay', null, 5950.6], ['slip', '1047', 10338.6]]);
+  assert.equal(d.rows[2].gst, false);
+  assert.equal(d.upi.amount, 10338.6);
+  assert.ok(!/Paytm|red book|kacha/i.test(JSON.stringify(d)));
+  assert.equal(last('api_save_doc').p_no_bill, true);
+  // GST bills only
+  const g = await ops.statementDoc(owner, { customer_id: CUST, from: '2026-09-01', to: '2026-09-30', which: 'pakka' }, 'k2', 'h');
+  assert.equal(g.doc.gst_only, true);
+  assert.equal(g.doc.closing, -2549.4); // paid more than the GST slip: money held for them
+  assert.equal(g.doc.upi, null);
+  assert.equal(last('api_save_doc').p_no_bill, false);
+  // someone without no-bill permission can't ask for it
+  await rejects(ops.statementDoc({ ...sales, perms: { ...sales.perms, khata: 1 } }, { customer_id: CUST, from: '2026-09-01', to: '2026-09-30', which: 'kacha' }, 'k', 'h'), 403);
+  await rejects(ops.statementDoc(owner, { customer_id: CUST, from: '2026-09-30', to: '2026-09-01' }, 'k', 'h'), 400);
+  // a slip paid in full at pickup (not in the khata) still shows, and the balance doesn't change
+  const q = docDb({ paidSlip: true });
+  const w = (await q.ops.statementDoc(owner, { customer_id: CUST, from: '2026-09-01', to: '2026-09-30', preview: true }, 'k4', 'h')).doc;
+  assert.equal(w.closing, 10338.6);
+  assert.deepEqual(w.rows.filter((x) => x.slip === '1050').map((x) => [x.type, x.amount, x.kind ?? null]), [['slip', 2000, null], ['pay', 2000, 'settled']]);
+  // just looking (the send sheet shows the totals first): nothing saved, no link
+  const p = docDb();
+  const pv = await p.ops.statementDoc(owner, { customer_id: CUST, from: '2026-09-01', to: '2026-09-30', preview: true }, 'k3', 'h');
+  assert.equal(pv.token, undefined);
+  assert.equal(pv.doc.closing, 10338.6);
+  assert.equal(p.calls.filter((c) => c.fn === 'api_save_doc').length, 0);
+});
+
+test('customers: GST number checked; UPI ID checked', async () => {
+  const { ops, last } = docDb();
+  await ops.updateCustomer(owner, { customer_id: CUST, changes: { gstin: '03aakfr5521l1z4', address: ' Focal Point ' } }, 'k', 'h');
+  assert.deepEqual(last('api_update_customer').p_changes, { gstin: '03AAKFR5521L1Z4', address: 'Focal Point' });
+  await rejects(ops.updateCustomer(owner, { customer_id: CUST, changes: { gstin: '03AAKFR5521L1Z5' } }, 'k', 'h'), 400);
+  await rejects(ops.changeSettings(owner, { changes: { upi_id: 'not an id' } }, 'k', 'h'), 400);
+  await ops.changeSettings(owner, { changes: { upi_id: 'srs.sample@upi' } }, 'k', 'h');
+  assert.equal(last('api_change_settings').p_changes.upi_id, 'srs.sample@upi');
+});

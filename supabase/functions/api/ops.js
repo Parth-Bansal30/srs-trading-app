@@ -56,6 +56,11 @@ const kg = (v, what) => {
 const payMethod = (v) => { if (!PAY_METHODS.includes(v)) throw bad('Choose how it was paid (Cash, UPI, Bank or Cheque).'); return v; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const r2 = (n) => Math.round(n * 100) / 100;
+const LANGS = ['en', 'hi', 'hn'];
+const UPI_ID = /^[A-Za-z0-9._-]{2,64}@[A-Za-z][A-Za-z0-9]{1,63}$/;
+/** Shop header on a customer document. The GST number only goes on GST documents. */
+const docShop = (s, gst) => ({ name: s?.name || '', address: s?.address || null, phone: s?.phone || null, city: s?.city || null, gstin: gst ? s?.gstin || null : null });
+const docCustomer = (c, gst) => ({ name: c?.name || '', phone: c?.phone || null, address: c?.address || null, gstin: gst ? c?.gstin || null : null });
 
 /** Same JSON for the same data, whatever the key order — used for the request fingerprint. */
 export function stableStringify(v) {
@@ -95,7 +100,15 @@ export function coreItemFromDb(i) {
   };
 }
 
-export function makeOps({ core, rpc, companySettings, askModel }) {
+export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID() }) {
+  /** '' clears it; otherwise it must be a correct GST number (typing mistakes are caught). */
+  const gstinValue = (v) => {
+    const s = String(v ?? '').trim();
+    if (!s) return '';
+    const g = core.checkGstin(s);
+    if (!g.ok) throw bad('That GST number has a mistake. Please check it.');
+    return g.gstin;
+  };
   const need = (caller, ...perms) => { for (const p of perms) if (!core.can(caller.perms, p)) throw forbidden(p); };
 
   /** Check the typed items and work out rate, density and weight for each — the same way the prototype does. */
@@ -382,14 +395,20 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
       need(caller, 'new');
       const name = text(a.name, 200);
       if (!name) throw bad('Enter the customer’s name.');
-      return rpc('api_create_customer', { p_caller: caller.id, p_key: key, p_hash: hash, p_name: name, p_phone: text(a.phone, 30), p_notes: text(a.notes) });
+      const extra = {};
+      if (a.gstin) extra.gstin = gstinValue(a.gstin);
+      if (a.address) extra.address = text(a.address, 300);
+      const cu = await rpc('api_create_customer', { p_caller: caller.id, p_key: key, p_hash: hash, p_name: name, p_phone: text(a.phone, 30), p_notes: text(a.notes) });
+      if (!Object.keys(extra).length) return cu;
+      return rpc('api_update_customer', { p_caller: caller.id, p_key: newKey(), p_hash: hash, p_customer: cu.id, p_changes: extra });
     },
 
     async updateCustomer(caller, a, key, hash) {
       need(caller, 'new');
       const ch = a.changes && typeof a.changes === 'object' ? a.changes : {};
       const changes = {};
-      for (const k of ['name', 'phone', 'notes']) if (k in ch) changes[k] = text(ch[k], k === 'name' ? 200 : k === 'phone' ? 30 : 500) ?? '';
+      for (const k of ['name', 'phone', 'notes', 'address']) if (k in ch) changes[k] = text(ch[k], k === 'name' ? 200 : k === 'phone' ? 30 : k === 'address' ? 300 : 500) ?? '';
+      if ('gstin' in ch) changes.gstin = gstinValue(ch.gstin);
       if ('active' in ch) changes.active = !!ch.active;
       return rpc('api_update_customer', { p_caller: caller.id, p_key: key, p_hash: hash, p_customer: uuid(a.customer_id, 'Which customer?'), p_changes: changes });
     },
@@ -405,6 +424,7 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
     async changeSettings(caller, a, key, hash) {
       need(caller, 'settings');
       if (!a.changes || typeof a.changes !== 'object' || Array.isArray(a.changes)) throw bad('Nothing to change.');
+      if ('upi_id' in a.changes && a.changes.upi_id && !UPI_ID.test(String(a.changes.upi_id).trim())) throw bad('That UPI ID doesn’t look right (like shopname@okaxis).');
       return rpc('api_change_settings', { p_caller: caller.id, p_key: key, p_hash: hash, p_changes: a.changes });
     },
 
@@ -546,6 +566,87 @@ export function makeOps({ core, rpc, companySettings, askModel }) {
         p_phone: phone, p_message: message, p_total_due: due.due, p_slip_refs: due.slips.map((s) => s.ref || 'old'),
       });
       return { ...res, message, whatsapp_link: core.whatsappLink(phone, message) };
+    },
+
+    // ---------- slips and statements for the customer (28 Sept 2026) ----------
+    /**
+     * The slip as the customer sees it — built here from the saved figures (never from the phone),
+     * saved as a snapshot with a secret link. send=true marks it as sent on WhatsApp.
+     * Never contains rates per kg, cutting rates, payment notes or the word "kacha".
+     */
+    async slipDoc(caller, a, key, hash) {
+      need(caller, 'money');
+      const orderId = uuid(a.order_id, 'Which slip?');
+      const lang = LANGS.includes(a.lang) ? a.lang : 'en';
+      const raw = await rpc('api_slip_data', { p_caller: caller.id, p_order: orderId });
+      const o = raw.order;
+      const gst = o.bill === 'pakka';
+      const payments = (raw.payments || []).map((p) => ({ at: p.at, amount: Number(p.amount), mode: p.mode, kind: p.kind }));
+      const paid = r2(payments.reduce((x, p) => x + p.amount, 0));
+      const total = Number(o.total);
+      const balance = r2(Math.max(0, total - paid));
+      const doc = {
+        v: 1, kind: 'slip', lang, timezone: raw.timezone,
+        shop: docShop(raw.shop, gst),
+        customer: docCustomer(raw.customer, gst),
+        slip: {
+          no: o.slip_no, at: o.done_at, gst, gst_pct: gst ? Number(o.gst_pct) : null,
+          show_weight: raw.show_weight !== false,
+          total_weight: raw.show_weight !== false ? Number(o.total_weight) : null,
+          items: (raw.items || []).map((i) => ({
+            grade: i.grade, shape: i.shape, unit: i.unit, dims: i.dims,
+            lengths: (i.lengths || []).map((l) => ({ len: l.len, pcs: Number(l.pcs) })),
+            pcs: (i.lengths || []).reduce((x, l) => x + Number(l.pcs), 0),
+            weight: raw.show_weight !== false && i.weight != null ? Number(i.weight) : null,
+          })),
+          material: Number(o.material), cutting: Number(o.cutting), gst_amount: gst ? Number(o.gst) : 0, total,
+          payments, paid, balance,
+        },
+        upi: a.upi !== false && raw.upi && balance > 0 ? { ...raw.upi, amount: balance, note: `Slip ${o.slip_no}` } : null,
+      };
+      const saved = await rpc('api_save_doc', {
+        p_caller: caller.id, p_key: key, p_hash: hash, p_kind: 'slip', p_order: orderId, p_customer: raw.customer.id,
+        p_lang: lang, p_doc: doc, p_send: !!a.send, p_no_bill: !gst,
+      });
+      return { ...saved, doc };
+    },
+
+    /** Account statement for a period: same numbers as the khata, one snapshot + link per send. */
+    async statementDoc(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      const customer = uuid(a.customer_id, 'Which customer?');
+      const lang = LANGS.includes(a.lang) ? a.lang : 'en';
+      const DAY = /^\d{4}-\d{2}-\d{2}$/;
+      if (!DAY.test(a.from || '') || !DAY.test(a.to || '') || a.from > a.to) throw bad('Choose the dates.');
+      const visible = core.visibleSides(caller.perms);
+      const which = ['both', 'pakka', 'kacha'].includes(a.which) ? a.which : 'both';
+      const sides = which === 'both' ? visible : visible.filter((s) => s === which);
+      if (!sides.length) throw forbidden('kacha');
+      const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer });
+      const head = await rpc('api_doc_header', { p_caller: caller.id, p_customer: customer });
+      const k = coreKhataFromDb(raw);
+      const l = core.customerLedger({ custId: customer, ...k, sides, allSides: visible });
+      // slips paid in full at pickup are listed too (they add and take away the same amount)
+      const entries = core.withPaidSlips(l.entries, core.paidSlipEntries({ custId: customer, ...k, sides }));
+      const st = core.statementFor({ entries, from: a.from, to: a.to, timeZone: raw.timezone });
+      const slipNo = Object.fromEntries(raw.orders.map((o) => [o.id, o.slip_no]));
+      const gstAll = sides.length === 1 && sides[0] === 'pakka';
+      const rows = st.rows.map((e) => (e.t === 'bill'
+        ? { day: e.day, type: e.old ? 'old' : 'slip', slip: e.old ? (e.ref || null) : slipNo[e.oid] || null, gst: e.side === 'pakka', amount: e.amt, bal: e.bal }
+        : { day: e.day, type: 'pay', mode: e.mode, kind: e.kind, pending: !!e.pending, slip: e.oid ? slipNo[e.oid] || null : null, amount: e.amt, bal: e.bal }));
+      const doc = {
+        v: 1, kind: 'statement', lang, timezone: raw.timezone,
+        shop: docShop(head.shop, true), customer: docCustomer(head.customer, true),
+        period: { from: a.from, to: a.to }, gst_only: gstAll,
+        opening: st.opening, bought: st.bought, paid: st.paid, closing: st.closing, rows,
+        upi: a.upi !== false && head.upi && st.closing > 0 ? { ...head.upi, amount: st.closing, note: 'Account balance' } : null,
+      };
+      if (a.preview === true) return { doc }; // just looking: nothing saved, no link
+      const saved = await rpc('api_save_doc', {
+        p_caller: caller.id, p_key: key, p_hash: hash, p_kind: 'statement', p_order: null, p_customer: customer,
+        p_lang: lang, p_doc: doc, p_send: !!a.send, p_no_bill: sides.includes('kacha'),
+      });
+      return { ...saved, doc };
     },
 
     // ---------- Ask Claude (steel guide) ----------

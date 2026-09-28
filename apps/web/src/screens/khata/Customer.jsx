@@ -1,11 +1,15 @@
 // One customer's account: how much, how old, every slip and payment — record a payment, remind, old balances.
 import { useEffect, useState } from 'preact/hooks';
-import { whatsappLink } from '@srs/core';
+import { whatsappLink, periodDates } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
 import { useAction } from '../../lib/action.js';
-import { money, shortDate } from '../../lib/format.js';
+import { money, shortDate, kg, dayStartISO } from '../../lib/format.js';
+import { loadCustomer, boughtSince, specialRates, sentSlips, avatarColour, firstLetter } from '../../lib/customers.js';
+import { fmtDay } from '../../lib/docs.js';
+import { CustomerEdit } from './CustomerEdit.jsx';
+import { StatementSheet } from '../docs/StatementSheet.jsx';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { PAY_METHODS } from '../../config/options.js';
@@ -19,14 +23,22 @@ const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata
 
 export function Customer({ id }) {
   const [r, setR] = useState(undefined);
-  const [sheet, setSheet] = useState(null); // pay | remind | old
+  const [sheet, setSheet] = useState(null); // pay | remind | old | edit | statement
+  const [info, setInfo] = useState(null);     // gstin, address, note…
+  const [extra, setExtra] = useState({});     // bought this year, special rates, sent slips
   const tz = company.value?.timezone;
+  const fy = periodDates('this_fy', new Date().toISOString(), tz);
   const load = () => call('khata', { customer_id: id }).then(([x]) => setR(x || null)).catch(() => setR(null));
-  useEffect(() => { load(); }, [id]);
+  const loadInfo = () => loadCustomer(id).then(setInfo).catch(() => {});
+  useEffect(() => {
+    load(); loadInfo();
+    Promise.all([boughtSince(id, dayStartISO(tz, new Date(`${fy.from}T12:00:00Z`))), specialRates(id), sentSlips(id)])
+      .then(([bought, rates, sent]) => setExtra({ bought, rates, sent })).catch(() => {});
+  }, [id]);
   if (r === undefined) return <><TopBar title="…" /><div class="page"><Skeleton h={140} /><Skeleton h={220} style="margin-top:12px" /></div></>;
   if (r === null) return <><TopBar title={t('nav_khata')} /><div class="page muted">{t('err_generic')}</div></>;
 
-  const c = r.customer;
+  const c = { ...r.customer, ...(info || {}) };
   const sides = Object.keys(r.by_side || {});
   const days = r.oldest ? daysSince(r.oldest, tz) : 0;
   const pak = r.by_side?.pakka?.due || 0; const kac = r.by_side?.kacha?.due || 0;
@@ -34,9 +46,21 @@ export function Customer({ id }) {
 
   return (
     <>
-      <TopBar title={c.name} sub={c.phone || t('no_phone')}
-        right={c.phone && <a class="round" href={`tel:${c.phone.replace(/\s/g, '')}`} aria-label={t('phone')}><Icon name="Phone" size={18} /></a>} />
+      <TopBar title={c.name} right={can('new') && <button class="round" onClick={() => setSheet('edit')} aria-label={t('cust_edit')}><Icon name="Pencil" size={18} /></button>} />
       <div class="page">
+        <div class="row" style="gap:14px">
+          <div class="cav big" style={`background:${avatarColour(c.id)}`}>{firstLetter(c.name)}</div>
+          <div class="grow" style="min-width:0">
+            <div class="num" style="font-weight:700">{c.phone || <span class="muted">{t('no_phone')}</span>}</div>
+            {(c.address || c.gstin) && <div class="faint" style="font-size:13px;font-weight:600">{[c.address, c.gstin && `GSTIN ${c.gstin}`].filter(Boolean).join(' · ')}</div>}
+          </div>
+        </div>
+        <div class="cacts">
+          {c.phone && <a href={`tel:${c.phone.replace(/[^\d+]/g, '')}`}><Icon name="Phone" size={17} stroke={2.3} />{t('cust_call')}</a>}
+          {c.phone && <a href={whatsappLink(c.phone, t('cust_wa_hello', c.name)) || '#'} target="_blank" rel="noopener"><Icon name="MessageCircle" size={17} stroke={2.3} />WhatsApp</a>}
+          {can('new') && <button class="new" onClick={() => go(`/new?customer=${c.id}`)}><Icon name="Plus" size={17} stroke={2.4} />{t('nav_new')}</button>}
+        </div>
+        <div style="height:14px" />
         <div class="card pad">
           <div class="faint" style="font-size:13px;font-weight:600">{r.due > 0 ? t('to_receive_cap') : r.credit > 0 ? t('advance_held') : t('all_clear')}</div>
           <div class="num" style="font-size:36px;font-weight:800;letter-spacing:-.04em;margin:2px 0 10px">{money(r.due > 0 ? r.due : r.credit, false)}</div>
@@ -60,13 +84,26 @@ export function Customer({ id }) {
           {can('khata') && r.due > 0 && <button class="btn btn-ghost" style="min-height:50px;font-size:15px;color:var(--bad)" onClick={() => setSheet('remind')}><Icon name="BellRing" size={18} />{t('remind')}</button>}
         </div>
 
+        {can('khata') && <button class="btn btn-brand btn-block" style="margin-top:12px" onClick={() => setSheet('statement')}><Icon name="FileText" size={19} stroke={2.3} />{t('send_stmt')}</button>}
+        {(extra.bought?.n > 0 || extra.rates?.length > 0 || c.notes) && (
+          <div class="card" style="margin-top:12px">
+            {extra.bought?.n > 0 && <div class="li"><div class="iconbox tone-neutral"><Icon name="ChartColumn" size={18} /></div>
+              <div class="grow"><div class="t">{t('cust_bought_year', fmtDay(fy.from, false))}</div><div class="s num">{t('cust_bought_s', extra.bought.n, kg(extra.bought.kg, 0))}</div></div>
+              <b class="num">{money(extra.bought.amount, false)}</b></div>}
+            {extra.rates?.length > 0 && <div class="li"><div class="iconbox tone-neutral"><Icon name="Tag" size={18} /></div>
+              <div class="grow"><div class="t">{t('cust_special')}</div><div class="s num">{extra.rates.map((x) => `${x.code} ${money(x.rate)}/kg`).join(' · ')}</div></div></div>}
+            {c.notes && <div class="li"><div class="iconbox tone-neutral"><Icon name="StickyNote" size={18} /></div>
+              <div class="grow"><div class="t">{t('cust_note_t')}</div><div class="s">{c.notes}</div></div></div>}
+          </div>
+        )}
+
         <div class="sec"><h3>{t('account_title')}</h3>{can('khata') && <button class="link" onClick={() => setSheet('old')}><Icon name="Plus" size={15} stroke={2.4} />{t('add_old')}</button>}</div>
         <div class="card">
           {entries.length === 0 ? <div class="li muted">{t('all_clear')}</div> : entries.map((e) => e.t === 'bill' ? (
             <button class="li" onClick={() => !e.old && go(`/slip/${e.oid}`)}>
               <div class={`iconbox tone-${e.side}`}><Icon name={e.old ? 'BookOpenText' : 'ReceiptText'} size={18} /></div>
               <div class="grow"><div class="t num">{e.old ? (e.ref ? t('old_slip', e.ref) : t('old_balance')) : `${t('slip')} #${r.slips?.[e.oid] ?? ''}`}</div>
-                <div class="s">{shortDate(e.date, tz)} · {t(e.side === 'pakka' ? 'bill_gst_short' : 'bill_none_short')}</div></div>
+                <div class="s">{shortDate(e.date, tz)} · {t(e.side === 'pakka' ? 'bill_gst_short' : 'bill_none_short')}{extra.sent?.has(e.oid) && <span style="color:var(--ok);font-weight:700"> · {t('sent_tick')}</span>}</div></div>
               <div style="text-align:right"><div class="num" style="font-weight:700">{money(e.amt)}</div>
                 {e.rem > 0 ? <Chip tone={e.paid > 0 ? 'accent' : 'warn'}>{e.paid > 0 ? t('due_left', money(e.rem)) : t('s_unpaid')}</Chip> : <Chip tone="ok">{t('s_paid')}</Chip>}</div>
             </button>
@@ -83,6 +120,8 @@ export function Customer({ id }) {
 
       <PaySheet open={sheet === 'pay'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
       <OldDueSheet open={sheet === 'old'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={() => { setSheet(null); toast(t('done_ok')); load(); }} />
+      <CustomerEdit open={sheet === 'edit'} c={c} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); toast(t('cust_saved')); loadInfo(); load(); }} />
+      {can('khata') && <StatementSheet open={sheet === 'statement'} c={c} sides={sides} onClose={() => setSheet(null)} />}
       {sheet === 'remind' && <ReminderSheet customer={c} side={kac > 0 && (!pak || kac >= pak) ? 'kacha' : 'pakka'} sides={sides.filter((s) => r.by_side[s].due > 0)} onClose={() => setSheet(null)} onSent={() => { setSheet(null); load(); }} />}
     </>
   );

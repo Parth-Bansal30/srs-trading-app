@@ -26,6 +26,7 @@ import { People } from './screens/admin/People.jsx';
 import { Settings } from './screens/admin/Settings.jsx';
 import { Summary } from './screens/admin/Summary.jsx';
 import { Guide } from './screens/Guide.jsx';
+import { PublicDoc } from './screens/docs/PublicDoc.jsx';
 import { toastMsg } from './ui/toast.js';
 import { FULL_SCREEN } from './config/navigation.js';
 
@@ -87,11 +88,17 @@ function Sidebar({ path }) {
   );
 }
 
+// A customer's link (#/d/<token>) shows only that document — no login, and the app itself never starts.
+let booted = false;
+const isPublic = (path) => path.startsWith('/d/');
+
 export function App() {
-  useEffect(() => { boot(); }, []);
+  const publicPath = isPublic(route.value.path);
+  useEffect(() => { if (!publicPath && !booted) { booted = true; boot(); } }, [publicPath]);
   const step = auth.value.step;
   // A business that has just registered lands on "Your shop is ready!".
   useEffect(() => { if (step === 'ready' && auth.value.justRegistered) { auth.value = { ...auth.value, justRegistered: false }; go('/start'); } }, [step]);
+  if (publicPath) return <PublicDoc token={decodeURIComponent(route.value.path.slice(3))} key={route.value.path} />;
   if (step === 'loading') return <div class="login" />;
   if (step === 'welcome') return <Welcome />;
   if (step === 'tour') return <Tour />;

@@ -16,3 +16,4 @@ export * from './permissions.js';
 export * from './ledger.js';
 export * from './reminders.js';
 export * from './gstin.js';
+export * from './statement.js';

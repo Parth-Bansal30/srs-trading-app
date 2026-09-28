@@ -1,0 +1,69 @@
+/* Paper: always white with dark ink (also in dark mode), so the PDF and print look the same everywhere. */
+.pp{background:#fff;color:#14161B;font-family:'Inter','Noto Sans Devanagari',system-ui,sans-serif;font-size:13px;line-height:1.4;position:relative;text-align:left}
+.pp-page{width:560px;min-height:794px;padding:34px 36px;display:flex;flex-direction:column;box-sizing:border-box}
+.pp-a4{width:620px;min-height:877px;padding:36px 38px}
+.pp-num{font-variant-numeric:tabular-nums}
+.pp-mute{color:#4B505A}.pp-faint{color:#868B94}.pp-bad{color:#B0413E;font-weight:700}
+.pp-small{font-size:12px;line-height:1.45}
+.pp-cap{font-size:11px;font-weight:700;letter-spacing:.08em;color:#868B94;text-transform:uppercase}
+.pp-grow{flex:1}
+.pp-badge{background:#1B2130;color:#F5F3EE;display:flex;align-items:center;justify-content:center;font-weight:900;letter-spacing:-.02em;flex:none}
+.pp-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.pp-shop{display:flex;gap:12px;align-items:center;min-width:0}
+.pp-shopname{font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.pp-right{text-align:right;flex:none}
+.pp-kind{letter-spacing:.12em;font-weight:800}
+.pp-no{font-size:24px;font-weight:800}
+.pp-cust{display:flex;justify-content:space-between;gap:12px;background:#F7F5F1;border-radius:10px;padding:12px 14px;margin-top:18px}
+.pp-custname{font-weight:800;font-size:15px;margin-top:2px}
+.pp-table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
+.pp-table th{text-align:left;color:#868B94;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:6px 6px 6px 0;border-bottom:1.5px solid #14161B;font-weight:700}
+.pp-table td{padding:9px 6px 9px 0;border-bottom:1px solid #E6E2DB;vertical-align:top}
+.pp-table .r{text-align:right;padding-right:0}
+.pp-table .pp-noline td{border-bottom:0;padding-top:8px}
+.pp-stmt td{padding:8px 8px 8px 0;font-size:12.5px}
+.pp-foot{display:flex;gap:18px;margin-top:14px;align-items:flex-end}
+.pp-sums{width:236px;flex:none}
+.pp-foot > .pp-grow{min-width:0}
+.pp-lr{display:flex;justify-content:space-between;gap:10px;padding:4px 0}
+.pp-lr > span:last-child{white-space:nowrap}
+.pp-total{padding:8px 0 6px;border-top:1.5px solid #14161B;margin-top:4px;font-size:16px;font-weight:800}
+.pp-paid{color:#1C8456;font-size:12.5px;padding:3px 0}
+.pp-bal{padding:8px 10px;margin-top:6px;border-radius:8px;font-weight:800}
+.pp-bal.due{background:#FFF3D6}.pp-bal.ok{background:#E2F3EA}
+.pp-pay{display:flex;gap:12px;align-items:center;border:1.5px dashed #D9D4CB;border-radius:12px;padding:10px;font-size:12px;line-height:1.45}
+.pp-pay b{font-size:13px;display:block}
+.pp-pay > div:last-child{min-width:0;overflow-wrap:anywhere}
+.pp-qr{position:relative;flex:none;background:#fff}
+.pp-sample{position:absolute;left:-6px;right:-6px;top:50%;transform:translateY(-50%) rotate(-12deg);background:#B0413E;color:#fff;font-size:10px;font-weight:800;text-align:center;padding:3px 2px;letter-spacing:.02em;line-height:1.2}
+.pp-stamp{position:absolute;left:90px;top:360px;transform:rotate(-12deg);border:3px solid #1C8456;color:#1C8456;border-radius:10px;padding:4px 16px;font-size:26px;font-weight:900;letter-spacing:.12em;opacity:.8;pointer-events:none}
+.pp-bottom{border-top:1px solid #E6E2DB;padding-top:10px;margin-top:18px;display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:#868B94}
+.pp-boxes{display:flex;gap:10px;margin-top:14px}
+.pp-box{flex:1;border-radius:10px;padding:10px 12px;border:1px solid #E6E2DB}
+.pp-box .pp-num{font-weight:800;font-size:15px;margin-top:2px}
+.pp-box.due{background:#FFF3D6;border-color:#FFF3D6}.pp-box.ok{background:#E2F3EA;border-color:#E2F3EA}
+/* 80 mm receipt roll */
+.pp-roll{width:302px;padding:18px 16px 22px;font-family:'DejaVu Sans Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;box-sizing:border-box}
+.pp-roll .pp-rollshop{font-family:'Inter',system-ui,sans-serif;font-weight:800;font-size:17px;text-transform:uppercase}
+.pp-c{text-align:center}
+.pp-dash{border-top:1px dashed #111;margin:8px 0}
+.pp-big{font-weight:800;font-size:14px}
+
+/* A preview that fits the phone: the paper is drawn at full size, then scaled down. */
+.pp-preview{background:var(--sunk);border-radius:18px;padding:14px;overflow:hidden;display:flex;justify-content:center}
+.pp-preview .pp-scale{transform-origin:top left;box-shadow:0 8px 24px rgba(0,0,0,.14);border-radius:6px;overflow:hidden}
+
+/* The customer's own page (link from WhatsApp) */
+.pub{min-height:100vh;background:#EEF0F3;display:flex;flex-direction:column;align-items:center;padding:16px 12px 150px}
+.pub .pp{box-shadow:0 10px 30px rgba(20,22,27,.12);border-radius:6px}
+.pub-bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #E6E2DB;padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;align-items:center;z-index:5}
+.pub-bar > *{width:100%;max-width:520px}
+
+/* Printing: only the paper, nothing else on the screen. */
+#print-root{display:none}
+@media print{
+  body.printing > *:not(#print-root){display:none !important}
+  body.printing #print-root{display:block}
+  body.printing #print-root .pp{box-shadow:none;border-radius:0;width:100%;min-height:0}
+  body.printing{background:#fff !important}
+}

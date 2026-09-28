@@ -8,3 +8,8 @@
 .wa-bubble{background:#E7F6DD;color:#10230F;border-radius:4px 16px 16px 16px;padding:12px 14px;font-size:14px;line-height:1.5;white-space:pre-wrap}
 .wa-meta{text-align:right;font-size:11px;color:#5d7a58;margin-top:4px}
 :root[data-theme="dark"] .wa-bubble{background:#1F3A24;color:#E4F5DC}
+.cav{width:42px;height:42px;border-radius:14px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;flex:none}
+.cav.big{width:60px;height:60px;border-radius:20px;font-size:26px}
+.cacts{display:flex;gap:8px;margin-top:14px}
+.cacts > *{flex:1;height:52px;border-radius:14px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:14px;color:var(--ink);text-decoration:none}
+.cacts > .new{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}

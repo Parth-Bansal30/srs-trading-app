@@ -1,0 +1,8 @@
+.give{margin-top:14px}
+.give-sm{min-height:48px;font-size:15px;padding:0 10px}
+.langchip{height:34px;padding:0 13px;border-radius:11px;font-weight:700;font-size:13.5px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink-2)}
+.langchip.on{border-color:var(--ink);background:var(--surface);color:var(--ink)}
+.done-banner{border-radius:22px;background:var(--ok-soft);padding:16px;display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.done-banner .ic{width:46px;height:46px;border-radius:15px;background:var(--ok);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.periods{display:flex;flex-wrap:wrap;gap:8px}
+.stmt-sum{padding:6px 16px;margin-top:14px}

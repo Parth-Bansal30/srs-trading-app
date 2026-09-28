@@ -3,7 +3,7 @@
 // (Shop-specific things like GST % live in the database settings, not here.)
 // ─────────────────────────────────────────────────────────────────────────────
 export const APP = {
-  name: 'SRS Trading',          // product name is still open — rename here
+  name: 'SRS Trading',          // product name is still open — rename here (and in index.html + public/manifest.webmanifest)
   version: '0.5.0',
   apiVersion: 1,                // must match the backend "api" function
   languages: [                  // order = order in the language switch

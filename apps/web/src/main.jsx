@@ -17,3 +17,6 @@ import { App } from './app.jsx';
 applyTheme();
 setLang(lang.value);
 render(<App />, document.getElementById('app'));
+
+// Installed app ("Add to Home Screen"): lets it open even on a weak network. Only on the real https site.
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

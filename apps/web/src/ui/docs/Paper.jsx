@@ -184,8 +184,8 @@ export function StatementPaper({ doc, madeAt = new Date().toISOString(), showQr 
       </>} />
       <CustomerBox c={doc.customer} l={l} gst />
       <div class="pp-boxes">
-        {[[tIn(l, 'stmt_opening'), doc.opening], [tIn(l, 'stmt_bought'), doc.bought], [tIn(l, 'stmt_paid'), doc.paid], [closingBox, Math.abs(doc.closing)]].map(([a, b], i) => (
-          <div class={`pp-box ${i === 3 ? (doc.closing > 0 ? 'due' : 'ok') : ''}`}><div class="pp-cap">{a}</div><div class="pp-num">{money(b, true)}</div></div>
+        {[[tIn(l, 'stmt_opening'), doc.opening], [tIn(l, 'stmt_bought'), doc.bought], [tIn(l, 'stmt_total_due'), Math.round((doc.opening + doc.bought) * 100) / 100], [tIn(l, 'stmt_paid'), doc.paid], [closingBox, Math.abs(doc.closing)]].map(([a, b], i) => (
+          <div class={`pp-box ${i === 2 ? 'sum' : ''} ${i === 4 ? (doc.closing > 0 ? 'due' : 'ok') : ''}`}><div class="pp-cap">{a}</div><div class="pp-num">{money(b, true)}</div></div>
         ))}
       </div>
       <table class="pp-table pp-stmt">

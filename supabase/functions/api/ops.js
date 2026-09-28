@@ -100,7 +100,7 @@ export function coreItemFromDb(i) {
   };
 }
 
-export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID() }) {
+export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null }) {
   /** '' clears it; otherwise it must be a correct GST number (typing mistakes are caught). */
   const gstinValue = (v) => {
     const s = String(v ?? '').trim();
@@ -110,6 +110,42 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     return g.gstin;
   };
   const need = (caller, ...perms) => { for (const p of perms) if (!core.can(caller.perms, p)) throw forbidden(p); };
+
+  /** Customers to ASK about (unpaid slips older than the setting, not reminded recently), from api_khata_data. */
+  function remindersFrom(caller, raw, lang) {
+    const k = coreKhataFromDb(raw);
+    const now = new Date().toISOString();
+    const last = new Map((raw.last_reminders || []).map((r) => [`${r.customer_id}:${r.side}`, r.at]));
+    const out = [];
+    for (const c of raw.customers) {
+      for (const side of core.visibleSides(caller.perms)) {
+        const due = core.dueSlips({ custId: c.id, side, ...k, now, timeZone: raw.timezone });
+        const opts = { afterDays: raw.settings.reminder_after_days, repeatDays: raw.settings.reminder_repeat_days,
+          lastReminderAt: last.get(`${c.id}:${side}`) || null, now, timeZone: raw.timezone };
+        if (!core.needsReminder(due, opts)) continue;
+        out.push({ customer: { id: c.id, name: c.name, phone: c.phone }, side, due: due.due, slips: due.slips,
+          oldest_days: due.oldestDays, has_phone: !!core.normalizeIndianMobile(c.phone),
+          preview: core.reminderMessage({ lang, shop: raw.shop, customer: c.name, due }) });
+      }
+    }
+    return out.sort((x, y) => y.oldest_days - x.oldest_days);
+  }
+
+  /** The phone notification for the evening summary, in the person's language. */
+  function eveningNote(d, lang) {
+    const L = { en: 0, hi: 1, hn: 2 }[lang] ?? 0;
+    const w = (en, hi, hn) => [en, hi, hn][L];
+    const m = (v) => `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(Math.abs(v)))}`;
+    const s = d.summary;
+    const [y, mo, dd] = d.day.split('-').map(Number);
+    const when = `${dd} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][mo - 1]}`;
+    const parts = [w(`Sales ${m(s.sales.total)} · ${s.sales.n} slips`, `बिक्री ${m(s.sales.total)} · ${s.sales.n} पर्चियां`, `Bikri ${m(s.sales.total)} · ${s.sales.n} parchiyan`),
+      w(`money in ${m(s.money.total)}`, `आया ${m(s.money.total)}`, `aaya ${m(s.money.total)}`)];
+    if (s.cash.diff) parts.push(s.cash.diff < 0 ? w(`cash ${m(s.cash.diff)} short`, `कैश ${m(s.cash.diff)} कम`, `cash ${m(s.cash.diff)} kam`) : w(`cash ${m(s.cash.diff)} extra`, `कैश ${m(s.cash.diff)} ज़्यादा`, `cash ${m(s.cash.diff)} zyada`));
+    if (s.look.length) parts.push(w(`${s.look.length} things need a look`, `${s.look.length} बातें देखनी हैं`, `${s.look.length} baatein dekhni hain`));
+    return { title: `${w('Evening summary', 'शाम का हिसाब', 'Shaam ka hisaab')} · ${when}`, body: parts.join(' · '),
+      url: `#/evening?day=${d.day}`, tag: `evening-${d.day}`, day: d.day, y };
+  }
 
   /** Check the typed items and work out rate, density and weight for each — the same way the prototype does. */
   function buildItems(caller, ctx, rawItems) {
@@ -511,22 +547,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     async reminderList(caller, a) {
       need(caller, 'money', 'khata');
       const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
-      const k = coreKhataFromDb(raw);
-      const now = new Date().toISOString();
-      const last = new Map((raw.last_reminders || []).map((r) => [`${r.customer_id}:${r.side}`, r.at]));
-      const out = [];
-      for (const c of raw.customers) {
-        for (const side of core.visibleSides(caller.perms)) {
-          const due = core.dueSlips({ custId: c.id, side, ...k, now, timeZone: raw.timezone });
-          const opts = { afterDays: raw.settings.reminder_after_days, repeatDays: raw.settings.reminder_repeat_days,
-            lastReminderAt: last.get(`${c.id}:${side}`) || null, now, timeZone: raw.timezone };
-          if (!core.needsReminder(due, opts)) continue;
-          out.push({ customer: { id: c.id, name: c.name, phone: c.phone }, side, due: due.due, slips: due.slips,
-            oldest_days: due.oldestDays, has_phone: !!core.normalizeIndianMobile(c.phone),
-            preview: core.reminderMessage({ lang: a?.lang, shop: raw.shop, customer: c.name, due }) });
-        }
-      }
-      return out.sort((x, y) => y.oldest_days - x.oldest_days);
+      return remindersFrom(caller, raw, a?.lang);
     },
 
     /** The message that WOULD be sent (nothing is logged or sent). */
@@ -649,6 +670,91 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return { ...saved, doc };
     },
 
+
+    // ---------- evening summary for the owner (29 Sept 2026) ----------
+    /** Everything about one shop day (default today), as this person may see it. */
+    async daySummary(caller, a) {
+      need(caller, 'money');
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(a?.day || '') ? a.day : null;
+      const raw = await rpc('api_day_data', { p_caller: caller.id, p_day: day });
+      let reminders = []; let toReceive = 0;
+      if (core.can(caller.perms, 'khata')) {
+        const kraw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
+        const k = coreKhataFromDb(kraw);
+        const sides = core.visibleSides(caller.perms);
+        toReceive = r2(kraw.customers.reduce((x, c) => x + core.customerLedger({ custId: c.id, ...k, sides, allSides: sides }).due, 0));
+        reminders = remindersFrom(caller, kraw).map((r) => ({ name: r.customer.name, due: r.due, days: r.oldest_days }));
+      }
+      const weighed = (raw.weighed || []).map((w) => {
+        const c = core.calcItem({ shape: w.shape, unit: w.unit, d: w.dims, rows: (w.lengths || []).map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
+          rate: 0, cutRate: 0, density: Number(w.density) }, 'est', { minInch: w.min_inch ?? raw.settings.min_inch ?? 1 });
+        return { slipNo: w.slip_no, grade: w.grade, expected: c ? c.est : 0, actual: Number(w.actual) };
+      });
+      const summary = core.daySummary({
+        orders: (raw.orders || []).map((o) => ({ id: o.id, slipNo: o.slip_no, customer: o.customer, bill: o.bill, total: Number(o.total), weight: Number(o.weight || 0),
+          inKhata: o.in_khata, by: o.by, items: (o.items || []).map((i) => ({ grade: i.grade, rate: Number(i.rate), stdRate: i.std_rate == null ? null : Number(i.std_rate), special: i.special })),
+          payments: (o.payments || []).map((p) => ({ amount: Number(p.amount), kind: p.kind, rev: p.rev, mode: p.mode })) })),
+        payments: (raw.payments || []).map((p) => ({ amount: Number(p.amount), kind: p.kind, rev: p.rev, mode: p.mode, customer: p.customer, orderId: p.order_id, at: p.at })),
+        cashClose: raw.cash_close, weighed, reminders, toReceive,
+        waiting: (raw.waiting || []).map((w) => ({ slipNo: w.slip_no, customer: w.customer })),
+        cancelled: (raw.cancelled || []).map((x) => ({ slipNo: x.slip_no, customer: x.customer, reason: x.reason })),
+        lastWeek: raw.last_week ? { total: Number(raw.last_week.total), n: Number(raw.last_week.n) } : null,
+        weightWarnPct: Number(raw.settings.weight_warn_pct ?? 5), isToday: raw.day === raw.today,
+      });
+      return { day: raw.day, today: raw.today, timezone: raw.timezone, shop: raw.shop, kacha: core.can(caller.perms, 'kacha'),
+        khata: core.can(caller.perms, 'khata'), summary };
+    },
+
+    async eveningGet(caller) {
+      need(caller, 'money');
+      return { ...(await rpc('api_evening_get', { p_caller: caller.id })), push_key: push?.vapid?.publicKey || null };
+    },
+
+    async eveningSet(caller, a, key, hash) {
+      need(caller, 'settings');
+      const ch = a?.changes && typeof a.changes === 'object' ? a.changes : {};
+      const changes = {};
+      if ('on' in ch) changes.on = !!ch.on;
+      if ('time' in ch) { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(ch.time))) throw bad('Choose a time like 20:00.'); changes.time = ch.time; }
+      if ('days' in ch) {
+        const days = (Array.isArray(ch.days) ? ch.days : []).map(Number);
+        if (days.some((d) => !(d >= 1 && d <= 7))) throw bad('Choose the days.');
+        changes.days = days;
+      }
+      if (ch.people && typeof ch.people === 'object') {
+        changes.people = Object.fromEntries(Object.entries(ch.people).filter(([id]) => isUuid(id)).map(([id, v]) => [id, !!v]));
+      }
+      const r = await rpc('api_evening_set', { p_caller: caller.id, p_key: key, p_hash: hash, p_changes: changes });
+      return { ...r, push_key: push?.vapid?.publicKey || null };
+    },
+
+    /** This phone: notifications on (sub = the phone's push subscription) or off. */
+    async savePush(caller, a, key, hash) {
+      const sub = a?.sub;
+      if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint)) throw bad('This phone could not switch on notifications.');
+      if (a.on !== false) need(caller, 'money');
+      const clean = { endpoint: sub.endpoint.slice(0, 1000), keys: { p256dh: String(sub.keys?.p256dh || ''), auth: String(sub.keys?.auth || '') }, ua: text(a.ua, 300) };
+      if (a.on !== false && (clean.keys.p256dh.length < 80 || clean.keys.auth.length < 16)) throw bad('This phone could not switch on notifications.');
+      return rpc('api_save_push', { p_caller: caller.id, p_key: key, p_hash: hash, p_sub: clean, p_on: a.on !== false });
+    },
+
+    /** Send today's summary to my own phones now (to check it works). */
+    async pushTest(caller, a) {
+      need(caller, 'money');
+      if (!push?.vapid) throw new ApiError(503, 'push_not_ready', 'Phone notifications are not set up on the server yet.');
+      const subs = await rpc('api_my_push', { p_caller: caller.id });
+      if (!subs.length) throw bad('Switch on notifications on this phone first.');
+      const d = await ops.daySummary(caller, {});
+      const msg = eveningNote(d, a?.lang);
+      let sent = 0;
+      for (const s of subs) {
+        const res = await push.sendPush(s, msg, push.vapid).catch(() => ({ ok: false, gone: false }));
+        await rpc('api_push_result', { p_endpoint: s.endpoint, p_ok: res.ok, p_gone: res.gone });
+        if (res.ok) sent++;
+      }
+      return { sent, phones: subs.length };
+    },
+
     // ---------- Ask Claude (steel guide) ----------
     async askSteelQuestion(caller, a) {
       const q = text(a.question, 1000);
@@ -664,7 +770,29 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     },
   };
 
-  return { ops, buildItems };
+  /** The evening job (called every 10 minutes by pg_cron through the api function): send what is due. */
+  async function runEvening(now = new Date().toISOString()) {
+    if (!push?.vapid) return { skipped: 'no_vapid_keys' };
+    const due = await rpc('api_evening_due', { p_now: now });
+    let sent = 0;
+    for (const co of due || []) {
+      let n = 0;
+      for (const r of co.recipients || []) {
+        let msg;
+        try { msg = eveningNote(await ops.daySummary({ id: r.person_id, company_id: co.company_id, perms: r.perms || {} }, { day: co.day }), r.lang); } catch { continue; }
+        for (const s of r.subs || []) {
+          const res = await push.sendPush(s, msg, push.vapid).catch(() => ({ ok: false, gone: false }));
+          await rpc('api_push_result', { p_endpoint: s.endpoint, p_ok: res.ok, p_gone: res.gone });
+          if (res.ok) n++;
+        }
+      }
+      await rpc('api_evening_sent', { p_company: co.company_id, p_day: co.day, p_sent: n });
+      sent += n;
+    }
+    return { companies: (due || []).length, sent };
+  }
+
+  return { ops, buildItems, runEvening, eveningNote };
 }
 
 /** Same instructions as the prototype's Ask Claude screen. */
@@ -680,7 +808,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview']);
+export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet']);
 
 /** Database error code → HTTP answer the app can show. */
 export function mapDbError(code, message) {

@@ -1,0 +1,34 @@
+.gi-badge{width:54px;height:54px;border-radius:17px;background:var(--brand);color:var(--on-brand);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;flex:none;letter-spacing:-.02em}
+.gi-what{font-size:15px;line-height:1.5;margin-top:12px}
+.gi-chips{display:flex;flex-wrap:wrap;gap:6px}
+.gi-chips .chip{height:30px;padding:0 12px;font-size:13px}
+.gi-comp{padding:8px 14px}
+.gi-bar{display:grid;grid-template-columns:104px 1fr 86px;gap:10px;align-items:center;padding:6px 0}
+.gi-el{font-size:13.5px;font-weight:600}
+.gi-track{height:10px;border-radius:5px;background:var(--sunk);position:relative;overflow:hidden}
+.gi-track > div{position:absolute;top:0;bottom:0;border-radius:5px;background:var(--brand)}
+:root[data-theme="dark"] .gi-track > div{background:var(--accent)}
+.gi-pct{font-size:13px;font-weight:700;text-align:right}
+.gi-iron{display:flex;justify-content:space-between;font-size:13px;padding:7px 0 3px;border-top:1px solid var(--line);margin-top:4px}
+.gi-boxes{display:flex;gap:8px}
+.gi-boxes .card{flex:1;padding:10px 12px;min-width:0}
+.gi-k{font-size:12px;font-weight:700}.gi-v{font-weight:800;font-size:17px}.gi-v.gi-small{font-size:13.5px;line-height:1.3}.gi-u{font-size:11.5px;font-weight:600}
+.gi-work{display:flex;align-items:center;gap:10px;padding:9px 0}
+.gi-work + .gi-work{border-top:1px solid var(--line)}
+.gi-dots{display:inline-flex;gap:4px;flex:none}
+.gi-dots span{width:10px;height:10px;border-radius:5px;background:var(--line-2)}
+.gi-dots span.on{background:var(--ok)}
+.gi-warn{margin-top:12px;border-radius:14px;background:var(--warn-soft);color:var(--warn);padding:10px 12px;font-size:13.5px;font-weight:600;display:flex;gap:8px;line-height:1.4}
+.gi-warn svg{flex:none;margin-top:1px}
+.gi-alt{width:44px;height:44px;border-radius:14px;background:var(--sunk);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12.5px;flex:none}
+.gi-use{min-height:38px;height:38px;padding:0 14px;font-size:14px;border-radius:11px}
+.gi-act{height:34px;padding:0 12px;font-size:13px}
+.gi-i{width:38px;height:38px;border-radius:19px;border:1.5px solid var(--line-2);background:var(--surface);color:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:800;font-size:18px;flex:none}
+.gi-i:active{border-color:var(--accent);color:var(--accent)}
+/* compare */
+.cmp{display:grid;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden;font-size:13px}
+.cmp > div{padding:9px 5px;border-top:1px solid var(--line);text-align:center;font-weight:600;display:flex;align-items:center;justify-content:center;min-width:0;overflow-wrap:anywhere;font-size:12.5px}
+.cmp > .k{color:var(--ink-3);font-weight:700;font-size:11.5px;text-align:left;justify-content:flex-start;overflow-wrap:normal}
+.cmp > .h{border-top:0;background:var(--sunk);font-size:16px;font-weight:800;padding:6px 4px}
+.cmp > .h select{appearance:none;border:0;background:transparent;font:inherit;color:inherit;text-align:center;width:100%;padding:6px 0;cursor:pointer}
+.cmp .best{color:var(--ok);font-weight:800}

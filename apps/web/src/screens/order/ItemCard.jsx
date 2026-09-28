@@ -8,9 +8,11 @@ import { money, kg, shortDate } from '../../lib/format.js';
 import { SHAPE_LOOK } from '../../config/options.js';
 import { Icon, Chip } from '../../ui/kit.jsx';
 import { GradePicker } from './GradePicker.jsx';
+import { GradeInfo, InfoButton } from '../../ui/grades/GradeInfo.jsx';
 
 export function ItemCard({ index, item, r, cat, customer, editingId, onChange, onUnit, onRemove }) {
   const [pickGrade, setPickGrade] = useState(false);
+  const [info, setInfo] = useState(false);
   const [hint, setHint] = useState(null);
   const sh = SHAPES[item.shape];
   const m = r.m;
@@ -31,6 +33,7 @@ export function ItemCard({ index, item, r, cat, customer, editingId, onChange, o
     <div class="card item">
       <div class="row">
         <button class="grade" onClick={() => setPickGrade(true)}>{m ? m.code : <span style="color:var(--accent)">{t('choose_grade')}</span>}<Icon name="ChevronRight" size={16} /></button>
+        {m && <InfoButton onClick={() => setInfo(true)} label={`${m.code} info`} />}
         {m && <Chip tone="neutral">{t(`fam_${m.family}`)}</Chip>}
         <div class="grow" />
         <span class="faint" style="font-size:13px;font-weight:600">{t('item')} {index + 1}</span>
@@ -107,6 +110,8 @@ export function ItemCard({ index, item, r, cat, customer, editingId, onChange, o
 
       <GradePicker open={pickGrade} materials={cat.materials} onClose={() => setPickGrade(false)}
         onPick={(mat) => { onChange({ material_id: mat.id, rate: null, cut_rate: null }); setPickGrade(false); }} />
+      <GradeInfo m={m} materials={cat.materials} open={info && !!m} onClose={() => setInfo(false)}
+        onUse={(alt) => { onChange({ material_id: alt.id, rate: null, cut_rate: null }); setInfo(false); }} />
     </div>
   );
 }

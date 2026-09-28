@@ -10,12 +10,18 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as core from '../_shared/core/index.js';
 import { ApiError, API_VERSION, SUPPORTED_VERSIONS, READ_OPS, isUuid, makeOps, mapDbError, stableStringify } from './ops.js';
+import { sendPush } from './webpush.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-haiku-4-5';
+// Phone notifications (evening summary). Set by scripts/evening-setup.mjs; without them the job does nothing.
+const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') ?? '';
+const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? '';
+const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:owner@example.com';
+const CRON_SECRET = Deno.env.get('EVENING_CRON_SECRET') ?? '';
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -57,7 +63,16 @@ async function askModel(prompt: string): Promise<string> {
   return (body.content || []).filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('').trim();
 }
 
-const { ops } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null });
+const push = VAPID_PUBLIC && VAPID_PRIVATE ? { vapid: { publicKey: VAPID_PUBLIC, privateKey: VAPID_PRIVATE, subject: VAPID_SUBJECT }, sendPush } : null;
+const { ops, runEvening } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push });
+
+/** Same length + same bytes, without leaking where they differ. */
+function sameSecret(a: string, b: string) {
+  if (!a || !b || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
 
 async function sha256(s: string) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -70,6 +85,16 @@ Deno.serve(async (req: Request) => {
   const started = Date.now();
   let op = '?';
   try {
+    // 0. The evening job (pg_cron, every 10 minutes) — only with the shared secret from Vault.
+    const cron = req.headers.get('x-cron-secret');
+    if (cron !== null) {
+      if (!sameSecret(cron, CRON_SECRET)) throw new ApiError(401, 'not_signed_in', 'Please sign in.');
+      op = 'eveningJob';
+      const data = await runEvening();
+      console.log(JSON.stringify({ op, ok: true, ms: Date.now() - started, ...data }));
+      return json(200, { ok: true, v: API_VERSION, data });
+    }
+
     // 1. Who is calling? (their own login, checked by the database)
     const authz = req.headers.get('Authorization') ?? '';
     if (!authz.startsWith('Bearer ')) throw new ApiError(401, 'not_signed_in', 'Please sign in.');

@@ -20,6 +20,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
   { id: 'reports', route: '/reports', word: 'tile_today', icon: 'ChartColumn', perm: 'money' },
+  { id: 'evening', route: '/evening', word: 'nav_evening', icon: 'Moon', perm: 'money' },
   { id: 'guide', route: '/guide', word: 'nav_guide', icon: 'Sparkles' },
   { id: 'settings', route: '/settings', word: 'nav_settings', icon: 'Settings', perm: 'settings' },
 ];

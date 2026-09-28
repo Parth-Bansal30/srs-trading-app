@@ -27,6 +27,9 @@ import { Settings } from './screens/admin/Settings.jsx';
 import { Summary } from './screens/admin/Summary.jsx';
 import { Guide } from './screens/Guide.jsx';
 import { PublicDoc } from './screens/docs/PublicDoc.jsx';
+import { Compare } from './screens/grades/Compare.jsx';
+import { Evening } from './screens/evening/Evening.jsx';
+import { EveningSettings } from './screens/evening/EveningSettings.jsx';
 import { toastMsg } from './ui/toast.js';
 import { FULL_SCREEN } from './config/navigation.js';
 
@@ -50,6 +53,9 @@ const SCREENS = {
   '/reports': () => <Summary />,
   '/guide': () => <Guide />,
   '/start': () => <Start />,
+  '/compare': () => <Compare />,
+  '/evening': () => <Evening />,
+  '/evening/settings': () => <EveningSettings />,
 };
 function match(path) {
   for (const [pattern, render] of Object.entries(SCREENS)) {

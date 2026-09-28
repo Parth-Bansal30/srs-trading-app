@@ -1,0 +1,346 @@
+// The 10 starting steel grades and what the "i" button shows about each one.
+// Three languages everywhere: [English, हिंदी, Hinglish].
+// Figures are TYPICAL values from the standards (BS 970 / IS 2062 / AISI / EN 10088), checked on the web
+// on 29 Sept 2026. The mill certificate always wins. The shop can edit any line in the app (Rates → grade → Edit info).
+//
+// Used by scripts/gen-steel-template.mjs to write the database migration (template for new businesses +
+// update of the grades already in the app). Change the text here, run the generator, add the migration.
+
+// comp: [element symbol, min % (null = only a maximum), max %]
+// work: [rating 1–5, note]  (5 = easiest / best)
+// score: shock (toughness under blows) and wear (surface wear resistance), 1–5, used in "Compare"
+
+export const GRADES = [
+  {
+    code: 'MS', family: 'carbon', density: null, sell: 58, cut: 2,
+    info: {
+      v: 2,
+      eq: 'IS 2062 E250 · A36 · S275',
+      kind: ['Mild steel (low carbon)', 'माइल्ड स्टील (कम कार्बन)', 'Mild steel (kam carbon)'],
+      what: [
+        'The everyday low-carbon steel used for fabrication. It is soft and forgiving: it cuts fast, bends without cracking and welds very easily with any method. It cannot be hardened by heating and quenching, so it is chosen where shape and cost matter more than strength or wear.',
+        'फ़ैब्रिकेशन में रोज़ इस्तेमाल होने वाला कम कार्बन स्टील। नरम और आसान: जल्दी कटता है, बिना फटे मुड़ता है और किसी भी तरीके से आसानी से वेल्ड होता है। गरम करके पानी/तेल में ठंडा करने से सख़्त नहीं होता, इसलिए वहाँ लिया जाता है जहाँ मज़बूती या घिसाव से ज़्यादा आकार और दाम मायने रखते हैं।',
+        'Fabrication mein roz use hone wala kam carbon steel. Naram aur aasaan: jaldi katta hai, bina phate mudta hai aur kisi bhi tareeke se aasaani se weld hota hai. Garam karke thanda karne se sakht nahi hota, isliye wahan liya jaata hai jahan mazbooti ya ghisaav se zyada shape aur daam maayne rakhte hain.',
+      ],
+      good: [
+        ['Frames and brackets', 'Base plates', 'Gates and grills', 'Sheds and structures', 'Machine bases and stands', 'Flanges', 'Clamps and supports', 'Spacers and washers', 'Trolleys and carts', 'Jigs that don’t wear'],
+        ['फ्रेम और ब्रैकेट', 'बेस प्लेट', 'गेट और ग्रिल', 'शेड और ढांचे', 'मशीन बेस और स्टैंड', 'फ्लैंज', 'क्लैंप और सपोर्ट', 'स्पेसर और वॉशर', 'ट्रॉली और गाड़ी', 'बिना घिसने वाले जिग'],
+        ['Frame aur bracket', 'Base plate', 'Gate aur grill', 'Shed aur dhaancha', 'Machine base aur stand', 'Flange', 'Clamp aur support', 'Spacer aur washer', 'Trolley aur gaadi', 'Bina ghisne wale jig'],
+      ],
+      comp: [['C', null, 0.23], ['Mn', null, 1.5], ['Si', null, 0.4], ['S', null, 0.045], ['P', null, 0.045]],
+      str: { tensile: '≥ 410', yield: '≥ 250', hard: '≈ 120–160 HB', cond: ['as rolled', 'रोल की हुई हालत में', 'rolled haalat mein'] },
+      work: {
+        cut: [5, ['Very easy', 'बहुत आसान', 'Bahut aasaan']],
+        machine: [3, ['Fine, a little sticky', 'ठीक, थोड़ा चिपकता है', 'Theek, thoda chipakta hai']],
+        weld: [5, ['Very easy, any method', 'बहुत आसान, किसी भी तरीके से', 'Bahut aasaan, kisi bhi tareeke se']],
+        harden: [1, ['Does not harden', 'सख़्त नहीं होता', 'Sakht nahi hota']],
+        rust: [1, ['Rusts — paint or oil it', 'ज़ंग लगता है — पेंट या तेल लगाएं', 'Zang lagta hai — paint ya tel lagao']],
+      },
+      score: { shock: 3, wear: 1 },
+      heat: ['Not hardened by quenching. A hard skin is possible only by case-carburising small pins.', 'बुझाने (क्वेंच) से सख़्त नहीं होता। छोटे पिन पर सिर्फ़ केस-कार्बराइज़िंग से ऊपरी परत सख़्त हो सकती है।', 'Quench karne se sakht nahi hota. Chhote pin par sirf case-carburising se upar ki parat sakht ho sakti hai.'],
+      watch: ['Rusts if left unprotected. Not for shafts, gears or anything that carries heavy load or rubs.', 'सुरक्षा न हो तो ज़ंग लगता है। शाफ्ट, गियर या भारी लोड और रगड़ वाले पार्ट के लिए नहीं।', 'Suraksha na ho to zang lagta hai. Shaft, gear ya bhaari load aur ragad wale part ke liye nahi.'],
+      alts: [['EN8', ['Stronger. Use when the part carries load or turns.', 'ज़्यादा मज़बूत। लोड वाले या घूमने वाले पार्ट के लिए।', 'Zyada mazboot. Load wale ya ghoomne wale part ke liye.']]],
+      tell: ['Mild steel is right for frames, plates and brackets — cheap and easy to weld. For shafts or moving parts take EN8.', 'फ्रेम, प्लेट और ब्रैकेट के लिए माइल्ड स्टील सही है — सस्ता और वेल्ड करना आसान। शाफ्ट या चलने वाले पार्ट के लिए EN8 लें।', 'Frame, plate aur bracket ke liye mild steel sahi hai — sasta aur weld karna aasaan. Shaft ya chalne wale part ke liye EN8 lo.'],
+    },
+  },
+  {
+    code: 'EN8', family: 'carbon', density: null, sell: 75, cut: 3,
+    info: {
+      v: 2,
+      eq: 'C45 · AISI 1045 · 080M40',
+      kind: ['Medium-carbon steel', 'मध्यम कार्बन स्टील', 'Medium carbon steel'],
+      what: [
+        'The most common all-round engineering steel, with about 0.4% carbon. It is clearly stronger than mild steel, machines well to a good finish and is not costly. It is usually sold as rolled or normalised; the surface can be hardened by flame or induction while the inside stays tough. The first choice for normal shafts, pins and bolts.',
+        'सबसे आम इंजीनियरिंग स्टील, लगभग 0.4% कार्बन। माइल्ड स्टील से साफ़ ज़्यादा मज़बूत, अच्छी फिनिश के साथ आसानी से मशीन होता है और महंगा नहीं। आमतौर पर रोल्ड या नॉर्मलाइज़ मिलता है; ऊपरी सतह फ्लेम या इंडक्शन से सख़्त की जा सकती है, अंदर से मज़बूत रहता है। आम शाफ्ट, पिन और बोल्ट के लिए पहली पसंद।',
+        'Sabse aam engineering steel, lagbhag 0.4% carbon. Mild steel se saaf zyada mazboot, achhi finish ke saath aasaani se machine hota hai aur mehnga nahi. Aam taur par rolled ya normalise milta hai; upar ki satah flame ya induction se sakht ho sakti hai, andar se mazboot rehta hai. Aam shaft, pin aur bolt ke liye pehli pasand.',
+      ],
+      good: [
+        ['Shafts and axles', 'Bolts and studs', 'Pins and keys', 'Light-duty gears', 'Couplings', 'Rollers', 'Light spindles', 'Nuts and bushes', 'Small hydraulic rams', 'General machine parts'],
+        ['शाफ्ट और एक्सल', 'बोल्ट और स्टड', 'पिन और की', 'हल्के गियर', 'कपलिंग', 'रोलर', 'हल्के स्पिंडल', 'नट और बुश', 'छोटे हाइड्रोलिक रैम', 'आम मशीन पार्ट'],
+        ['Shaft aur axle', 'Bolt aur stud', 'Pin aur key', 'Halke gear', 'Coupling', 'Roller', 'Halke spindle', 'Nut aur bush', 'Chhote hydraulic ram', 'Aam machine part'],
+      ],
+      comp: [['C', 0.36, 0.44], ['Mn', 0.6, 1.0], ['Si', 0.1, 0.4], ['S', null, 0.05], ['P', null, 0.05]],
+      str: { tensile: '≈ 550', yield: '≈ 280', hard: '152–207 HB', cond: ['normalised', 'नॉर्मलाइज़', 'normalise'] },
+      work: {
+        cut: [5, ['Easy', 'आसान', 'Aasaan']],
+        machine: [4, ['Good finish', 'अच्छी फिनिश', 'Achhi finish']],
+        weld: [3, ['Pre-heat thick bars', 'मोटे बार पहले गरम करें', 'Mote bar pehle garam karo']],
+        harden: [3, ['Surface: flame or induction', 'सतह: फ्लेम या इंडक्शन', 'Satah: flame ya induction']],
+        rust: [1, ['Needs oil or paint', 'तेल या पेंट चाहिए', 'Tel ya paint chahiye']],
+      },
+      score: { shock: 2, wear: 2 },
+      heat: ['Surface can be flame or induction hardened to about 50–55 HRC; the core stays tough.', 'सतह को फ्लेम या इंडक्शन से लगभग 50–55 HRC तक सख़्त किया जा सकता है; अंदर से मज़बूत रहता है।', 'Satah ko flame ya induction se lagbhag 50–55 HRC tak sakht kiya ja sakta hai; andar se mazboot rehta hai.'],
+      watch: ['Not for very heavy or shock loads, or thick parts that must be hard all through. Go to EN19 or EN24 for those.', 'बहुत भारी या झटके वाले लोड, या पूरा अंदर तक सख़्त होने वाले मोटे पार्ट के लिए नहीं। उनके लिए EN19 या EN24 लें।', 'Bahut bhaari ya jhatke wale load, ya poora andar tak sakht hone wale mote part ke liye nahi. Unke liye EN19 ya EN24 lo.'],
+      alts: [
+        ['EN9', ['A bit harder, wears less. Slightly harder to machine.', 'थोड़ा ज़्यादा सख़्त, कम घिसता है। मशीन करना थोड़ा मुश्किल।', 'Thoda zyada sakht, kam ghista hai. Machine karna thoda mushkil.']],
+        ['EN19', ['Much stronger alloy steel. Costs more.', 'बहुत मज़बूत अलॉय स्टील। दाम ज़्यादा।', 'Bahut mazboot alloy steel. Daam zyada.']],
+      ],
+      tell: ['EN8 is the usual choice for shafts, pins and bolts — strong, easy to machine and not costly.', 'शाफ्ट, पिन और बोल्ट के लिए EN8 सबसे आम चुनाव है — मज़बूत, मशीन करना आसान और महंगा नहीं।', 'Shaft, pin aur bolt ke liye EN8 sabse aam chunav hai — mazboot, machine karna aasaan aur mehnga nahi.'],
+    },
+  },
+  {
+    code: 'EN9', family: 'carbon', density: null, sell: 78, cut: 3,
+    info: {
+      v: 2,
+      eq: 'C55 · AISI 1055 · 070M55',
+      kind: ['Higher-carbon steel', 'ज़्यादा कार्बन वाला स्टील', 'Zyada carbon wala steel'],
+      what: [
+        'A plain carbon steel with about 0.55% carbon — one step up from EN8. It is harder and resists wear better, and its surface takes flame or induction hardening very well. It is a little harder to machine than EN8 and needs care when welding. Chosen for parts that rub, roll or mesh.',
+        'लगभग 0.55% कार्बन वाला सादा कार्बन स्टील — EN8 से एक कदम ऊपर। ज़्यादा सख़्त है और घिसाव बेहतर सहता है, इसकी सतह फ्लेम या इंडक्शन से बहुत अच्छी सख़्त होती है। EN8 से मशीन करना थोड़ा मुश्किल और वेल्डिंग में सावधानी चाहिए। रगड़ने, घूमने या आपस में फँसने वाले पार्ट के लिए।',
+        'Lagbhag 0.55% carbon wala saada carbon steel — EN8 se ek kadam upar. Zyada sakht hai aur ghisaav behtar sehta hai, iski satah flame ya induction se bahut achhi sakht hoti hai. EN8 se machine karna thoda mushkil aur welding mein savdhani chahiye. Ragadne, ghoomne ya aapas mein phasne wale part ke liye.',
+      ],
+      good: [
+        ['Gears and sprockets', 'Cams', 'Rollers and wheels', 'Shafts that wear', 'Spindles', 'Clutch parts', 'Chain sprockets', 'Farm machine parts', 'Knife backs and blades', 'Small crane wheels'],
+        ['गियर और स्प्रोकेट', 'कैम', 'रोलर और पहिये', 'घिसने वाले शाफ्ट', 'स्पिंडल', 'क्लच पार्ट', 'चेन स्प्रोकेट', 'खेती मशीन पार्ट', 'चाकू और ब्लेड', 'छोटे क्रेन पहिये'],
+        ['Gear aur sprocket', 'Cam', 'Roller aur pahiye', 'Ghisne wale shaft', 'Spindle', 'Clutch part', 'Chain sprocket', 'Kheti machine part', 'Chaaku aur blade', 'Chhote crane pahiye'],
+      ],
+      comp: [['C', 0.5, 0.6], ['Mn', 0.5, 0.9], ['Si', 0.1, 0.4], ['S', null, 0.05], ['P', null, 0.05]],
+      str: { tensile: '≈ 700', yield: '≈ 350', hard: '201–255 HB', cond: ['normalised', 'नॉर्मलाइज़', 'normalise'] },
+      work: {
+        cut: [4, ['Easy', 'आसान', 'Aasaan']],
+        machine: [3, ['Medium', 'मध्यम', 'Medium']],
+        weld: [2, ['Pre-heat, better avoided', 'पहले गरम करें, न करें तो अच्छा', 'Pehle garam karo, na karo to achha']],
+        harden: [4, ['Surface to 55–60 HRC', 'सतह 55–60 HRC तक', 'Satah 55–60 HRC tak']],
+        rust: [1, ['Needs oil or paint', 'तेल या पेंट चाहिए', 'Tel ya paint chahiye']],
+      },
+      score: { shock: 2, wear: 3 },
+      heat: ['Takes flame or induction hardening very well (about 55–60 HRC on the surface).', 'फ्लेम या इंडक्शन हार्डनिंग बहुत अच्छी लेता है (सतह पर लगभग 55–60 HRC)।', 'Flame ya induction hardening bahut achhi leta hai (satah par lagbhag 55–60 HRC).'],
+      watch: ['Can crack if heated and cooled badly. Weld only with pre-heat and slow cooling.', 'गलत तरीके से गरम-ठंडा करने पर फट सकता है। वेल्डिंग सिर्फ़ पहले गरम करके और धीरे ठंडा करके।', 'Galat tareeke se garam-thanda karne par phat sakta hai. Welding sirf pehle garam karke aur dheere thanda karke.'],
+      alts: [
+        ['EN8', ['Easier to machine and cheaper, wears a bit faster.', 'मशीन करना आसान और सस्ता, थोड़ा जल्दी घिसता है।', 'Machine karna aasaan aur sasta, thoda jaldi ghista hai.']],
+        ['EN19', ['Stronger and tougher alloy steel.', 'ज़्यादा मज़बूत और टिकाऊ अलॉय स्टील।', 'Zyada mazboot aur tikaau alloy steel.']],
+      ],
+      tell: ['EN9 is like EN8 but harder — good for gears, cams and rollers that wear.', 'EN9, EN8 जैसा है पर ज़्यादा सख़्त — घिसने वाले गियर, कैम और रोलर के लिए अच्छा।', 'EN9, EN8 jaisa hai par zyada sakht — ghisne wale gear, cam aur roller ke liye achha.'],
+    },
+  },
+  {
+    code: 'EN19', family: 'alloy', density: null, sell: 92, cut: 4,
+    info: {
+      v: 2,
+      eq: '42CrMo4 · AISI 4140 · 709M40',
+      kind: ['Chromium-molybdenum alloy steel', 'क्रोमियम-मोलिब्डेनम अलॉय स्टील', 'Chrome-moly alloy steel'],
+      what: [
+        'A chromium-molybdenum alloy steel, usually sold already hardened and tempered (“T” condition). It is much stronger than EN8, takes shock and repeated loads well and hardens right through in medium sizes. The standard choice when a shaft, bolt or gear must carry real load.',
+        'क्रोमियम-मोलिब्डेनम अलॉय स्टील, आमतौर पर पहले से हार्डन और टेम्पर किया हुआ (“T” कंडीशन) मिलता है। EN8 से बहुत ज़्यादा मज़बूत, झटके और बार-बार के लोड अच्छे से सहता है और मध्यम साइज़ में अंदर तक सख़्त होता है। जब शाफ्ट, बोल्ट या गियर पर असली लोड हो, तब यही लिया जाता है।',
+        'Chromium-molybdenum alloy steel, aam taur par pehle se harden aur temper kiya hua (“T” condition) milta hai. EN8 se bahut zyada mazboot, jhatke aur baar-baar ke load achhe se sehta hai aur medium size mein andar tak sakht hota hai. Jab shaft, bolt ya gear par asli load ho, tab yahi liya jaata hai.',
+      ],
+      good: [
+        ['High-strength shafts', 'Axles and drive shafts', 'Spindles', 'High-tensile studs and bolts', 'Gears', 'Hydraulic parts', 'Pump shafts', 'Crane and lifting parts', 'Connecting rods', 'Tool holders'],
+        ['ज़्यादा मज़बूत शाफ्ट', 'एक्सल और ड्राइव शाफ्ट', 'स्पिंडल', 'हाई-टेंसाइल स्टड और बोल्ट', 'गियर', 'हाइड्रोलिक पार्ट', 'पंप शाफ्ट', 'क्रेन और लिफ्टिंग पार्ट', 'कनेक्टिंग रॉड', 'टूल होल्डर'],
+        ['Zyada mazboot shaft', 'Axle aur drive shaft', 'Spindle', 'High-tensile stud aur bolt', 'Gear', 'Hydraulic part', 'Pump shaft', 'Crane aur lifting part', 'Connecting rod', 'Tool holder'],
+      ],
+      comp: [['C', 0.35, 0.45], ['Mn', 0.7, 1.0], ['Si', 0.1, 0.35], ['Cr', 0.9, 1.2], ['Mo', 0.25, 0.35]],
+      str: { tensile: '850–1000', yield: '≈ 680', hard: '248–302 HB', cond: ['hardened and tempered (T)', 'हार्डन और टेम्पर (T)', 'harden aur temper (T)'] },
+      work: {
+        cut: [4, ['Easy, a bit slower', 'आसान, थोड़ा धीरे', 'Aasaan, thoda dheere']],
+        machine: [3, ['Medium', 'मध्यम', 'Medium']],
+        weld: [2, ['Pre-heat and slow cool', 'पहले गरम, धीरे ठंडा', 'Pehle garam, dheere thanda']],
+        harden: [5, ['Hardens right through', 'अंदर तक सख़्त होता है', 'Andar tak sakht hota hai']],
+        rust: [1, ['Needs oil or paint', 'तेल या पेंट चाहिए', 'Tel ya paint chahiye']],
+      },
+      score: { shock: 4, wear: 3 },
+      heat: ['Oil hardening and tempering; can also be surface-hardened (induction or nitriding) for wear.', 'तेल में हार्डनिंग और टेम्परिंग; घिसाव के लिए सतह भी सख़्त की जा सकती है (इंडक्शन या नाइट्राइडिंग)।', 'Tel mein hardening aur tempering; ghisaav ke liye satah bhi sakht ki ja sakti hai (induction ya nitriding).'],
+      watch: ['Harder to machine than EN8. Pre-heat before welding. For very thick, very heavy parts EN24 is safer.', 'EN8 से मशीन करना मुश्किल। वेल्डिंग से पहले गरम करें। बहुत मोटे, बहुत भारी पार्ट के लिए EN24 ज़्यादा सुरक्षित।', 'EN8 se machine karna mushkil. Welding se pehle garam karo. Bahut mote, bahut bhaari part ke liye EN24 zyada surakshit.'],
+      alts: [
+        ['EN24', ['Stronger, hardens deeper. Costs more.', 'ज़्यादा मज़बूत, गहराई तक सख़्त। दाम ज़्यादा।', 'Zyada mazboot, gehraai tak sakht. Daam zyada.']],
+        ['EN8', ['Fine if the load is light. Cheaper.', 'लोड हल्का हो तो ठीक। सस्ता।', 'Load halka ho to theek. Sasta.']],
+      ],
+      tell: ['EN19 is the strong one for shafts and bolts that carry load or shocks — much stronger than EN8.', 'लोड या झटके वाले शाफ्ट और बोल्ट के लिए EN19 मज़बूत स्टील है — EN8 से बहुत ज़्यादा मज़बूत।', 'Load ya jhatke wale shaft aur bolt ke liye EN19 mazboot steel hai — EN8 se bahut zyada mazboot.'],
+    },
+  },
+  {
+    code: 'EN24', family: 'alloy', density: null, sell: 95, cut: 4,
+    info: {
+      v: 2,
+      eq: '34CrNiMo6 · AISI 4340 · 817M40',
+      kind: ['Nickel-chromium-molybdenum alloy steel', 'निकल-क्रोमियम-मोलिब्डेनम अलॉय स्टील', 'Nickel-chrome-moly alloy steel'],
+      what: [
+        'A nickel-chromium-molybdenum alloy steel — the toughest of the common engineering steels. The nickel lets it harden deep even in thick sections and keeps it tough under heavy blows. Usually sold hardened and tempered. Chosen for the heaviest, most stressed parts where failure is not acceptable.',
+        'निकल-क्रोमियम-मोलिब्डेनम अलॉय स्टील — आम इंजीनियरिंग स्टील में सबसे टिकाऊ। निकल की वजह से मोटे साइज़ में भी गहराई तक सख़्त होता है और भारी चोट में भी मज़बूत रहता है। आमतौर पर हार्डन और टेम्पर किया हुआ मिलता है। सबसे भारी और ज़्यादा दबाव वाले पार्ट के लिए, जहाँ टूटना नहीं चल सकता।',
+        'Nickel-chromium-molybdenum alloy steel — aam engineering steel mein sabse tikaau. Nickel ki wajah se mote size mein bhi gehraai tak sakht hota hai aur bhaari chot mein bhi mazboot rehta hai. Aam taur par harden aur temper kiya hua milta hai. Sabse bhaari aur zyada dabaav wale part ke liye, jahan tootna nahi chal sakta.',
+      ],
+      good: [
+        ['Heavy-duty shafts', 'Crankshafts', 'Connecting rods', 'Large gears', 'Heavy axles', 'Propeller and rotor shafts', 'Heavy bolts and studs', 'Hydraulic rams and cylinders', 'Earth-moving machine parts', 'Die holders'],
+        ['भारी शाफ्ट', 'क्रैंकशाफ्ट', 'कनेक्टिंग रॉड', 'बड़े गियर', 'भारी एक्सल', 'प्रोपेलर और रोटर शाफ्ट', 'भारी बोल्ट और स्टड', 'हाइड्रोलिक रैम और सिलेंडर', 'अर्थ-मूविंग मशीन पार्ट', 'डाई होल्डर'],
+        ['Bhaari shaft', 'Crankshaft', 'Connecting rod', 'Bade gear', 'Bhaari axle', 'Propeller aur rotor shaft', 'Bhaari bolt aur stud', 'Hydraulic ram aur cylinder', 'Earth-moving machine part', 'Die holder'],
+      ],
+      comp: [['C', 0.36, 0.44], ['Mn', 0.45, 0.7], ['Si', 0.1, 0.35], ['Cr', 1.0, 1.4], ['Mo', 0.2, 0.35], ['Ni', 1.3, 1.7]],
+      str: { tensile: '850–1000', yield: '≈ 650', hard: '248–302 HB', cond: ['hardened and tempered (T)', 'हार्डन और टेम्पर (T)', 'harden aur temper (T)'] },
+      work: {
+        cut: [4, ['Easy, a bit slower', 'आसान, थोड़ा धीरे', 'Aasaan, thoda dheere']],
+        machine: [3, ['Medium', 'मध्यम', 'Medium']],
+        weld: [2, ['Pre-heat and slow cool', 'पहले गरम, धीरे ठंडा', 'Pehle garam, dheere thanda']],
+        harden: [5, ['Hardens deep, even thick bars', 'मोटे बार में भी गहराई तक', 'Mote bar mein bhi gehraai tak']],
+        rust: [1, ['Needs oil or paint', 'तेल या पेंट चाहिए', 'Tel ya paint chahiye']],
+      },
+      score: { shock: 5, wear: 3 },
+      heat: ['Oil hardening and tempering; can be hardened further (up to about 1,550 N/mm² in small sizes) or nitrided for a wear surface.', 'तेल में हार्डनिंग और टेम्परिंग; छोटे साइज़ में और ज़्यादा सख़्त (लगभग 1,550 N/mm² तक) या घिसाव के लिए नाइट्राइड किया जा सकता है।', 'Tel mein hardening aur tempering; chhote size mein aur zyada sakht (lagbhag 1,550 N/mm² tak) ya ghisaav ke liye nitride kiya ja sakta hai.'],
+      watch: ['Costs more than EN19. Needs proper heat treatment to give its full strength. Pre-heat before welding.', 'EN19 से महंगा। पूरी मज़बूती के लिए सही हीट ट्रीटमेंट चाहिए। वेल्डिंग से पहले गरम करें।', 'EN19 se mehnga. Poori mazbooti ke liye sahi heat treatment chahiye. Welding se pehle garam karo.'],
+      alts: [['EN19', ['One step lower in strength, but cheaper.', 'मज़बूती थोड़ी कम, पर सस्ता।', 'Mazbooti thodi kam, par sasta.']]],
+      tell: ['EN24 is the toughest regular steel — for the heaviest shafts and parts that must never break.', 'EN24 सबसे टिकाऊ आम स्टील है — सबसे भारी शाफ्ट और कभी न टूटने वाले पार्ट के लिए।', 'EN24 sabse tikaau aam steel hai — sabse bhaari shaft aur kabhi na tootne wale part ke liye.'],
+    },
+  },
+  {
+    code: 'EN31', family: 'alloy', density: null, sell: 110, cut: 4,
+    info: {
+      v: 2,
+      eq: '100Cr6 · AISI 52100 · 535A99',
+      kind: ['High-carbon chromium (bearing) steel', 'ज़्यादा कार्बन क्रोमियम (बेयरिंग) स्टील', 'High carbon chrome (bearing) steel'],
+      what: [
+        'A high-carbon chromium steel with about 1% carbon — the steel ball bearings are made from. After hardening it becomes very hard (60–64 HRC) and resists wear and pressure extremely well. It is supplied soft (annealed) so it can be machined first and hardened after. Not a steel for welding or for heavy blows.',
+        'लगभग 1% कार्बन वाला क्रोमियम स्टील — इसी से बॉल बेयरिंग बनती हैं। हार्डन करने के बाद बहुत सख़्त (60–64 HRC) हो जाता है और घिसाव व दबाव बहुत अच्छे से सहता है। नरम (एनील) हालत में मिलता है ताकि पहले मशीन हो, फिर सख़्त किया जाए। वेल्डिंग या भारी चोट वाले काम के लिए नहीं।',
+        'Lagbhag 1% carbon wala chromium steel — isi se ball bearing banti hain. Harden karne ke baad bahut sakht (60–64 HRC) ho jaata hai aur ghisaav va dabaav bahut achhe se sehta hai. Naram (anneal) haalat mein milta hai taaki pehle machine ho, phir sakht kiya jaaye. Welding ya bhaari chot wale kaam ke liye nahi.',
+      ],
+      good: [
+        ['Ball and roller bearings', 'Rollers', 'Bushes', 'Wear pins', 'Light punches and dies', 'Guide rails and slides', 'Gauges', 'Cold-forming rolls', 'Industrial knives', 'Spindle races'],
+        ['बॉल और रोलर बेयरिंग', 'रोलर', 'बुश', 'घिसने वाले पिन', 'हल्के पंच और डाई', 'गाइड रेल और स्लाइड', 'गेज', 'कोल्ड-फॉर्मिंग रोल', 'इंडस्ट्रियल चाकू', 'स्पिंडल रेस'],
+        ['Ball aur roller bearing', 'Roller', 'Bush', 'Ghisne wale pin', 'Halke punch aur die', 'Guide rail aur slide', 'Gauge', 'Cold-forming roll', 'Industrial chaaku', 'Spindle race'],
+      ],
+      comp: [['C', 0.9, 1.2], ['Mn', 0.3, 0.75], ['Si', 0.1, 0.35], ['Cr', 1.0, 1.6]],
+      str: { tensile: '≈ 750', yield: '≈ 450', hard: '≤ 229 HB soft · 60–64 HRC hardened', cond: ['annealed (soft), as supplied', 'एनील (नरम), जैसा मिलता है', 'anneal (naram), jaisa milta hai'] },
+      work: {
+        cut: [3, ['OK when soft', 'नरम हालत में ठीक', 'Naram haalat mein theek']],
+        machine: [2, ['Only when soft', 'सिर्फ़ नरम हालत में', 'Sirf naram haalat mein']],
+        weld: [1, ['Not for welding', 'वेल्डिंग के लिए नहीं', 'Welding ke liye nahi']],
+        harden: [5, ['60–64 HRC in oil', 'तेल में 60–64 HRC', 'Tel mein 60–64 HRC']],
+        rust: [1, ['Needs oil', 'तेल चाहिए', 'Tel chahiye']],
+      },
+      score: { shock: 2, wear: 5 },
+      heat: ['Oil hardened from about 830 °C, then tempered low; reaches 60–64 HRC.', 'लगभग 830 °C से तेल में हार्डन, फिर हल्का टेम्पर; 60–64 HRC तक।', 'Lagbhag 830 °C se tel mein harden, phir halka temper; 60–64 HRC tak.'],
+      watch: ['Becomes brittle if hardened too much or not tempered. Not for welding or for parts that take heavy blows.', 'ज़्यादा सख़्त करने या टेम्पर न करने पर टूटने वाला हो जाता है। वेल्डिंग या भारी चोट वाले पार्ट के लिए नहीं।', 'Zyada sakht karne ya temper na karne par tootne wala ho jaata hai. Welding ya bhaari chot wale part ke liye nahi.'],
+      alts: [
+        ['D2', ['Even more wear-resistant, for tools. Costs more.', 'और ज़्यादा घिसाव सहने वाला, टूल के लिए। महंगा।', 'Aur zyada ghisaav sehne wala, tool ke liye. Mehnga.']],
+        ['EN24', ['Tougher against blows, but wears faster.', 'चोट में ज़्यादा टिकाऊ, पर जल्दी घिसता है।', 'Chot mein zyada tikaau, par jaldi ghista hai.']],
+      ],
+      tell: ['EN31 is bearing steel — after hardening it is very hard and wears very little. Good for rollers, bushes and pins.', 'EN31 बेयरिंग स्टील है — हार्डन के बाद बहुत सख़्त और बहुत कम घिसता है। रोलर, बुश और पिन के लिए अच्छा।', 'EN31 bearing steel hai — harden ke baad bahut sakht aur bahut kam ghista hai. Roller, bush aur pin ke liye achha.'],
+    },
+  },
+  {
+    code: 'EN36', family: 'alloy', density: null, sell: 120, cut: 4,
+    info: {
+      v: 2,
+      eq: '15NiCr13 · 655M13 · (≈ AISI 3310)',
+      kind: ['Nickel-chromium case-hardening steel', 'निकल-क्रोमियम केस-हार्डनिंग स्टील', 'Nickel-chrome case-hardening steel'],
+      what: [
+        'A low-carbon steel with about 3% nickel, made for case-hardening. The part is machined, then carburised: the outside becomes glass-hard (about 58–62 HRC) while the inside stays tough and takes shocks. The best choice for heavily loaded gears and pins that need a hard skin and a strong core.',
+        'लगभग 3% निकल वाला कम कार्बन स्टील, केस-हार्डनिंग के लिए बना है। पार्ट पहले मशीन होता है, फिर कार्बराइज़: बाहर की परत बहुत सख़्त (लगभग 58–62 HRC) हो जाती है और अंदर से मज़बूत रहता है, झटके सहता है। भारी लोड वाले गियर और पिन के लिए सबसे अच्छा, जिन्हें सख़्त परत और मज़बूत अंदरूनी हिस्सा चाहिए।',
+        'Lagbhag 3% nickel wala kam carbon steel, case-hardening ke liye bana hai. Part pehle machine hota hai, phir carburise: bahar ki parat bahut sakht (lagbhag 58–62 HRC) ho jaati hai aur andar se mazboot rehta hai, jhatke sehta hai. Bhaari load wale gear aur pin ke liye sabse achha, jinhe sakht parat aur mazboot andar chahiye.',
+      ],
+      good: [
+        ['Gears and pinions', 'Crown wheels', 'Camshafts', 'Heavy-duty gear shafts', 'Worms', 'King pins', 'Track rod pins', 'Steering parts', 'Transmission parts', 'Clutch parts'],
+        ['गियर और पिनियन', 'क्राउन व्हील', 'कैमशाफ्ट', 'भारी गियर शाफ्ट', 'वर्म', 'किंग पिन', 'ट्रैक रॉड पिन', 'स्टीयरिंग पार्ट', 'ट्रांसमिशन पार्ट', 'क्लच पार्ट'],
+        ['Gear aur pinion', 'Crown wheel', 'Camshaft', 'Bhaari gear shaft', 'Worm', 'King pin', 'Track rod pin', 'Steering part', 'Transmission part', 'Clutch part'],
+      ],
+      comp: [['C', 0.1, 0.16], ['Mn', 0.35, 0.6], ['Si', 0.1, 0.35], ['Ni', 3.0, 3.75], ['Cr', 0.7, 1.0]],
+      str: { tensile: '≈ 850+ (core)', yield: '—', hard: '58–62 HRC skin after carburising', cond: ['after carburising and hardening', 'कार्बराइज़ और हार्डन के बाद', 'carburise aur harden ke baad'] },
+      work: {
+        cut: [4, ['Easy', 'आसान', 'Aasaan']],
+        machine: [3, ['Medium', 'मध्यम', 'Medium']],
+        weld: [2, ['Pre-heat, avoid on cased parts', 'पहले गरम करें, केस वाले पार्ट पर नहीं', 'Pehle garam karo, case wale part par nahi']],
+        harden: [5, ['Case hardening (carburising)', 'केस हार्डनिंग (कार्बराइज़िंग)', 'Case hardening (carburising)']],
+        rust: [1, ['Needs oil', 'तेल चाहिए', 'Tel chahiye']],
+      },
+      score: { shock: 5, wear: 5 },
+      heat: ['Carburise, then harden and temper: a hard skin about 0.5–1.5 mm deep over a tough core.', 'कार्बराइज़, फिर हार्डन और टेम्पर: लगभग 0.5–1.5 mm गहरी सख़्त परत, अंदर मज़बूत।', 'Carburise, phir harden aur temper: lagbhag 0.5–1.5 mm gehri sakht parat, andar mazboot.'],
+      watch: ['Meant for case-hardening. If the drawing says through-hardened, use EN19 or EN24 instead. Costs more.', 'केस-हार्डनिंग के लिए है। ड्रॉइंग में थ्रू-हार्डन लिखा हो तो EN19 या EN24 लें। दाम ज़्यादा।', 'Case-hardening ke liye hai. Drawing mein through-harden likha ho to EN19 ya EN24 lo. Daam zyada.'],
+      alts: [['EN24', ['If the part is through-hardened instead of case-hardened.', 'अगर पार्ट केस-हार्डन की जगह पूरा अंदर तक हार्डन हो।', 'Agar part case-harden ki jagah poora andar tak harden ho.']]],
+      tell: ['EN36 is for case-hardened gears and pins — very hard outside, tough inside.', 'EN36 केस-हार्डन गियर और पिन के लिए है — बाहर से बहुत सख़्त, अंदर से मज़बूत।', 'EN36 case-harden gear aur pin ke liye hai — bahar se bahut sakht, andar se mazboot.'],
+    },
+  },
+  {
+    code: 'D2', family: 'tool', density: null, sell: 260, cut: 6,
+    info: {
+      v: 2,
+      eq: '1.2379 · X153CrMoV12 · HCHCr',
+      kind: ['High-carbon high-chromium tool steel', 'ज़्यादा कार्बन, ज़्यादा क्रोमियम टूल स्टील', 'High carbon high chrome tool steel'],
+      what: [
+        'A tool steel with about 1.5% carbon and 12% chromium (called HCHCr in India). Hardened, it reaches 58–62 HRC, keeps a sharp edge for a long time and resists wear better than almost any other common steel. It hardens in air with very little distortion. Used for dies, punches and blades — not for parts that take blows.',
+        'लगभग 1.5% कार्बन और 12% क्रोमियम वाला टूल स्टील (भारत में HCHCr कहते हैं)। हार्डन के बाद 58–62 HRC, धार बहुत देर तक टिकती है और लगभग हर आम स्टील से ज़्यादा घिसाव सहता है। हवा में सख़्त होता है, बहुत कम टेढ़ा होता है। डाई, पंच और ब्लेड के लिए — चोट वाले पार्ट के लिए नहीं।',
+        'Lagbhag 1.5% carbon aur 12% chromium wala tool steel (India mein HCHCr kehte hain). Harden ke baad 58–62 HRC, dhaar bahut der tak tikti hai aur lagbhag har aam steel se zyada ghisaav sehta hai. Hawa mein sakht hota hai, bahut kam tedha hota hai. Die, punch aur blade ke liye — chot wale part ke liye nahi.',
+      ],
+      good: [
+        ['Blanking and punching dies', 'Punches', 'Shear blades', 'Slitting knives', 'Thread-rolling dies', 'Forming and bending dies', 'Long-run plastic moulds', 'Wear plates', 'Gauges', 'Cold-extrusion tools'],
+        ['ब्लैंकिंग और पंचिंग डाई', 'पंच', 'शियर ब्लेड', 'स्लिटिंग चाकू', 'थ्रेड-रोलिंग डाई', 'फॉर्मिंग और बेंडिंग डाई', 'लंबे चलने वाले प्लास्टिक मोल्ड', 'वियर प्लेट', 'गेज', 'कोल्ड-एक्सट्रूज़न टूल'],
+        ['Blanking aur punching die', 'Punch', 'Shear blade', 'Slitting chaaku', 'Thread-rolling die', 'Forming aur bending die', 'Lambe chalne wale plastic mould', 'Wear plate', 'Gauge', 'Cold-extrusion tool'],
+      ],
+      comp: [['C', 1.4, 1.6], ['Cr', 11.0, 13.0], ['Mo', 0.7, 1.2], ['V', null, 1.1], ['Mn', null, 0.6], ['Si', null, 0.6]],
+      str: { tensile: '—', yield: '—', hard: '≤ 255 HB soft · 58–62 HRC hardened', cond: ['annealed (soft), as supplied', 'एनील (नरम), जैसा मिलता है', 'anneal (naram), jaisa milta hai'] },
+      work: {
+        cut: [2, ['Slow, sharp blade', 'धीरे, तेज़ ब्लेड', 'Dheere, tez blade']],
+        machine: [1, ['Hard, only when soft', 'मुश्किल, सिर्फ़ नरम हालत में', 'Mushkil, sirf naram haalat mein']],
+        weld: [1, ['Not for welding', 'वेल्डिंग के लिए नहीं', 'Welding ke liye nahi']],
+        harden: [5, ['Air hardening, little distortion', 'हवा में सख़्त, कम टेढ़ापन', 'Hawa mein sakht, kam tedhapan']],
+        rust: [3, ['Some resistance, not stainless', 'थोड़ा बचाव, स्टेनलेस नहीं', 'Thoda bachaav, stainless nahi']],
+      },
+      score: { shock: 1, wear: 5 },
+      heat: ['Hardened from about 1,000–1,040 °C (air or oil) and tempered; 58–62 HRC.', 'लगभग 1,000–1,040 °C से हार्डन (हवा या तेल) और टेम्पर; 58–62 HRC।', 'Lagbhag 1,000–1,040 °C se harden (hawa ya tel) aur temper; 58–62 HRC.'],
+      watch: ['Costly and slow to cut and machine. Can chip under heavy shock — not for hammers or impact parts.', 'महंगा, काटना और मशीन करना धीमा। भारी झटके में टूट सकता है — हथौड़े या चोट वाले पार्ट के लिए नहीं।', 'Mehnga, kaatna aur machine karna dheema. Bhaari jhatke mein toot sakta hai — hathaude ya chot wale part ke liye nahi.'],
+      alts: [['EN31', ['Cheaper and easier, but wears faster.', 'सस्ता और आसान, पर जल्दी घिसता है।', 'Sasta aur aasaan, par jaldi ghista hai.']]],
+      tell: ['D2 (HCHCr) is die steel — very hard and long-lasting for dies, punches and blades.', 'D2 (HCHCr) डाई स्टील है — डाई, पंच और ब्लेड के लिए बहुत सख़्त और लंबा चलने वाला।', 'D2 (HCHCr) die steel hai — die, punch aur blade ke liye bahut sakht aur lamba chalne wala.'],
+    },
+  },
+  {
+    code: 'SS304', family: 'stainless', density: null, sell: 235, cut: 6,
+    info: {
+      v: 2,
+      eq: '1.4301 · AISI 304 · 18/8',
+      kind: ['Stainless steel (18% chromium, 8% nickel)', 'स्टेनलेस स्टील (18% क्रोमियम, 8% निकल)', 'Stainless steel (18% chrome, 8% nickel)'],
+      what: [
+        'The common stainless steel, with about 18% chromium and 8% nickel. It does not rust in normal air and water, is easy to clean and welds very well. It is not magnetic when soft and cannot be hardened by heat — it only gets harder when worked. The standard for food, kitchen and water equipment.',
+        'आम स्टेनलेस स्टील, लगभग 18% क्रोमियम और 8% निकल। सामान्य हवा और पानी में ज़ंग नहीं लगता, साफ़ करना आसान और वेल्डिंग बहुत अच्छी होती है। नरम हालत में चुंबक नहीं पकड़ता और गरम करके सख़्त नहीं होता — सिर्फ़ काम करने से सख़्त होता है। फ़ूड, किचन और पानी के सामान के लिए सबसे आम।',
+        'Aam stainless steel, lagbhag 18% chromium aur 8% nickel. Normal hawa aur paani mein zang nahi lagta, saaf karna aasaan aur welding bahut achhi hoti hai. Naram haalat mein chumbak nahi pakadta aur garam karke sakht nahi hota — sirf kaam karne se sakht hota hai. Food, kitchen aur paani ke saamaan ke liye sabse aam.',
+      ],
+      good: [
+        ['Food and dairy equipment', 'Kitchen and hotel equipment', 'Water tanks', 'Railings and handrails', 'Sinks and counters', 'Pipes and fittings', 'Pharma equipment', 'Fasteners', 'Architectural trim', 'Heat exchangers'],
+        ['फ़ूड और डेयरी उपकरण', 'किचन और होटल उपकरण', 'पानी की टंकी', 'रेलिंग', 'सिंक और काउंटर', 'पाइप और फिटिंग', 'फार्मा उपकरण', 'नट-बोल्ट', 'बिल्डिंग सजावट', 'हीट एक्सचेंजर'],
+        ['Food aur dairy equipment', 'Kitchen aur hotel equipment', 'Paani ki tanki', 'Railing', 'Sink aur counter', 'Pipe aur fitting', 'Pharma equipment', 'Nut-bolt', 'Building sajaavat', 'Heat exchanger'],
+      ],
+      comp: [['Cr', 18.0, 20.0], ['Ni', 8.0, 10.5], ['Mn', null, 2.0], ['Si', null, 0.75], ['C', null, 0.08]],
+      str: { tensile: '≥ 515', yield: '≥ 205', hard: '≤ 201 HB', cond: ['annealed', 'एनील', 'anneal'] },
+      work: {
+        cut: [3, ['Sharp blade, steady feed', 'तेज़ ब्लेड, एक जैसी रफ़्तार', 'Tez blade, ek jaisi raftaar']],
+        machine: [2, ['Sticky, gets harder while cut', 'चिपकता है, कटते समय सख़्त होता है', 'Chipakta hai, katte samay sakht hota hai']],
+        weld: [5, ['Very good (TIG/MIG)', 'बहुत अच्छी (TIG/MIG)', 'Bahut achhi (TIG/MIG)']],
+        harden: [1, ['Not by heat', 'गरम करके नहीं', 'Garam karke nahi']],
+        rust: [5, ['Does not rust in normal use', 'आम इस्तेमाल में ज़ंग नहीं', 'Aam use mein zang nahi']],
+      },
+      score: { shock: 4, wear: 2 },
+      heat: ['Cannot be hardened by heat treatment; softened (annealed) at about 1,050 °C.', 'हीट ट्रीटमेंट से सख़्त नहीं होता; लगभग 1,050 °C पर नरम (एनील) किया जाता है।', 'Heat treatment se sakht nahi hota; lagbhag 1,050 °C par naram (anneal) kiya jaata hai.'],
+      watch: ['Not for salt water, sea air or strong chemicals — use SS316. It hardens while cutting, so keep the blade sharp and the feed steady; don’t let it rub.', 'नमकीन पानी, समुद्री हवा या तेज़ केमिकल के लिए नहीं — SS316 लें। कटते समय सख़्त होता है, इसलिए ब्लेड तेज़ और रफ़्तार एक जैसी रखें; रगड़ने न दें।', 'Namkeen paani, samudri hawa ya tez chemical ke liye nahi — SS316 lo. Katte samay sakht hota hai, isliye blade tez aur raftaar ek jaisi rakho; ragadne na do.'],
+      alts: [['SS316', ['Better against salt and chemicals. Costs more.', 'नमक और केमिकल के लिए बेहतर। महंगा।', 'Namak aur chemical ke liye behtar. Mehnga.']]],
+      tell: ['SS304 is the normal stainless — no rust, easy to clean and weld. For sea water or chemicals take SS316.', 'SS304 आम स्टेनलेस है — ज़ंग नहीं, साफ़ और वेल्ड करना आसान। समुद्री पानी या केमिकल के लिए SS316 लें।', 'SS304 aam stainless hai — zang nahi, saaf aur weld karna aasaan. Samudri paani ya chemical ke liye SS316 lo.'],
+    },
+  },
+  {
+    code: 'SS316', family: 'stainless', density: 7980, sell: 340, cut: 7,
+    info: {
+      v: 2,
+      eq: '1.4401 · AISI 316 · marine grade',
+      kind: ['Stainless steel with molybdenum (marine grade)', 'मोलिब्डेनम वाला स्टेनलेस स्टील (मरीन ग्रेड)', 'Molybdenum wala stainless steel (marine grade)'],
+      what: [
+        'Stainless steel like SS304 but with 2–3% molybdenum added and more nickel. The molybdenum makes it far better against salt water, sea air, chlorides and many chemicals. It welds and cleans just as well as SS304. Chosen for coastal, marine, chemical and pharma work where SS304 would spot or pit.',
+        'SS304 जैसा स्टेनलेस स्टील, पर 2–3% मोलिब्डेनम और ज़्यादा निकल मिला है। मोलिब्डेनम की वजह से नमकीन पानी, समुद्री हवा, क्लोराइड और कई केमिकल में बहुत बेहतर। SS304 जितना ही अच्छा वेल्ड और साफ़ होता है। समुद्र किनारे, मरीन, केमिकल और फार्मा काम के लिए, जहाँ SS304 पर दाग या गड्ढे पड़ सकते हैं।',
+        'SS304 jaisa stainless steel, par 2–3% molybdenum aur zyada nickel mila hai. Molybdenum ki wajah se namkeen paani, samudri hawa, chloride aur kai chemical mein bahut behtar. SS304 jitna hi achha weld aur saaf hota hai. Samudra kinare, marine, chemical aur pharma kaam ke liye, jahan SS304 par daag ya gaddhe pad sakte hain.',
+      ],
+      good: [
+        ['Marine and boat fittings', 'Chemical plant parts', 'Pharma and medical equipment', 'Coastal railings', 'Pump and valve parts', 'Food with salt or brine', 'Water treatment', 'Swimming-pool fittings', 'Outdoor fasteners near the sea', 'Oil and gas instruments'],
+        ['समुद्री और नाव फिटिंग', 'केमिकल प्लांट पार्ट', 'फार्मा और मेडिकल उपकरण', 'समुद्र किनारे की रेलिंग', 'पंप और वाल्व पार्ट', 'नमक या खारे पानी वाला फ़ूड काम', 'वॉटर ट्रीटमेंट', 'स्विमिंग पूल फिटिंग', 'समुद्र के पास बाहर के नट-बोल्ट', 'ऑयल और गैस उपकरण'],
+        ['Samudri aur naav fitting', 'Chemical plant part', 'Pharma aur medical equipment', 'Samudra kinare ki railing', 'Pump aur valve part', 'Namak ya khaare paani wala food kaam', 'Water treatment', 'Swimming pool fitting', 'Samudra ke paas bahar ke nut-bolt', 'Oil aur gas instrument'],
+      ],
+      comp: [['Cr', 16.0, 18.0], ['Ni', 10.0, 14.0], ['Mo', 2.0, 3.0], ['Mn', null, 2.0], ['C', null, 0.08]],
+      str: { tensile: '≥ 515', yield: '≥ 205', hard: '≤ 217 HB', cond: ['annealed', 'एनील', 'anneal'] },
+      work: {
+        cut: [3, ['Sharp blade, steady feed', 'तेज़ ब्लेड, एक जैसी रफ़्तार', 'Tez blade, ek jaisi raftaar']],
+        machine: [2, ['Sticky, gets harder while cut', 'चिपकता है, कटते समय सख़्त होता है', 'Chipakta hai, katte samay sakht hota hai']],
+        weld: [5, ['Very good (TIG/MIG)', 'बहुत अच्छी (TIG/MIG)', 'Bahut achhi (TIG/MIG)']],
+        harden: [1, ['Not by heat', 'गरम करके नहीं', 'Garam karke nahi']],
+        rust: [5, ['Best, even near the sea', 'सबसे अच्छा, समुद्र के पास भी', 'Sabse achha, samudra ke paas bhi']],
+      },
+      score: { shock: 4, wear: 2 },
+      heat: ['Cannot be hardened by heat treatment; softened (annealed) at about 1,050 °C.', 'हीट ट्रीटमेंट से सख़्त नहीं होता; लगभग 1,050 °C पर नरम (एनील) किया जाता है।', 'Heat treatment se sakht nahi hota; lagbhag 1,050 °C par naram (anneal) kiya jaata hai.'],
+      watch: ['Costs clearly more than SS304 — only worth it where salt or chemicals are present. Same care while cutting.', 'SS304 से काफ़ी महंगा — सिर्फ़ वहीं लें जहाँ नमक या केमिकल हो। कटिंग में वही सावधानी।', 'SS304 se kaafi mehnga — sirf wahin lo jahan namak ya chemical ho. Cutting mein wahi savdhani.'],
+      alts: [['SS304', ['Fine for normal indoor and water use. Cheaper.', 'आम अंदर और पानी के काम के लिए ठीक। सस्ता।', 'Aam andar aur paani ke kaam ke liye theek. Sasta.']]],
+      tell: ['SS316 is the stainless for sea water and chemicals — costs more than SS304 but will not spot or pit.', 'SS316 समुद्री पानी और केमिकल वाला स्टेनलेस है — SS304 से महंगा पर दाग या गड्ढे नहीं पड़ते।', 'SS316 samudri paani aur chemical wala stainless hai — SS304 se mehnga par daag ya gaddhe nahi padte.'],
+    },
+  },
+];

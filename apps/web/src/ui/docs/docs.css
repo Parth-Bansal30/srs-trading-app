@@ -38,9 +38,10 @@
 .pp-sample{position:absolute;left:-6px;right:-6px;top:50%;transform:translateY(-50%) rotate(-12deg);background:#B0413E;color:#fff;font-size:10px;font-weight:800;text-align:center;padding:3px 2px;letter-spacing:.02em;line-height:1.2}
 .pp-stamp{position:absolute;left:90px;top:360px;transform:rotate(-12deg);border:3px solid #1C8456;color:#1C8456;border-radius:10px;padding:4px 16px;font-size:26px;font-weight:900;letter-spacing:.12em;opacity:.8;pointer-events:none}
 .pp-bottom{border-top:1px solid #E6E2DB;padding-top:10px;margin-top:18px;display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:#868B94}
-.pp-boxes{display:flex;gap:10px;margin-top:14px}
-.pp-box{flex:1;border-radius:10px;padding:10px 12px;border:1px solid #E6E2DB}
-.pp-box .pp-num{font-weight:800;font-size:15px;margin-top:2px}
+.pp-boxes{display:flex;gap:8px;margin-top:14px}
+.pp-box.sum{background:#F7F5F1}
+.pp-box{flex:1;border-radius:10px;padding:9px 10px;border:1px solid #E6E2DB;min-width:0}
+.pp-box .pp-num{font-weight:800;font-size:14px;margin-top:2px}
 .pp-box.due{background:#FFF3D6;border-color:#FFF3D6}.pp-box.ok{background:#E2F3EA;border-color:#E2F3EA}
 /* 80 mm receipt roll */
 .pp-roll{width:302px;padding:18px 16px 22px;font-family:'DejaVu Sans Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;box-sizing:border-box}
@@ -67,3 +68,19 @@
   body.printing #print-root .pp{box-shadow:none;border-radius:0;width:100%;min-height:0}
   body.printing{background:#fff !important}
 }
+/* WhatsApp: text or PDF */
+.wac{display:flex;gap:14px;align-items:flex-start;width:100%;text-align:left;border:1.5px solid var(--line-2);border-radius:18px;padding:14px;background:var(--surface);margin-bottom:12px;color:var(--ink)}
+.wac:disabled{opacity:.5}
+.wac:active{border-color:var(--wa)}
+.wac-ic{width:48px;height:48px;border-radius:14px;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.wac-t{font-weight:800;font-size:17px}
+.wac-s{color:var(--ink-2);font-size:13.5px;margin-top:3px;line-height:1.4}
+/* day report */
+.rep .rep-h{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#4B505A;margin-top:18px}
+.rep .pp-table{margin-top:6px}
+.rep .pp-stmt td,.rep .pp-stmt th{font-size:10.5px;padding:6px 5px 6px 0}
+.rep .pp-stmt td.r,.rep .pp-stmt td.pp-num{white-space:nowrap}
+.rep .pp-stmt th{font-size:9.5px;letter-spacing:.03em}
+.rep .rep-tot td{border-top:1.5px solid #14161B;border-bottom:0;font-weight:800}
+.rep .rep-cols{display:flex;gap:24px}.rep .rep-cols > div{flex:1}
+.rep .rep-look{font-size:12.5px;padding:3px 0;line-height:1.4}

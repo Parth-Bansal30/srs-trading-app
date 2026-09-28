@@ -3,24 +3,17 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../lib/i18n.js';
 import { company } from '../../lib/session.js';
-import { loadCatalog } from '../../lib/catalog.js';
 import { money, shortDate, time } from '../../lib/format.js';
 import { APP } from '../../config/app.js';
-import { docPrefs, saveDocPrefs, makeSlipDoc, sentInfo, docUrl, slipMessage, waLink, openWhatsApp, docFileName, isSampleUpi } from '../../lib/docs.js';
+import { docPrefs, saveDocPrefs, makeSlipDoc, sentInfo, docUrl, slipText, pdfCaption, waLink, openWhatsApp, docFileName, isSampleUpi } from '../../lib/docs.js';
 import { drawOffscreen, paperToPdf, shareOrSave, printPaper } from '../../lib/paper.js';
 import { toast } from '../../ui/toast.js';
 import { Icon } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { SlipPaper } from '../../ui/docs/Paper.jsx';
 import { Preview } from '../../ui/docs/Preview.jsx';
+import { WaChoice, WaModeLine } from '../../ui/docs/WaChoice.jsx';
 import './docs-screens.css';
-
-/** The same message as slipMessage(doc), made from the loaded order (so WhatsApp can open at once). */
-function quickDoc(o, shopName, lang) {
-  const total = Number(o.total_amount);
-  return { lang, timezone: company.value?.timezone, shop: { name: shopName }, customer: { name: o.customers?.name },
-    slip: { no: o.slip_no, at: o.done_at, total, paid: o.paid, balance: Math.max(0, Math.round((total - o.paid) * 100) / 100) } };
-}
 
 /** Everything the slip page needs to give a finished slip away. */
 export function useGiveSlip(o) {
@@ -28,30 +21,23 @@ export function useGiveSlip(o) {
   const [info, setInfo] = useState([]);
   const [busy, setBusy] = useState(null);        // 'wa' | 'pdf' | 'print'
   const [pending, setPending] = useState(null);  // { kind: 'wa', url } | { kind: 'pdf', file, text } — needs one more tap
-  const [shop, setShop] = useState(company.value?.name || '');
   const reload = () => sentInfo(o.id).then(setInfo).catch(() => {});
   useEffect(() => {
     reload();
-    loadCatalog().then((c) => setShop(c.settings?.slip_header?.name || company.value?.name || '')).catch(() => {});
   }, [o.id]);
   const change = (p) => { saveDocPrefs(p); setPrefs({ ...prefs, ...p }); };
   const phone = o.customers?.phone;
 
-  const sendWa = async (docResult) => {
-    setPending(null);
-    const lang = prefs.lang;
-    const known = docResult?.token || info.find((x) => x.lang === lang)?.token;
-    if (known) {
-      const doc = docResult?.doc || quickDoc(o, shop, lang);
-      const url = waLink(phone, slipMessage(doc, docUrl(known)));
-      if (!openWhatsApp(url)) setPending({ kind: 'wa', url });
-      makeSlipDoc({ orderId: o.id, lang, upi: prefs.upi, send: true }).then(reload).catch(() => {});
-      return;
-    }
+  // WhatsApp: as text (straight into the customer's chat) or as a PDF (phone's share menu). The choice can be remembered.
+  const [choose, setChoose] = useState(null); // null | { given }
+  const sendWa = (given) => { setPending(null); if (prefs.waMode) runWa(prefs.waMode, given); else setChoose({ given }); };
+  const pick = (mode, remember) => { const g = choose?.given; setChoose(null); if (remember) change({ waMode: mode }); runWa(mode, g); };
+  const runWa = async (mode, given) => {
+    if (mode === 'pdf') return pdf(given, true);
     setBusy('wa');
     try {
-      const r = await makeSlipDoc({ orderId: o.id, lang, upi: prefs.upi, send: true });
-      const url = waLink(phone, slipMessage(r.doc, docUrl(r.token)));
+      const r = await makeSlipDoc({ orderId: o.id, lang: prefs.lang, upi: prefs.upi, send: true });
+      const url = waLink(phone, slipText(r.doc, docUrl(r.token)));
       if (!openWhatsApp(url)) setPending({ kind: 'wa', url });
       reload();
     } catch (e) { toast(e.message || t('err_generic')); } finally { setBusy(null); }
@@ -61,24 +47,26 @@ export function useGiveSlip(o) {
     setBusy(what); setPending(null);
     try { await fn(given || await makeSlipDoc({ orderId: o.id, lang: prefs.lang, upi: prefs.upi })); } catch (e) { toast(e.message || t('err_generic')); } finally { setBusy(null); }
   };
-  const pdf = (given) => withDoc(async (r) => {
+  const markSent = () => makeSlipDoc({ orderId: o.id, lang: prefs.lang, upi: prefs.upi, send: true }).then(reload).catch(() => {});
+  const pdf = (given, forWa = false) => withDoc(async (r) => {
     toast(t('making_pdf'));
     const { node, cleanup } = drawOffscreen(<SlipPaper doc={r.doc} size={prefs.size} showQr={prefs.upi} />);
     try {
       const file = await paperToPdf(node, { name: docFileName(r.doc), size: prefs.size });
-      const text = slipMessage(r.doc, docUrl(r.token));
+      const text = pdfCaption(r.doc, docUrl(r.token));
       const res = await shareOrSave(file, text);
-      if (res === 'needs_tap') setPending({ kind: 'pdf', file, text });
+      if (res === 'needs_tap') setPending({ kind: 'pdf', file, text, forWa });
       else if (res === 'saved') toast(t('pdf_saved'));
+      else if (res === 'shared' && forWa) markSent();
     } finally { cleanup(); }
-  }, 'pdf', given);
+  }, forWa ? 'wa' : 'pdf', given);
   const print = (given) => withDoc(async (r) => printPaper(<SlipPaper doc={r.doc} size={prefs.size} showQr={prefs.upi} />, prefs.size), 'print', given);
   const again = async () => {
     const p = pending; setPending(null);
     if (p?.kind === 'wa') openWhatsApp(p.url);
-    if (p?.kind === 'pdf') { const res = await shareOrSave(p.file, p.text); if (res === 'saved') toast(t('pdf_saved')); }
+    if (p?.kind === 'pdf') { const res = await shareOrSave(p.file, p.text); if (res === 'saved') toast(t('pdf_saved')); if (res === 'shared' && p.forWa) markSent(); }
   };
-  return { prefs, change, info, busy, pending, again, sendWa, pdf, print, phone };
+  return { prefs, change, info, busy, pending, again, sendWa, pdf, print, phone, choose, setChoose, pick };
 }
 
 function SentLine({ info }) {
@@ -108,6 +96,7 @@ function GiveSlipCard({ g, o, openSheet }) {
       <button class="btn btn-wa btn-block" disabled={!!g.busy} onClick={() => g.sendWa()}>
         <Icon name="MessageCircle" size={20} stroke={2.4} />{g.busy === 'wa' ? t('getting_ready') : g.phone ? t('wa_to', o.customers?.name) : t('wa_choose')}
       </button>
+      <WaModeLine mode={g.prefs.waMode} onChange={() => g.change({ waMode: null })} />
       <div class="row" style="gap:10px;margin-top:10px">
         <button class="btn btn-ghost grow give-sm" disabled={!!g.busy} onClick={() => g.print()}><Icon name="Printer" size={19} />{t('print')}</button>
         <button class="btn btn-ghost grow give-sm" disabled={!!g.busy} onClick={() => g.pdf()}><Icon name="FileDown" size={19} />{g.busy === 'pdf' ? '…' : t('pdf')}</button>
@@ -135,6 +124,7 @@ function SendSlipSheet({ g, o, open, onClose }) {
     <Sheet open={open} onClose={onClose} title={t('send_slip_t', o.slip_no)}
       footer={<>
         <button class="btn btn-wa btn-block" disabled={!r || !!g.busy} onClick={() => g.sendWa(r)}><Icon name="MessageCircle" size={20} stroke={2.4} />{g.phone ? t('wa_to', o.customers?.name) : t('wa_choose')}</button>
+        <WaModeLine mode={g.prefs.waMode} onChange={() => g.change({ waMode: null })} />
         <div class="row" style="gap:10px;margin-top:10px">
           <button class="btn btn-ghost grow give-sm" disabled={!r || !!g.busy} onClick={() => g.print(r)}><Icon name="Printer" size={19} />{t('print')}</button>
           <button class="btn btn-ghost grow give-sm" disabled={!r || !!g.busy} onClick={() => g.pdf(r)}><Icon name="Share2" size={19} />{g.busy === 'pdf' ? t('making_pdf') : t('share_pdf')}</button>
@@ -169,6 +159,8 @@ export function GiveSlip({ o, autoOpen = false }) {
   const [open, setOpen] = useState(autoOpen);
   return <>
     <GiveSlipCard g={g} o={o} openSheet={() => setOpen(true)} />
-    <SendSlipSheet g={g} o={o} open={open} onClose={() => setOpen(false)} />
+    <SendSlipSheet g={g} o={o} open={open && !g.choose} onClose={() => setOpen(false)} />
+    <WaChoice open={!!g.choose} onClose={() => g.setChoose(null)} name={o.customers?.name} hasPhone={!!g.phone}
+      sub={`${t('slip')} #${o.slip_no} · ${o.customers?.name}`} onPick={g.pick} />
   </>;
 }

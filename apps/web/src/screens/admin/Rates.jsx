@@ -10,6 +10,8 @@ import { money, shortDate } from '../../lib/format.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
+import { GradeInfo } from '../../ui/grades/GradeInfo.jsx';
+import { GradeInfoEdit } from '../../ui/grades/GradeInfoEdit.jsx';
 
 const FAMILIES = Object.keys(DEFAULT_FAMILY_DENSITY);
 
@@ -46,6 +48,7 @@ function GradeSheet({ m, cat, onClose, onDone }) {
   const [hist, setHist] = useState(null);
   const [specials, setSpecials] = useState(null);
   const [addCust, setAddCust] = useState(''); const [addRate, setAddRate] = useState('');
+  const [infoOpen, setInfoOpen] = useState(null); // 'see' | 'edit'
   const rate = useAction('changeMaterialRate');
   const upd = useAction('updateMaterial');
   const spec = useAction('setCustomerRate');
@@ -67,6 +70,12 @@ function GradeSheet({ m, cat, onClose, onDone }) {
       </div>
       {edit && changed && <input class="textarea" style="margin-top:10px" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('rate_note_ph')} />}
       {rate.error && <div class="error">{rate.error.message}</div>}
+      <div class="row" style="gap:10px;margin-top:12px">
+        <button class="btn btn-ghost grow" style="min-height:46px;font-size:15px" onClick={() => setInfoOpen('see')}><Icon name="Info" size={18} />{t('gi_see')}</button>
+        {edit && <button class="btn btn-ghost grow" style="min-height:46px;font-size:15px" onClick={() => setInfoOpen('edit')}><Icon name="Pencil" size={17} />{t('gi_edit')}</button>}
+      </div>
+      <GradeInfo m={m} materials={cat.materials} open={infoOpen === 'see'} onClose={() => setInfoOpen(null)} />
+      <GradeInfoEdit m={m} open={infoOpen === 'edit'} onClose={() => setInfoOpen(null)} onSaved={() => { setInfoOpen(null); toast(t('saved')); onDone(); }} />
 
       <div class="sec"><h3>{t('special_rates')}</h3></div>
       <div class="card">

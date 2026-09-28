@@ -64,6 +64,14 @@ export function Today() {
         </div>
       )}
 
+      {can('money') && new Date().getHours() >= 17 && (
+        <button class="card li" style="margin-top:12px" onClick={() => go('/evening')}>
+          <div class="iconbox tone-brand-soft"><Icon name="Moon" /></div>
+          <div class="grow"><div class="t">{t('eve_card')}</div><div class="s">{t('eve_where')}</div></div>
+          <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
+        </button>
+      )}
+
       <div class="sec"><h3>{t('needs_you')}</h3>{needs.length > 0 && <span class="link">{needs.length}</span>}</div>
       {!d ? <div class="card pad"><Skeleton h={18} /><Skeleton h={18} w="60%" style="margin-top:12px" /></div> :
         needs.length === 0 ? (

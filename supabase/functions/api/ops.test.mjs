@@ -410,3 +410,68 @@ test('customers: GST number checked; UPI ID checked', async () => {
   await ops.changeSettings(owner, { changes: { upi_id: 'srs.sample@upi' } }, 'k', 'h');
   assert.equal(last('api_change_settings').p_changes.upi_id, 'srs.sample@upi');
 });
+
+// ---------- evening summary ----------
+function eveDb() {
+  const calls = [];
+  const day = {
+    timezone: 'Asia/Kolkata', day: '2026-09-28', today: '2026-09-29', shop: 'SRS Trading', settings: { weight_warn_pct: 5, min_inch: 1 },
+    orders: [{ id: 'o1', slip_no: '1061', customer: 'Rana Tools', bill: 'pakka', total: 3719.01, weight: 37.2, in_khata: true, by: 'Ramesh',
+      items: [{ grade: 'EN24', rate: 88, special: false, std_rate: 95 }], payments: [{ amount: 2000, kind: 'advance', rev: false, mode: 'UPI' }] }],
+    payments: [{ amount: 12000, kind: 'khata', rev: false, mode: 'Cash', customer: 'Gupta', order_id: null }],
+    cash_close: { expected: 12000, counted: 11500, by: 'Ramesh' },
+    weighed: [{ slip_no: '1061', grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], density: 7850, actual: 30, min_inch: 1, lengths: [{ len: '300', pcs: 12, cuts: null }] }],
+    waiting: [], cancelled: [], last_week: { total: 3000, n: 1 },
+  };
+  const khata = { timezone: 'Asia/Kolkata', shop: 'SRS Trading', settings: { reminder_after_days: 25, reminder_repeat_days: 7 },
+    customers: [{ id: 'cu1', name: 'Rana Tools', phone: '9814022113', active: true }],
+    orders: [{ id: 'o1', slip_no: '1061', customer_id: 'cu1', status: 'done', bill: 'pakka', in_khata: true, total: 3719.01, done_at: '2026-09-28T06:00:00Z' }],
+    payments: [{ id: 'p1', customer_id: 'cu1', order_id: 'o1', amount: 2000, mode: 'UPI', kind: 'advance', side: null, at: '2026-09-26T06:00:00Z' }],
+    old_dues: [], last_reminders: [] };
+  const sent = [];
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_day_data') return structuredClone(day);
+    if (fn === 'api_khata_data') return structuredClone(khata);
+    if (fn === 'api_evening_due') return [{ company_id: 'c1', day: '2026-09-28', recipients: [{ person_id: 'p-owner', lang: 'hi', perms: owner.perms, subs: [{ endpoint: 'https://push.example/1', keys: {} }, { endpoint: 'https://push.example/2', keys: {} }] }] }];
+    return null;
+  };
+  const push = { vapid: { publicKey: 'pub', privateKey: 'priv', subject: 'x' }, sendPush: async (s, msg) => { sent.push({ s, msg }); return s.endpoint.endsWith('2') ? { ok: false, gone: true } : { ok: true, gone: false }; } };
+  const made = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, push });
+  return { ...made, calls, sent };
+}
+
+test('daySummary: numbers from the day data, khata total, below-rate and weight flags', async () => {
+  const { ops } = eveDb();
+  const d = await ops.daySummary(owner, { day: '2026-09-28' });
+  const s = d.summary;
+  assert.equal(s.sales.total, 3719.01);
+  assert.equal(s.sales.toKhata, 1719.01);
+  assert.equal(s.money.byMode.Cash, 12000);
+  assert.equal(s.cash.diff, -500);
+  assert.equal(s.khata.toReceive, 1719.01);
+  assert.deepEqual(s.look.map((x) => x.type), ['cash_short', 'rate', 'weight']);
+  await rejects(ops.daySummary(weigher, {}), 403);
+});
+
+test('evening job: sends each phone its note in the person\'s language; an unsubscribed phone is removed', async () => {
+  const { runEvening, calls, sent } = eveDb();
+  const r = await runEvening('2026-09-28T14:40:00Z');
+  assert.deepEqual(r, { companies: 1, sent: 1 });
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].msg.title, /शाम का हिसाब · 28 Sep/);
+  assert.match(sent[0].msg.body, /बिक्री ₹3,719/);
+  assert.equal(sent[0].msg.url, '#/evening?day=2026-09-28');
+  const results = calls.filter((c) => c.fn === 'api_push_result').map((c) => [c.args.p_ok, c.args.p_gone]);
+  assert.deepEqual(results, [[true, false], [false, true]]);
+  assert.deepEqual(calls.find((c) => c.fn === 'api_evening_sent').args, { p_company: 'c1', p_day: '2026-09-28', p_sent: 1 });
+});
+
+test('evening settings: time and days checked; no push keys → job does nothing', async () => {
+  const { ops } = eveDb();
+  await rejects(ops.eveningSet(owner, { changes: { time: '25:00' } }, 'k', 'h'), 400);
+  await rejects(ops.eveningSet(owner, { changes: { days: [0] } }, 'k', 'h'), 400);
+  await rejects(ops.eveningSet(sales, { changes: { on: true } }, 'k', 'h'), 403);
+  const none = makeOps({ core, rpc: async () => [], companySettings: async () => ({}), askModel: null });
+  assert.deepEqual(await none.runEvening(), { skipped: 'no_vapid_keys' });
+});

@@ -6,13 +6,14 @@ import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { money } from '../../lib/format.js';
 import { APP } from '../../config/app.js';
-import { docPrefs, saveDocPrefs, makeStatementDoc, docUrl, statementMessage, waLink, openWhatsApp, docFileName, fmtDay } from '../../lib/docs.js';
+import { docPrefs, saveDocPrefs, makeStatementDoc, docUrl, statementText, pdfCaption, TEXT_MAX_ROWS, waLink, openWhatsApp, docFileName, fmtDay } from '../../lib/docs.js';
 import { drawOffscreen, paperToPdf, shareOrSave, printPaper } from '../../lib/paper.js';
 import { toast } from '../../ui/toast.js';
 import { Icon } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { StatementPaper } from '../../ui/docs/Paper.jsx';
 import { Preview } from '../../ui/docs/Preview.jsx';
+import { WaChoice, WaModeLine } from '../../ui/docs/WaChoice.jsx';
 import './docs-screens.css';
 
 const PERIODS = [['this_month', 'p_this_month'], ['last_month', 'p_last_month'], ['last_3_months', 'p_last_3_months'], ['this_fy', 'p_this_fy'], ['pick', 'p_pick']];
@@ -48,39 +49,56 @@ export function StatementSheet({ open, c, sides = [], onClose }) {
   const nPays = doc ? doc.rows.filter((x) => x.type === 'pay').length : 0;
   const change = (p) => { saveDocPrefs(p); setPrefs({ ...prefs, ...p }); };
 
-  const sendWa = async () => {
-    setBusy('wa'); setPending(null);
+  // WhatsApp: as text (straight into the customer's chat) or as a PDF (phone's share menu).
+  const [choose, setChoose] = useState(false);
+  const tooLong = doc && doc.rows.length + 1 > TEXT_MAX_ROWS ? doc.rows.length + 1 : 0;
+  const sendWa = () => {
+    setPending(null);
+    const mode = prefs.waMode === 'text' && tooLong ? 'pdf' : prefs.waMode;
+    if (mode) runWa(mode); else setChoose(true);
+  };
+  const pick = (mode, remember) => { setChoose(false); if (remember) change({ waMode: mode }); runWa(mode); };
+  const runWa = async (mode) => {
+    if (mode === 'pdf') return pdf(true);
+    setBusy('wa');
     try {
       const s = await makeStatementDoc({ ...args, send: true });
-      const url = waLink(c.phone, statementMessage(s.doc, docUrl(s.token)));
+      const url = waLink(c.phone, statementText(s.doc, docUrl(s.token)));
       if (!openWhatsApp(url)) setPending({ kind: 'wa', url });
     } catch (e) { toast(e.message || t('err_generic')); } finally { setBusy(null); }
   };
-  const pdf = async () => {
-    setBusy('pdf'); setPending(null);
+  const pdf = async (forWa = false) => {
+    setBusy(forWa ? 'wa' : 'pdf'); setPending(null);
     const { node, cleanup } = drawOffscreen(<StatementPaper doc={doc} showQr={prefs.upi} />);
     try {
-      const file = await paperToPdf(node, { name: docFileName(doc), size: 'a4' });
-      const res = await shareOrSave(file);
-      if (res === 'needs_tap') setPending({ kind: 'pdf', file });
+      // for WhatsApp the copy is saved too (link in the note, and "sent" is recorded)
+      const [file, saved] = await Promise.all([
+        paperToPdf(node, { name: docFileName(doc), size: 'a4' }),
+        forWa ? makeStatementDoc({ ...args, send: true }).catch(() => null) : null,
+      ]);
+      const text = forWa ? pdfCaption(doc, saved ? docUrl(saved.token) : null) : undefined;
+      const res = await shareOrSave(file, text);
+      if (res === 'needs_tap') setPending({ kind: 'pdf', file, text });
       else if (res === 'saved') toast(t('pdf_saved'));
     } catch (e) { toast(e.message || t('err_generic')); } finally { cleanup(); setBusy(null); }
   };
   const again = async () => {
     const p = pending; setPending(null);
     if (p?.kind === 'wa') openWhatsApp(p.url);
-    if (p?.kind === 'pdf' && (await shareOrSave(p.file)) === 'saved') toast(t('pdf_saved'));
+    if (p?.kind === 'pdf' && (await shareOrSave(p.file, p.text)) === 'saved') toast(t('pdf_saved'));
   };
 
-  const Line = ({ a, b, strong }) => <div class="row" style={`justify-content:space-between;padding:${strong ? '10px' : '7px'} 0;${strong ? 'border-top:1px solid var(--line);font-size:16px' : ''}`}><span class={strong ? '' : 'muted'}>{strong ? <b>{a}</b> : a}</span><span class="num" style="font-weight:700">{b}</span></div>;
+  const Line = ({ a, b, strong, top }) => <div class="row" style={`justify-content:space-between;padding:${strong ? '10px' : '7px'} 0;${strong || top ? 'border-top:1px solid var(--line);' : ''}${strong ? 'font-size:16px' : ''}`}><span class={strong ? '' : 'muted'}>{strong ? <b>{a}</b> : a}</span><span class="num" style="font-weight:700">{b}</span></div>;
 
   return (
-    <Sheet open={open} onClose={onClose} title={t('send_stmt')}
+    <>
+    <Sheet open={open && !choose} onClose={onClose} title={t('send_stmt')}
       footer={<>
         <button class="btn btn-wa btn-block" disabled={!doc || !!busy} onClick={sendWa}><Icon name="MessageCircle" size={20} stroke={2.4} />{busy === 'wa' ? t('getting_ready') : c.phone ? t('wa_to', c.name) : t('wa_stmt')}</button>
+        <WaModeLine mode={prefs.waMode} onChange={() => change({ waMode: null })} />
         <div class="row" style="gap:10px;margin-top:10px">
           <button class="btn btn-ghost grow give-sm" disabled={!doc || !!busy} onClick={() => printPaper(<StatementPaper doc={doc} showQr={prefs.upi} />, 'a4')}><Icon name="Printer" size={18} />{t('print')}</button>
-          <button class="btn btn-ghost grow give-sm" disabled={!doc || !!busy} onClick={pdf}><Icon name="FileDown" size={18} />{busy === 'pdf' ? t('making_pdf') : t('download')}</button>
+          <button class="btn btn-ghost grow give-sm" disabled={!doc || !!busy} onClick={() => pdf(false)}><Icon name="FileDown" size={18} />{busy === 'pdf' ? t('making_pdf') : t('download')}</button>
         </div>
         {pending && <button class={`btn btn-block ${pending.kind === 'wa' ? 'btn-wa' : 'btn-brand'}`} style="margin-top:10px" onClick={again}>{pending.kind === 'wa' ? t('open_wa') : t('pdf_ready')}</button>}
       </>}>
@@ -103,6 +121,7 @@ export function StatementSheet({ open, c, sides = [], onClose }) {
           {!doc ? <div class="muted" style="padding:10px 0">…</div> : <>
             <Line a={t('stmt_bal_on', fmtDay(doc.period.from, false))} b={money(doc.opening, true)} />
             <Line a={t('stmt_bought_n', nBills)} b={`+ ${money(doc.bought, true)}`} />
+            <Line a={<b style="color:var(--ink)">{t('stmt_total_due')}</b>} b={money(Math.round((doc.opening + doc.bought) * 100) / 100, true)} top />
             <Line a={t('stmt_paid_n', nPays)} b={`− ${money(doc.paid, true)}`} />
             <Line strong a={t('stmt_bal_on', fmtDay(doc.period.to, false))} b={doc.closing < 0 ? `${money(-doc.closing, true)} (${t('stmt_credit')})` : money(doc.closing, true)} />
           </>}
@@ -116,5 +135,8 @@ export function StatementSheet({ open, c, sides = [], onClose }) {
       </div>
       {see && doc && <div style="margin-top:12px"><Preview><StatementPaper doc={doc} showQr={prefs.upi} /></Preview></div>}
     </Sheet>
+    <WaChoice open={open && choose} onClose={() => setChoose(false)} name={c.name} hasPhone={!!c.phone} tooLong={tooLong}
+      sub={doc ? `${fmtDay(doc.period.from, false)} – ${fmtDay(doc.period.to, false)} · ${money(Math.max(0, doc.closing), true)}` : ''} onPick={pick} />
+    </>
   );
 }

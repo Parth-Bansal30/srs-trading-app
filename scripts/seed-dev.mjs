@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { query, lit, PROJECT_REF, ROOT } from './lib/supabase.mjs';
 import { loadPrototype } from '../packages/core/test/helpers/prototype.js';
+import { GRADES } from './data/steel-grades.mjs';
 
 const DEV_REF = 'xwyhgsukvspwinsskyjo';
 if (PROJECT_REF !== DEV_REF) { console.error('✗ seed:dev only runs on the development project.'); process.exit(1); }
@@ -52,7 +53,7 @@ for (const u of proto.users) {
 
 for (const m of proto.mats) {
   const [r] = await query(`with m as (insert into public.materials (company_id, code, family, density_override, active, info)
-      select ${C}, ${lit(m.id)}, ${lit(m.family)}, ${m.density ?? 'null'}, ${m.active !== false}, ${lit(JSON.stringify(m.info ?? null))}::jsonb
+      select ${C}, ${lit(m.id)}, ${lit(m.family)}, ${m.density ?? 'null'}, ${m.active !== false}, ${lit(JSON.stringify(GRADES.find((g) => g.code === m.id)?.info ?? m.info ?? null))}::jsonb
       where not exists (select 1 from public.materials where company_id = ${C} and code = ${lit(m.id)}) returning id)
     insert into public.material_rates (company_id, material_id, sell_rate, cut_rate, note)
       select ${C}, id, ${Number(m.sell)}, ${Number(m.cut)}, 'starting rate from the prototype' from m returning material_id`);

@@ -95,3 +95,4 @@ a{color:inherit;text-decoration:none}
 .switch:checked{background:var(--ok)}
 .switch:checked::after{left:23px}
 select.field{font-weight:600;font-size:16px;appearance:auto}
+.tone-brand-soft{background:var(--sunk);color:var(--ink)}

@@ -78,3 +78,92 @@ export function openWhatsApp(url) {
   try { w.opener = null; } catch { /* other app */ }
   return true;
 }
+
+// ---------------------------------------------------------------------------------------------
+// The slip / statement written out as a WhatsApp message (the "As text" choice).
+// Lines inside ``` … ``` show in WhatsApp's fixed-width font, so the amounts line up.
+// Never shows rates per kg, payment notes or the word "kacha" (same as the paper).
+// ---------------------------------------------------------------------------------------------
+const n2 = (v) => money(v, true).replace('₹', '').replace('− ', '-');
+const signed = (v) => (v < 0 ? `-${n2(-v)}` : `+${n2(v)}`);
+const W = 32; // characters per line that fit a phone screen in WhatsApp's fixed-width font
+const line = (left, right) => {
+  const room = W - right.length - 1;
+  const l = left.length > room ? `${left.slice(0, room - 1)}…` : left;
+  return `${l.padEnd(room)} ${right}`;
+};
+const modeWord = (l, mode) => ({ Cash: 'pm_cash', UPI: 'pm_upi', Bank: 'pm_bank', Cheque: 'pm_cheque' }[mode] ? tIn(l, { Cash: 'pm_cash', UPI: 'pm_upi', Bank: 'pm_bank', Cheque: 'pm_cheque' }[mode]) : '');
+const upiLine = (l, upi) => (upi?.id && !isSampleUpi(upi.id) ? tIn(l, 'tx_upi', upi.id) : null);
+
+/** Statement rows that fit in one message; longer statements go as PDF. */
+export const TEXT_MAX_ROWS = 40;
+
+export function statementText(doc, url) {
+  const l = doc.lang;
+  const rowText = (r) => {
+    const d = fmtDay(r.day, false).replace(/^(\d) /, '0$1 ');
+    let what;
+    if (r.type === 'slip') what = `#${r.slip}${r.gst && !doc.gst_only ? ' GST' : ''}`;
+    else if (r.type === 'old') what = r.slip ? `${tIn(l, 'tx_old')} #${r.slip}` : tIn(l, 'tx_old');
+    else if (r.amount < 0) what = tIn(l, 'tx_ret');
+    else if (r.kind === 'advance' && r.slip) what = `${tIn(l, 'tx_adv')} #${r.slip} ${modeWord(l, r.mode)}`;
+    else if (r.kind === 'settled' && r.slip) what = `${tIn(l, 'tx_paid')} #${r.slip}`;
+    else what = `${tIn(l, 'tx_paid')} ${modeWord(l, r.mode)}`;
+    return line(`${d} ${what.trim()}`, r.type === 'pay' ? signed(-r.amount) : signed(r.amount));
+  };
+  const rows = [line(tIn(l, 'tx_open'), n2(doc.opening)), ...doc.rows.map(rowText)];
+  const total = Math.round((doc.opening + doc.bought) * 100) / 100;
+  const bal = doc.closing > 0 ? tIn(l, 'tx_bal', money(doc.closing, true)) : doc.closing < 0 ? tIn(l, 'tx_credit', money(-doc.closing, true)) : tIn(l, 'tx_settled');
+  return [
+    `*${doc.shop.name}*`,
+    `${tIn(l, 'stmt_title')} · *${doc.customer.name}*`,
+    `${fmtDay(doc.period.from)} – ${fmtDay(doc.period.to)}`,
+    '```',
+    ...rows,
+    '```',
+    tIn(l, 'tx_totals', money(doc.opening, true), money(doc.bought, true), money(total, true)),
+    tIn(l, 'tx_paid_line', money(doc.paid, true)),
+    bal,
+    doc.closing > 0 ? upiLine(l, doc.upi) : null,
+    doc.shop.phone ? tIn(l, 'tx_call', doc.shop.phone) : null,
+    url ? tIn(l, 'tx_stmt_pdf', url) : null,
+  ].filter(Boolean).join('\n');
+}
+
+export function slipText(doc, url) {
+  const l = doc.lang; const s = doc.slip;
+  const unit = (u) => (u === 'in' ? '"' : ' mm');
+  const items = s.items.flatMap((it) => {
+    const size = `${it.shape === 'round' ? 'Ø' : ''}${(it.dims || []).filter((x) => x !== '' && x != null).join('×')}${unit(it.unit)}`;
+    const lens = it.lengths.length && it.lengths[0].len != null && it.lengths[0].len !== ''
+      ? it.lengths.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ')
+      : `${it.pcs} ${tIn(l, 'pcs')}`;
+    return [`${it.grade} ${size}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : '')];
+  });
+  const lines = [[tIn(l, 'material'), s.material], [tIn(l, 'cutting'), s.cutting], ...(s.gst ? [[tIn(l, 'gst_line', s.gst_pct), s.gst_amount]] : [])];
+  const pays = s.payments.map((p) => `${p.amount < 0 ? tIn(l, 'doc_returned') : p.kind === 'advance' ? tIn(l, 'doc_pay_adv') : tIn(l, 'doc_pay')} ${shortDate(p.at, doc.timezone)} ${modeWord(l, p.mode)}: ${p.amount < 0 ? '+' : '−'} ${money(Math.abs(p.amount), true)}`.replace(/\s+:/, ':'));
+  return [
+    `*${doc.shop.name}*`,
+    `${tIn(l, 'order_slip')} *#${s.no}* · ${fmtDay(new Date(s.at).toLocaleDateString('en-CA', { timeZone: doc.timezone }))}`,
+    tIn(l, 'tx_customer', doc.customer.name),
+    '```',
+    ...items,
+    ...(s.total_weight != null ? [line(tIn(l, 'weight_total'), `${Number(s.total_weight).toFixed(2)} kg`)] : []),
+    '```',
+    ...lines.map(([a, b]) => `${a}: ${money(b, true)}`),
+    `*${tIn(l, 'total')}: ${money(s.total, true)}*`,
+    ...pays,
+    s.balance > 0 ? tIn(l, 'tx_bal', money(s.balance, true)) : `*${tIn(l, 'paid_full')}*`,
+    s.gst ? `_${tIn(l, 'slip_gst')}_` : null,
+    s.balance > 0 ? upiLine(l, doc.upi) : null,
+    url ? tIn(l, 'tx_slip_pdf', url) : null,
+    tIn(l, 'thanks'),
+  ].filter(Boolean).join('\n');
+}
+
+/** Short note that goes with a shared PDF. */
+export function pdfCaption(doc, url) {
+  const l = doc.lang;
+  if (doc.kind === 'slip') return [tIn(l, 'tx_cap_slip', doc.slip.no, money(doc.slip.total, true), money(doc.slip.balance, true)), doc.shop.name, url].filter(Boolean).join('\n');
+  return [tIn(l, 'tx_cap_stmt', `${fmtDay(doc.period.from, false)} – ${fmtDay(doc.period.to, false)}`, money(Math.max(0, doc.closing), true)), doc.shop.name, url].filter(Boolean).join('\n');
+}

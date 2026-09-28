@@ -1,8 +1,14 @@
 # Login (Milestone 3)
 
 ## How it works for the people using it
-1. **The owner adds staff** by name, mobile number and role (Owner, Sales, Weighing, Accounts, or custom
-   permissions). Nobody can sign themselves up, and a number the owner hasn't added can't even ask for a code.
+1. **A business registers itself** (front door, 28 Sept 2026): Welcome → mobile number → SMS code → shop details
+   (GST number checked offline), trade, team, free trial → owner's 6-digit PIN. One call, `register_company`,
+   creates the company, settings, owner, team (by number), the trade's starting grades and rates, and unlocks the phone.
+   **The owner adds staff** by name, mobile number and role (Owner, Sales, Weighing, Accounts, or custom
+   permissions) — during registration or later on the People screen. Staff open the invite link, prove their number
+   with a code (`join_by_phone` links them), see what their role can do, and set a PIN.
+   A number that is in no shop can prove itself with a code but sees nothing; the app offers "send my number to the
+   owner" or "start my own business".
 2. **First time on a phone or tablet:** enter the mobile number → a 6-digit SMS code arrives (valid 5 minutes,
    one code per minute) → set a PIN. Staff: 4–6 digits. Owners/managers: 6 digits.
 3. **Every day:** open the app → enter the PIN. No SMS needed. (Fingerprint / Face ID can come in the phone app.)
@@ -12,7 +18,7 @@
 ## Safety
 | Protection | How |
 |---|---|
-| Only added staff can log in | Public sign-up is off in Supabase Auth; no code is sent to unknown numbers |
+| Only staff see anything | Sign-up is ON (so a new business can register), but every read needs an unlocked staff session — a number in no shop sees nothing and cannot set a PIN |
 | PIN is checked by the server | Until a phone's login is unlocked with the PIN, the database returns nothing at all — enforced in the database, not the app |
 | Stolen phone / copied login | Useless without the PIN; the owner can also sign that person out everywhere |
 | Guessing | 5 wrong PINs → locked 15 min; 10 → blocked until a fresh SMS code |
@@ -24,18 +30,23 @@
 | History | Every unlock, lock, PIN change, failed try (without the PIN) and staff change is in the audit log with who did it |
 
 ## Technical pieces
-- **Supabase Auth (phone):** sign-up disabled; SMS code 6 digits, 5-minute expiry, 60 s between codes.
+- **Supabase Auth (phone):** sign-up enabled (`npm run auth:config` shows/applies the dev settings); SMS code 6 digits, 5-minute expiry, 60 s between codes.
+  Before real SMS in production: add a bot check (e.g. Cloudflare Turnstile) and per-number limits so strangers can't run up SMS costs.
   Built-in rate limits: 30 SMS/hour and 30 verifications/hour for the project.
 - **Migration `20260926090000_logins_and_pins.sql`:** `private.session_unlocks`, the PIN functions
   `login_status`, `set_pin`, `unlock`, `lock_session` (callable by signed-in users), staff-management
   functions `admin_*` (backend only), and `app.current_person_id()` now requires an unlocked, live session.
+- **Migration `20260928090000_self_signup.sql`:** trial/plan/trade/city/state on companies, `estimates_enabled` setting,
+  `register_company`, `join_by_phone`, `login_status` also tells the trial and bill settings, `app.trade_template('steel')`.
+- **Shared phone:** the app keeps each person's own login session on the device ("Who is using?"); switching locks the
+  previous person and asks only the next person's PIN — no new SMS code.
 - **Edge Function `staff-admin`** (`supabase/functions/staff-admin`): add_person, update_person, set_active,
   reset_pin, sign_out_everywhere. Checks the caller (signed in + unlocked + `people`), creates the Supabase
   login for new numbers, then calls the `admin_*` functions, which check everything again.
 - **Mobile numbers** are stored as `+91XXXXXXXXXX`; typed with or without +91, 0 or spaces.
 
 ## Development test numbers (dev project only — never real SMS, code `123456`)
-`+91 90000 00001`–`00005` (the practice SRS Trading (Dev) company: Papa, Parth, Ramesh, Suresh, Anil), `+91 90000 00901`–`00903` (automated login test) and `00904`–`00906` (automated business test).
+`+91 90000 00001`–`00005` (the practice SRS Trading (Dev) company: Papa, Parth, Ramesh, Suresh, Anil), `00009` (Claude's UI tester), `00010`–`00019` (free for trying "Start my business" and invites; Claude's UI test uses 17–19), `+91 90000 00901`–`00903` (automated login test) and `00904`–`00906` (automated business test).
 They expire on 31 March 2027. **They must never be added to the production project.**
 
 ## Tests

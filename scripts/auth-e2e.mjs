@@ -60,9 +60,17 @@ await query(`
 const staffUid = (await query(`select public.admin_auth_user_by_phone(${lit(STAFF)}) as u`))[0].u;
 if (staffUid) await call('DELETE', `/auth/v1/admin/users/${staffUid}`, { apikey: SECRET_KEY, jwt: SECRET_KEY });
 
-console.log('\n1. Strangers can\'t get in');
-const s = await call('POST', '/auth/v1/otp', { body: { phone: STRANGER } });
-check('a mobile number the owner never added gets no code', s.status >= 400, `(got ${s.status})`);
+console.log('\n1. Strangers can\'t see anything');
+const st = await smsLogin(STRANGER);
+check('a number in no shop can prove itself with a code (so it can register a business)', !!st.session?.access_token, JSON.stringify(st.otp?.data).slice(0, 100));
+const stJwt = st.session?.access_token;
+const stStatus = await rpc(stJwt, 'login_status');
+check('…but it is not staff anywhere', stStatus.data?.staff === false, JSON.stringify(stStatus.data).slice(0, 100));
+check('…and sees nothing', (await rows(stJwt, 'companies')).length === 0 && (await rows(stJwt, 'people')).length === 0);
+const stPin = await rpc(stJwt, 'set_pin', { p_pin: '385917' });
+check('…and cannot set a PIN', stPin.status >= 400, `(got ${stPin.status})`);
+const stAdmin = await staffAdmin(stJwt, { action: 'add_person', phone: '90000 00904', name: 'X', role: 'owner' });
+check('…and cannot add staff', stAdmin.status === 401 || stAdmin.status === 403, `(got ${stAdmin.status})`);
 const anonRead = await call('GET', '/rest/v1/companies?select=*');
 check('not signed in: nothing readable', Array.isArray(anonRead.data) ? anonRead.data.length === 0 : anonRead.status >= 400, JSON.stringify(anonRead.data).slice(0, 80));
 

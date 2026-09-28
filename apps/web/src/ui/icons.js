@@ -4,6 +4,8 @@ import {
   Settings, PackageCheck, FileClock, ChevronRight, ChevronLeft, Sparkles, Languages, Banknote, Smartphone, Landmark,
   FileText, Circle, Square, RectangleHorizontal, Box, Hexagon, Layers, Lock, LogOut, Delete, Check, ArrowUpRight,
   Sun, Moon, SunMoon, RefreshCw, WifiOff, CircleCheck, MessageCircle, Phone, Info, X, Search, Clock, IndianRupee,
+  Store, Cylinder, Donut, Hammer, Trees, Grid2x2, Cable, Package, UserPlus, Crown, PartyPopper, CirclePlay, ShieldCheck,
+  Send, UserSearch, LockKeyhole, ArrowRight, BadgeCheck, Gift, MessageSquare, Trash2,
 } from 'lucide-preact';
 
 export const ICONS = {
@@ -11,4 +13,6 @@ export const ICONS = {
   Settings, PackageCheck, FileClock, ChevronRight, ChevronLeft, Sparkles, Languages, Banknote, Smartphone, Landmark,
   FileText, Circle, Square, RectangleHorizontal, Box, Hexagon, Layers, Lock, LogOut, Delete, Check, ArrowUpRight,
   Sun, Moon, SunMoon, RefreshCw, WifiOff, CircleCheck, MessageCircle, Phone, Info, X, Search, Clock, IndianRupee,
+  Store, Cylinder, Donut, Hammer, Trees, Grid2x2, Cable, Package, UserPlus, Crown, PartyPopper, CirclePlay, ShieldCheck,
+  Send, UserSearch, LockKeyhole, ArrowRight, BadgeCheck, Gift, MessageSquare, Trash2,
 };

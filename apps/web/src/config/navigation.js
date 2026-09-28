@@ -33,4 +33,4 @@ export const NEEDS = [
 ];
 
 // Screens that use the whole screen (their own bottom buttons), so the bottom bar hides.
-export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/'];
+export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/', '/start'];

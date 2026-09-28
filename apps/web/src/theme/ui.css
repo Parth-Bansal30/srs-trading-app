@@ -44,6 +44,7 @@ a{color:inherit;text-decoration:none}
 
 .field{background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--r-sm);min-height:52px;display:flex;align-items:center;padding:0 14px;gap:10px;font-size:17px}
 .field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.field input::placeholder{color:var(--ink-3);font-weight:500}
 .field input{border:none;outline:none;background:transparent;flex:1;min-width:0;font-size:inherit;font-weight:600;height:48px}
 .lbl{font-size:12px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
 .error{color:var(--bad);font-size:14px;font-weight:600;margin-top:10px}

@@ -9,4 +9,6 @@ const read = () => {
 export const route = signal(read());
 addEventListener('hashchange', () => { route.value = read(); });
 export const go = (to) => { location.hash = to; };
+/** Change the address without adding a step to the back button. */
+export const replace = (to) => { history.replaceState(null, '', `#${to}`); route.value = read(); };
 export const back = () => (history.length > 1 ? history.back() : go('/'));

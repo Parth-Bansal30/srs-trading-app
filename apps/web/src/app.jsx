@@ -6,7 +6,10 @@ import { t } from './lib/i18n.js';
 import { TABS, MENU } from './config/navigation.js';
 import { APP } from './config/app.js';
 import { Icon } from './ui/kit.jsx';
-import { PhoneStep, CodeStep, SetPinStep, UnlockStep, NotStaffStep } from './screens/login/Login.jsx';
+import { PhoneStep, CodeStep, SetPinStep, UnlockStep, NotStaffStep, WhoStep, JoiningStep } from './screens/login/Login.jsx';
+import { Welcome, Tour } from './screens/login/Welcome.jsx';
+import { Register } from './screens/login/Register.jsx';
+import { Start } from './screens/start/Start.jsx';
 import { Today } from './screens/Today.jsx';
 import { More } from './screens/More.jsx';
 import { Soon } from './screens/Soon.jsx';
@@ -45,6 +48,7 @@ const SCREENS = {
   '/settings': () => <Settings />,
   '/reports': () => <Summary />,
   '/guide': () => <Guide />,
+  '/start': () => <Start />,
 };
 function match(path) {
   for (const [pattern, render] of Object.entries(SCREENS)) {
@@ -86,7 +90,14 @@ function Sidebar({ path }) {
 export function App() {
   useEffect(() => { boot(); }, []);
   const step = auth.value.step;
+  // A business that has just registered lands on "Your shop is ready!".
+  useEffect(() => { if (step === 'ready' && auth.value.justRegistered) { auth.value = { ...auth.value, justRegistered: false }; go('/start'); } }, [step]);
   if (step === 'loading') return <div class="login" />;
+  if (step === 'welcome') return <Welcome />;
+  if (step === 'tour') return <Tour />;
+  if (step === 'who') return <WhoStep />;
+  if (step === 'register') return <Register />;
+  if (step === 'joining') return <JoiningStep />;
   if (step === 'phone') return <PhoneStep />;
   if (step === 'code') return <CodeStep />;
   if (step === 'set_pin') return <SetPinStep />;

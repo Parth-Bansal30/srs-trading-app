@@ -8,6 +8,7 @@ import { go } from '../lib/router.js';
 import { NEEDS } from '../config/navigation.js';
 import { STAGES, BILLS } from '../config/options.js';
 import { Icon, Chip, LangPill, Skeleton } from '../ui/kit.jsx';
+import { startDone } from './start/Start.jsx';
 import './today.css';
 
 export function Today() {
@@ -38,6 +39,14 @@ export function Today() {
           <Icon name="WifiOff" size={20} /><div class="grow muted">{t('err_generic')}</div>
           <button class="link" onClick={load}>{t('retry')}</button>
         </div>
+      )}
+
+      {can('people') && company.value?.trial_ends_at && !startDone() && (
+        <button class="card li" style="margin-bottom:12px;border:1.5px solid var(--accent)" onClick={() => go('/start')}>
+          <div class="iconbox tone-accent"><Icon name="PartyPopper" /></div>
+          <div class="grow"><div class="t">{t('ready_steps')}</div><div class="s">{t('ready_rates')} · {t('ready_team')} · {t('ready_slip')}</div></div>
+          <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
+        </button>
       )}
 
       {can('money') && (

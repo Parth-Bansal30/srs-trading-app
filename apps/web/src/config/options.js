@@ -30,3 +30,38 @@ export const SHAPE_LOOK = {                // picture + word for each shape (siz
   hex: { word: 'sh_hex', icon: 'Hexagon' },
   plate: { word: 'sh_plate', icon: 'Layers' },
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FRONT DOOR (registering a new business)
+// ─────────────────────────────────────────────────────────────────────────────
+// What a business can sell. `ready: true` = can be set up today (starting grades come from the server).
+export const TRADES = [
+  { id: 'steel', icon: 'Cylinder', word: 'trade_steel', sub: 'trade_steel_s', ready: true },
+  { id: 'pipes', icon: 'Donut', word: 'trade_pipes' },
+  { id: 'nonferrous', icon: 'Layers', word: 'trade_nonferrous' },
+  { id: 'hardware', icon: 'Hammer', word: 'trade_hardware' },
+  { id: 'plywood', icon: 'Trees', word: 'trade_plywood' },
+  { id: 'tiles', icon: 'Grid2x2', word: 'trade_tiles' },
+  { id: 'cables', icon: 'Cable', word: 'trade_cables' },
+  { id: 'other', icon: 'Package', word: 'trade_other' },
+];
+
+// Plans shown at the free-trial step. Prices are EXAMPLES until the owner decides them;
+// no payment is taken in this version.
+export const PLANS = [
+  { id: 'starter', word: 'plan_starter', sub: 'plan_starter_s', year: 3999, month: 399 },
+  { id: 'business', word: 'plan_business', sub: 'plan_business_s', year: 7999, month: 799, best: true },
+  { id: 'multi', word: 'plan_multi', sub: 'plan_multi_s', year: 14999, month: 1499 },
+];
+export const TRIAL_DAYS = 30;
+
+// Roles offered when adding a team member (permissions come from the server's presets).
+export const TEAM_ROLES = [
+  { id: 'sales', word: 'role_sales', sub: 'role_s_sales', icon: 'ReceiptText' },
+  { id: 'weigher', word: 'role_weigher', sub: 'role_s_weigher', icon: 'Scale' },
+  { id: 'accounts', word: 'role_accounts', sub: 'role_s_accounts', icon: 'IndianRupee' },
+  { id: 'owner', word: 'role_owner', sub: 'role_s_owner', icon: 'Crown' },
+];
+
+// Colour of the round name badge on "Who is using?" (picked from the name, always the same for a person).
+export const AVATAR_COLOURS = ['#8A5A2B', '#1B2130', '#2C5CC5', '#1C8456', '#9A5B0E', '#6B4FA0', '#B0413E', '#2F7F86'];

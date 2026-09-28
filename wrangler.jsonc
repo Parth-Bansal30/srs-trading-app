@@ -1,0 +1,10 @@
+// Hosting on Cloudflare (Workers static assets). Cloudflare builds the app with
+// `cd apps/web && npm ci && npm run build` and then serves the files in apps/web/dist.
+{
+  "name": "srs-trading-app",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./apps/web/dist",
+    "not_found_handling": "single-page-application"
+  }
+}

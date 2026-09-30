@@ -648,6 +648,10 @@ const NEW_WORDS = {
   day_5: ['Fri', 'शुक्र', 'Shukra'], day_6: ['Sat', 'शनि', 'Shani'], day_7: ['Sun', 'रवि', 'Ravi'],
   eve_card: ['Evening summary is ready', 'शाम का हिसाब तैयार है', 'Shaam ka hisaab taiyaar hai'],
 
+  // ---------- app update ----------
+  update_ready: ['A new version of the app is ready', 'ऐप का नया वर्ज़न तैयार है', 'App ka naya version taiyaar hai'],
+  update_now: ['Update', 'अपडेट करें', 'Update karo'],
+
   // ---------- deleting slips (30 Sept 2026) ----------
   nav_deleted: ['Deleted slips', 'डिलीट की गई पर्चियां', 'Delete ki gayi parchiyan'],
   st_deleted: ['Deleted', 'डिलीट', 'Delete'],

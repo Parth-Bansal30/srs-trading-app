@@ -16,6 +16,7 @@ import { Soon } from './screens/Soon.jsx';
 import { NewOrder } from './screens/order/NewOrder.jsx';
 import { Slips } from './screens/slips/Slips.jsx';
 import { DeletedSlips } from './screens/slips/DeletedSlips.jsx';
+import { updateReady, updateNow } from './lib/update.js';
 import { Slip } from './screens/slips/Slip.jsx';
 import { WeighList, Weigh } from './screens/weigh/Weigh.jsx';
 import { Pickup } from './screens/pickup/Pickup.jsx';
@@ -100,7 +101,21 @@ function Sidebar({ path }) {
 let booted = false;
 const isPublic = (path) => path.startsWith('/d/');
 
+/** "New version ready · Update" — shown on every screen once the website has a newer version. */
+function UpdateBar() {
+  if (!updateReady.value) return null;
+  return (
+    <button class="update-bar" onClick={updateNow}>
+      <Icon name="RefreshCw" size={18} stroke={2.4} /><span class="grow">{t('update_ready')}</span><b>{t('update_now')}</b>
+    </button>
+  );
+}
+
 export function App() {
+  return <><UpdateBar /><Screens /></>;
+}
+
+function Screens() {
   const publicPath = isPublic(route.value.path);
   useEffect(() => { if (!publicPath && !booted) { booted = true; boot(); } }, [publicPath]);
   const step = auth.value.step;

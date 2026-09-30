@@ -5,6 +5,7 @@ import { theme, applyTheme } from '../lib/theme.js';
 import { go } from '../lib/router.js';
 import { MENU } from '../config/navigation.js';
 import { APP } from '../config/app.js';
+import { BUILD } from '../lib/update.js';
 import { longDay } from '../lib/format.js';
 import { Icon, TopBar } from '../ui/kit.jsx';
 
@@ -46,7 +47,7 @@ export function More() {
           <button class="li" onClick={switchPerson}><div class="iconbox tone-neutral"><Icon name="Users" /></div><div class="grow t">{t('switch_person')}</div></button>
           <button class="li" onClick={logOut}><div class="iconbox tone-bad"><Icon name="LogOut" /></div><div class="grow t">{t('log_out_phone')}</div></button>
         </div>
-        <div class="faint" style="text-align:center;font-size:12px;margin-top:18px">{APP.name} · v{APP.version}</div>
+        <div class="faint" style="text-align:center;font-size:12px;margin-top:18px">{APP.name} · v{APP.version}{BUILD ? ` · ${BUILD.slice(0, 10)} ${BUILD.slice(11, 16)} UTC` : ''}</div>
       </div>
     </>
   );

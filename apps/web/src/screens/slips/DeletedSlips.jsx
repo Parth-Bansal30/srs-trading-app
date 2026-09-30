@@ -1,6 +1,7 @@
 // Deleted slips (owners only): who deleted, when and why — plus staff requests waiting for an answer.
 // Address: #/slips/deleted
 import { useEffect, useState } from 'preact/hooks';
+import { businessDate } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -23,8 +24,10 @@ export function DeletedSlips() {
   useEffect(() => { if (can('delete')) load(); }, []);
 
   if (!can('delete')) return <><TopBar title={t('nav_deleted')} /><div class="page muted">{t('del_only_owners')}</div></>;
-  const monthStart = (() => { const x = new Date(); return new Date(x.getFullYear(), x.getMonth(), 1).toISOString(); })();
-  const rows = (d?.deleted || []).filter((x) => which === 'all' || x.at >= monthStart);
+  // "This month" in the shop's own calendar (not the phone's)
+  const month = (iso) => businessDate(iso, tz || 'Asia/Kolkata').slice(0, 7);
+  const thisMonth = month(new Date().toISOString());
+  const rows = (d?.deleted || []).filter((x) => which === 'all' || month(x.at) === thisMonth);
 
   return (
     <>

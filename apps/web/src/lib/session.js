@@ -198,6 +198,8 @@ export async function logOut() {
   await db.auth.signOut({ scope: 'local' });
   if (session) forget(session.user.id);
   set({ step: start(), mode: 'login', status: null });
+  // start fresh: this also loads the newest version of the app (see lib/update.js)
+  setTimeout(() => location.reload(), 50);
 }
 
 // The PIN unlock lasts a working day; re-check when the app comes back to the screen.

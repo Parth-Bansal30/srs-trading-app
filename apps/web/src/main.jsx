@@ -13,10 +13,12 @@ import './theme/layout.css';
 import { applyTheme } from './lib/theme.js';
 import { setLang, lang } from './lib/i18n.js';
 import { App } from './app.jsx';
+import { watchUpdates } from './lib/update.js';
 
 applyTheme();
 setLang(lang.value);
 render(<App />, document.getElementById('app'));
+watchUpdates();
 
 // Installed app ("Add to Home Screen"): lets it open even on a weak network. Only on the real https site.
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});

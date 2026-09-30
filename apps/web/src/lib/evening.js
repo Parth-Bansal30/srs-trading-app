@@ -26,6 +26,7 @@ export function lookLine(x, l) {
     case 'rate': return [tIn(l, 'look_rate', x.slipNo, x.grade, money(x.rate)), tIn(l, 'look_rate_s', money(x.std), [x.customer, x.by].filter(Boolean).join(' · ')), 'BadgeIndianRupee', 'warn', x.orderId ? `/slip/${x.orderId}` : null];
     case 'weight': return [tIn(l, 'look_weight', x.slipNo, x.grade, Math.abs(x.pct), tIn(l, x.pct > 0 ? 'look_more' : 'look_less')), tIn(l, 'look_weight_s', kg(x.actual), kg(x.expected)), 'Scale', 'warn', null];
     case 'cancelled': return [tIn(l, 'look_cancel', x.slipNo, x.customer), x.reason || '', 'X', 'neutral', null];
+    case 'deleted': return [tIn(l, 'look_deleted', x.slipNo, x.by || ''), [x.customer, x.reason].filter(Boolean).join(' · '), 'Trash2', 'neutral', '/slips/deleted'];
     case 'money_out': return [tIn(l, 'look_out', m0(x.amount), x.customer), x.mode || '', 'RefreshCw', 'neutral', null];
     case 'overdue': return [tIn(l, 'look_overdue', x.customer, m0(x.amount)), tIn(l, 'look_overdue_s', x.days), 'Clock', 'bad', '/reminders'];
     case 'waiting': return [tIn(l, 'look_waiting', x.n), tIn(l, 'look_waiting_s', x.customers.join(', ')), 'PackageCheck', 'neutral', '/slips?stage=weighed'];

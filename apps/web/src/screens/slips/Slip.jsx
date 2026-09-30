@@ -13,16 +13,27 @@ import { STAGES, BILLS, PAY_METHODS } from '../../config/options.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { GiveSlip } from '../docs/GiveSlip.jsx';
+import { call } from '../../lib/api.js';
+import { DeleteSheet, AskDeleteSheet } from './DeleteSheet.jsx';
 import '../docs/docs-screens.css';
+import './slips.css';
 
 const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata', refund: 'kind_refund', transfer: 'kind_transfer', reversal: 'kind_reversal' };
 
 export function Slip({ id }) {
   const [o, setO] = useState(undefined);
-  const [sheet, setSheet] = useState(null); // 'advance' | 'adjust' | 'cancel' | 'accept'
+  const [sheet, setSheet] = useState(null); // 'advance' | 'adjust' | 'cancel' | 'accept' | 'menu' | 'delete' | 'ask'
+  const [req, setReq] = useState(null);     // an open "please delete" request (owners)
+  const [deleter, setDeleter] = useState('');
   const tz = company.value?.timezone;
-  const load = () => loadOrder(id).then(setO).catch(() => setO(null));
+  const load = () => loadOrder(id).then((x) => {
+    setO(x);
+    if (x?.status === 'deleted' && x.deleted_by) db.from('people').select('display_name').eq('id', x.deleted_by).maybeSingle().then(({ data }) => setDeleter(data?.display_name || '')).catch(() => {});
+    if (x && x.status !== 'deleted' && can('delete')) call('deletedSlips', { order_id: x.id }).then((r) => setReq(r.requests?.[0] || null)).catch(() => {});
+    else setReq(null);
+  }).catch(() => setO(null));
   useEffect(() => { load(); }, [id]);
+  const decline = useAction('declineDelete');
   const done = (msg) => { setSheet(null); toast(msg || t('done_ok')); load(); };
 
   if (o === undefined) return <><TopBar title="…" /><div class="page"><Skeleton h={120} /><Skeleton h={200} style="margin-top:12px" /></div></>;
@@ -31,13 +42,19 @@ export function Slip({ id }) {
   const st = STAGES[o.status];
   const extra = o.status === 'done' ? r2(o.paid - Number(o.total_amount)) : 0;
   const justDone = o.status === 'done' && route.value.query.done === '1';
-  const showBar = o.status !== 'cancelled' && (o.status !== 'done' || justDone || (extra > 0 && can('money')));
+  const deleted = o.status === 'deleted';
+  const showBar = !deleted && o.status !== 'cancelled' && (o.status !== 'done' || justDone || (extra > 0 && can('money')));
+  const billed = o.status === 'done' || o.deleted_from === 'done';
+  const menu = deleted ? [] : can('delete') ? ['delete'] : (can('orders') || can('new')) ? ['ask'] : [];
   const due = o.status === 'done' ? Math.max(0, r2(Number(o.total_amount) - o.paid)) : 0;
 
   return (
     <>
       <TopBar title={`#${o.slip_no} · ${o.customers?.name}`} sub={`${shortDate(o.created_at, tz)} · ${time(o.created_at, tz)}`}
-        right={<Chip tone={o.status === 'done' ? BILLS[o.bill_type]?.tone : st.tone}>{o.status === 'done' ? t(BILLS[o.bill_type]?.word) : t(st.word)}</Chip>} />
+        right={<div class="row" style="gap:8px">
+          <Chip tone={o.status === 'done' ? BILLS[o.bill_type]?.tone : st.tone}>{o.status === 'done' ? t(BILLS[o.bill_type]?.word) : t(st.word)}</Chip>
+          {menu.length > 0 && <button class="round" onClick={() => setSheet('menu')} aria-label={t('slip_more')}><Icon name="EllipsisVertical" size={20} stroke={2.2} /></button>}
+        </div>} />
       <div class="page" style="padding-bottom:calc(var(--tabbar-h) + 150px)">
         {justDone && (
           <div class="done-banner">
@@ -48,6 +65,24 @@ export function Slip({ id }) {
         )}
         {o.status === 'done' && can('money') && <GiveSlip o={o} autoOpen={route.value.query.send === '1'} />}
         {o.status === 'cancelled' && <div class="card pad tone-bad" style="margin-bottom:12px;font-weight:600">{t('cancelled_because', o.cancel_reason)}</div>}
+        {deleted && (
+          <div class="del-banner tone-bad">
+            <Icon name="Trash2" size={22} />
+            <div><div class="t">{t('del_banner', deleter || '…', `${shortDate(o.deleted_at, tz)} · ${time(o.deleted_at, tz)}`)}</div>
+              <div class="s">{t('del_banner_s', o.delete_reason)}</div></div>
+          </div>
+        )}
+        {req && (
+          <div class="del-banner tone-warn" style="flex-direction:column;gap:10px">
+            <div class="row" style="gap:10px;align-items:flex-start"><Icon name="Trash2" size={20} />
+              <div><div class="t">{t('del_asked', req.by || '')}</div><div class="s">“{req.reason}”</div></div></div>
+            <div class="row" style="gap:10px;width:100%">
+              <button class="btn btn-ghost grow" style="min-height:44px;font-size:15px" disabled={decline.busy}
+                onClick={() => decline.run({ request_id: req.id }).then(() => { setReq(null); toast(t('done_ok')); }).catch(() => {})}>{t('del_not_needed')}</button>
+              <button class="btn btn-bad grow" style="min-height:44px;font-size:15px" onClick={() => setSheet('delete')}><Icon name="Trash2" size={17} />{t('del_delete')}</button>
+            </div>
+          </div>
+        )}
 
         <div class="sec" style="margin-top:4px"><h3>{t('items_title')}</h3>{o.total_weight && <span class="muted num">{t('weight_total')} {kg(o.total_weight)}</span>}</div>
         <div class="card">
@@ -66,7 +101,7 @@ export function Slip({ id }) {
           ))}
         </div>
 
-        {can('money') && o.status === 'done' && (
+        {can('money') && billed && (
           <div class="card" style="margin-top:12px;padding:6px 16px">
             <Line a={t('material')} b={money(o.material_amount, true)} />
             <Line a={t('cutting')} b={money(o.cutting_amount, true)} />
@@ -119,6 +154,19 @@ export function Slip({ id }) {
       <AdvanceSheet open={sheet === 'advance'} o={o} onClose={() => setSheet(null)} onDone={() => done()} />
       <AdjustSheet open={sheet === 'adjust'} o={o} extra={extra} onClose={() => setSheet(null)} onDone={() => done()} />
       <CancelSheet open={sheet === 'cancel'} o={o} onClose={() => setSheet(null)} onDone={() => done()} onAdjust={() => setSheet('adjust')} />
+      <Sheet open={sheet === 'menu'} onClose={() => setSheet(null)} title={t('slip_more')}>
+        <div class="card">
+          {menu.includes('delete') && <button class="li" onClick={() => setSheet('delete')}>
+            <div class="iconbox tone-bad"><Icon name="Trash2" /></div>
+            <div class="grow"><div class="t" style="color:var(--bad)">{t('del_delete')}</div><div class="s">{t('del_delete_s')}</div></div></button>}
+          {menu.includes('ask') && <button class="li" onClick={() => setSheet('ask')}>
+            <div class="iconbox tone-warn"><Icon name="Trash2" /></div>
+            <div class="grow"><div class="t">{t('del_ask')}</div><div class="s">{t('del_ask_s')}</div></div></button>}
+        </div>
+      </Sheet>
+      {can('delete') && <DeleteSheet open={sheet === 'delete'} ids={[o.id]} onClose={() => setSheet(null)}
+        onDone={() => done(t('del_done_1', o.slip_no))} />}
+      <AskDeleteSheet open={sheet === 'ask'} o={o} onClose={() => setSheet(null)} onDone={() => done(t('del_ask_done'))} />
     </>
   );
 }

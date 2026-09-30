@@ -64,7 +64,38 @@ async function askModel(prompt: string): Promise<string> {
 }
 
 const push = VAPID_PUBLIC && VAPID_PRIVATE ? { vapid: { publicKey: VAPID_PUBLIC, privateKey: VAPID_PRIVATE, subject: VAPID_SUBJECT }, sendPush } : null;
-const { ops, runEvening } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push });
+
+// One-time SMS code to confirm deleting a slip — the same SMS as login (Supabase Auth), sent to the
+// caller's own login number. Checking it makes a throwaway login, which is signed out straight away;
+// the person's own login on their phone stays as it is (no PIN again).
+const anonClient = () => createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+type Caller = { id: string; company_id: string; perms: Record<string, unknown>; token: string };
+async function loginPhone(caller: Caller) {
+  const { data, error } = await admin.auth.getUser(caller.token);
+  const phone = data?.user?.phone ? `+${String(data.user.phone).replace(/^\+/, '')}` : '';
+  if (error || !phone) throw new ApiError(400, 'no_phone', 'Your login has no mobile number.');
+  return { phone, userId: data.user.id };
+}
+const otp = {
+  async send(caller: Caller) {
+    const { phone } = await loginPhone(caller);
+    const { error } = await anonClient().auth.signInWithOtp({ phone, options: { shouldCreateUser: false } });
+    if (error) {
+      if (error.status === 429 || /seconds|rate limit/i.test(error.message)) throw new ApiError(429, 'wait', 'Please wait a minute before asking for a new code.');
+      console.error(JSON.stringify({ op: 'deleteCode', error: 'sms_failed', message: error.message }));
+      throw new ApiError(502, 'sms_failed', 'The SMS could not be sent. Please try again.');
+    }
+    return { phone };
+  },
+  async verify(caller: Caller, code: string) {
+    const { phone, userId } = await loginPhone(caller);
+    const { data, error } = await anonClient().auth.verifyOtp({ phone, token: code, type: 'sms' });
+    if (error || !data?.user || data.user.id !== userId) return false;
+    if (data.session?.access_token) await admin.auth.admin.signOut(data.session.access_token, 'local').catch(() => {});
+    return true;
+  },
+};
+const { ops, runEvening } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push, otp });
 
 /** Same length + same bytes, without leaking where they differ. */
 function sameSecret(a: string, b: string) {
@@ -106,7 +137,7 @@ Deno.serve(async (req: Request) => {
     if (statusError || !status?.signed_in) throw new ApiError(401, 'not_signed_in', 'Please sign in.');
     if (!status.staff) throw new ApiError(403, 'not_staff', 'This number is not added as staff.');
     if (!status.unlocked) throw new ApiError(401, 'pin_required', 'Enter your PIN.');
-    const caller = { id: status.person.id, company_id: status.company.id, perms: status.person.perms || {} };
+    const caller = { id: status.person.id, company_id: status.company.id, perms: status.person.perms || {}, token: authz.slice(7) };
 
     // 2. What do they want?
     let body: { v?: number; op?: string; key?: string; args?: Record<string, unknown> };

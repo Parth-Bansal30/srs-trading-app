@@ -1,12 +1,16 @@
 // All slips with a quick filter by stage and a search by slip number.
+// Owners can switch to "Select" to delete several slips (e.g. test slips) with one SMS code.
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../lib/i18n.js';
-import { company } from '../../lib/session.js';
+import { can, company } from '../../lib/session.js';
 import { listOrders } from '../../lib/orders.js';
 import { money, shortDate, time } from '../../lib/format.js';
 import { go, route } from '../../lib/router.js';
+import { toast } from '../../ui/toast.js';
 import { STAGES, BILLS } from '../../config/options.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
+import { DeleteSheet } from './DeleteSheet.jsx';
+import './slips.css';
 
 const FILTERS = [['all', 'f_all'], ['open', 'f_open'], ['accepted', 'st_accepted'], ['weighed', 'st_weighed'], ['done', 'st_done']];
 
@@ -14,13 +18,24 @@ export function Slips() {
   const [stage, setStage] = useState(route.value.query.stage || 'all');
   const [search, setSearch] = useState('');
   const [rows, setRows] = useState(null);
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState([]);
+  const [confirm, setConfirm] = useState(false);
+  const [tick, setTick] = useState(0);
   const tz = company.value?.timezone;
-  useEffect(() => { setRows(null); const id = setTimeout(() => listOrders({ stage, search: search.trim() }).then(setRows).catch(() => setRows([])), 200); return () => clearTimeout(id); }, [stage, search]);
+  useEffect(() => { setRows(null); const id = setTimeout(() => listOrders({ stage, search: search.trim() }).then(setRows).catch(() => setRows([])), 200); return () => clearTimeout(id); }, [stage, search, tick]);
+
+  const toggle = (id) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : picked.length >= 50 ? picked : [...picked, id]);
+  const stop = () => { setPicking(false); setPicked([]); };
+  const right = can('delete') && (picking
+    ? <button class="pill" onClick={stop}>{t('cancel')}</button>
+    : <button class="pill" onClick={() => setPicking(true)}><Icon name="ListChecks" size={16} />{t('sel_select')}</button>);
 
   return (
     <>
-      <TopBar title={t('nav_slips')} onBack={null} />
-      <div class="page">
+      <TopBar title={picking ? (picked.length ? t('sel_n', picked.length) : t('sel_select')) : t('nav_slips')} onBack={null} right={right} />
+      <div class="page" style={picking ? 'padding-bottom:calc(var(--tabbar-h) + 110px)' : ''}>
+        {picking && <div class="muted" style="font-size:14px;margin:-2px 2px 10px">{t('sel_none')}</div>}
         <div class="field" style="background:var(--surface)"><Icon name="Search" size={18} /><input inputmode="search" value={search} onInput={(e) => setSearch(e.currentTarget.value)} placeholder={t('search_slip')} /></div>
         <div class="chips-scroll">
           {FILTERS.map(([id, w]) => <button class={`fchip ${stage === id ? 'on' : ''}`} onClick={() => setStage(id)}>{t(w)}</button>)}
@@ -29,7 +44,8 @@ export function Slips() {
           {!rows ? <div class="pad"><Skeleton h={18} /><Skeleton h={18} w="70%" style="margin-top:12px" /></div>
             : rows.length === 0 ? <div class="li muted">{t('no_slips_yet')}</div>
               : rows.map((o) => (
-                <button class="li" onClick={() => go(`/slip/${o.id}`)}>
+                <button class="li" onClick={() => (picking ? toggle(o.id) : go(`/slip/${o.id}`))}>
+                  {picking && <div class={`sel-box ${picked.includes(o.id) ? 'on' : ''}`}>{picked.includes(o.id) && <Icon name="Check" size={16} stroke={3} />}</div>}
                   <div class="grow">
                     <div class="t num ellip">#{o.slip_no} · {o.customers?.name}</div>
                     <div class="s">{shortDate(o.created_at, tz)} · {time(o.created_at, tz)} · {t('n_items', o.order_items?.[0]?.count ?? 0)}</div>
@@ -41,6 +57,16 @@ export function Slips() {
               ))}
         </div>
       </div>
+      {picking && (
+        <div class="actionbar">
+          <button class="btn btn-bad btn-block" disabled={!picked.length} onClick={() => setConfirm(true)}>
+            <Icon name="Trash2" size={19} stroke={2.3} />{picked.length === 1 ? t('del_do_1') : t('del_do_n', picked.length)}
+          </button>
+        </div>
+      )}
+      <DeleteSheet open={confirm} ids={picked} onClose={() => setConfirm(false)}
+        onDone={(r) => { const n = r?.deleted?.length || picked.length; setConfirm(false); stop(); setTick(tick + 1);
+          toast(n === 1 ? t('del_done_1', r?.deleted?.[0]?.slip_no || '') : t('del_done_n', n)); }} />
     </>
   );
 }

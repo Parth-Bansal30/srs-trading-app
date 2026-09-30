@@ -24,8 +24,12 @@ const ADVANCE_KINDS = ['advance', 'refund', 'transfer'];
  * oldDues: [{ id, cust, side, date, amt, ref }] — ref = old slip number, or null for a lump sum.
  * sides: the sides being shown; allSides: every side this viewer may see.
  */
-export function customerLedger({ custId, orders, payments, oldDues = [], sides, allSides = sides, totals = {} }) {
+export function customerLedger({ custId, orders, payments: allPayments, oldDues = [], sides, allSides = sides, totals = {} }) {
   const full = sides.length === allSides.length;
+  // A deleted slip counts nowhere: its bill is gone and so is the money booked on it (which was
+  // reversed, given back, or moved to a separate khata credit when it was deleted).
+  const deleted = new Set(orders.filter((o) => o.status === 'deleted').map((o) => o.id));
+  const payments = deleted.size ? allPayments.filter((p) => !p.oid || !deleted.has(p.oid)) : allPayments;
   const billed = orders.filter((o) => o.cust === custId && o.status === 'done' && o.inKhata && sides.includes(o.bill));
   const ids = new Set(billed.map((o) => o.id));
   const bills = billed.map((o) => ({

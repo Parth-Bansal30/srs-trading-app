@@ -20,6 +20,7 @@ export const STAGES = {                    // order status → label + chip colo
   weighed: { word: 'st_weighed', tone: 'ok' },
   done: { word: 'st_done', tone: 'neutral' },
   cancelled: { word: 'st_cancelled', tone: 'bad' },
+  deleted: { word: 'st_deleted', tone: 'bad' },
 };
 
 export const SHAPE_LOOK = {                // picture + word for each shape (sizes/maths come from @srs/core)

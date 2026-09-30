@@ -2,8 +2,9 @@
  * Permissions: the prototype's 10, plus 'price' (added 26 Sept 2026, owner decision):
  * "change the rate on a slip". The rate is picked up automatically; only people with
  * 'price' may type a different one. Owners have it; the owner can give it to anyone.
+ * 'delete' (30 Sept 2026): delete a slip, confirmed with a one-time SMS code. Owners only by default.
  */
-export const PERMS = Object.freeze(['new', 'orders', 'weigh', 'khata', 'today', 'rates', 'people', 'settings', 'money', 'kacha', 'price']);
+export const PERMS = Object.freeze(['new', 'orders', 'weigh', 'khata', 'today', 'rates', 'people', 'settings', 'money', 'kacha', 'price', 'delete']);
 
 const allOn = () => Object.fromEntries(PERMS.map((p) => [p, true]));
 

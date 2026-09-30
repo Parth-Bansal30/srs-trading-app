@@ -100,7 +100,19 @@ export function coreItemFromDb(i) {
   };
 }
 
-export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null }) {
+/** Show only the last 3 digits of a phone number: +91 ••••• ••321 */
+export const maskPhone = (p) => {
+  const d = String(p || '').replace(/\D/g, '');
+  if (d.length < 4) return '';
+  return `${d.length > 10 ? `+${d.slice(0, d.length - 10)} ` : ''}••••• ••${d.slice(-3)}`;
+};
+const DELETE_MONEY = ['none', 'never', 'credit', 'refund'];
+
+/**
+ * otp (optional): the one-time SMS code for deleting slips — { send(caller) → { phone }, verify(caller, code) → true/false }.
+ * It uses the same SMS as login (Supabase Auth); the api function passes the caller's own login in caller.token.
+ */
+export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null, otp = null }) {
   /** '' clears it; otherwise it must be a correct GST number (typing mistakes are caught). */
   const gstinValue = (v) => {
     const s = String(v ?? '').trim();
@@ -110,6 +122,11 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     return g.gstin;
   };
   const need = (caller, ...perms) => { for (const p of perms) if (!core.can(caller.perms, p)) throw forbidden(p); };
+  const orderIds = (v) => {
+    const ids = [...new Set(Array.isArray(v) ? v : [])];
+    if (!ids.length || ids.length > 50 || !ids.every(isUuid)) throw bad('Choose 1 to 50 slips.');
+    return ids;
+  };
 
   /** Customers to ASK about (unpaid slips older than the setting, not reminded recently), from api_khata_data. */
   function remindersFrom(caller, raw, lang) {
@@ -677,6 +694,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'money');
       const day = /^\d{4}-\d{2}-\d{2}$/.test(a?.day || '') ? a.day : null;
       const raw = await rpc('api_day_data', { p_caller: caller.id, p_day: day });
+      const deleted = await rpc('api_day_deleted', { p_caller: caller.id, p_day: raw.day });
       let reminders = []; let toReceive = 0;
       if (core.can(caller.perms, 'khata')) {
         const kraw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
@@ -698,6 +716,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         cashClose: raw.cash_close, weighed, reminders, toReceive,
         waiting: (raw.waiting || []).map((w) => ({ slipNo: w.slip_no, customer: w.customer })),
         cancelled: (raw.cancelled || []).map((x) => ({ slipNo: x.slip_no, customer: x.customer, reason: x.reason })),
+        deleted: (deleted || []).map((x) => ({ slipNo: x.slip_no, customer: x.customer, reason: x.reason, by: x.by })),
         lastWeek: raw.last_week ? { total: Number(raw.last_week.total), n: Number(raw.last_week.n) } : null,
         weightWarnPct: Number(raw.settings.weight_warn_pct ?? 5), isToday: raw.day === raw.today,
       });
@@ -755,6 +774,80 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return { sent, phones: subs.length };
     },
 
+    // ---------- deleting slips (owner decision 30 Sept 2026) ----------
+    /** What deleting these slips would undo (money taken, khata) — nothing is sent or changed. */
+    async deletePreview(caller, a) {
+      need(caller, 'delete');
+      const check = await rpc('api_delete_check', { p_caller: caller.id, p_orders: orderIds(a?.order_ids) });
+      return { orders: check.orders };
+    },
+
+    /** Step 1: check the slips and send the owner a one-time SMS code (same SMS as login). */
+    async deleteCode(caller, a) {
+      need(caller, 'delete');
+      const ids = orderIds(a?.order_ids);
+      const check = await rpc('api_delete_check', { p_caller: caller.id, p_orders: ids });
+      if (!otp) throw new ApiError(503, 'sms_not_ready', 'SMS codes are not set up on the server yet.');
+      const sent = await otp.send(caller);
+      return { to: maskPhone(sent?.phone || check.phone), wait: 60, orders: check.orders };
+    },
+
+    /** Step 2: with the code, delete. money: never | credit | refund (+ mode) | none. */
+    async deleteSlips(caller, a, key, hash) {
+      need(caller, 'delete');
+      const ids = orderIds(a?.order_ids);
+      const reason = text(a?.reason);
+      if (!reason) throw bad('Write why the slip is deleted.');
+      const money = a?.money || 'none';
+      if (!DELETE_MONEY.includes(money)) throw bad('Choose what happened to the money.');
+      const mode = money === 'refund' ? payMethod(a?.mode) : null;
+      // a retry after the code was used up gets the first answer back
+      const before = await rpc('api_idem_answer', { p_caller: caller.id, p_key: key, p_op: 'deleteSlips' });
+      if (before) return before;
+      const code = String(a?.code ?? '').replace(/\D/g, '');
+      if (code.length !== 6) throw bad('Type the 6-digit code from the SMS.', 'wrong_code');
+      await rpc('api_delete_check', { p_caller: caller.id, p_orders: ids });
+      if (!otp) throw new ApiError(503, 'sms_not_ready', 'SMS codes are not set up on the server yet.');
+      if (!(await otp.verify(caller, code))) throw bad('That code is not right or has expired. Ask for a new code.', 'wrong_code');
+      return rpc('api_delete_orders', { p_caller: caller.id, p_key: key, p_hash: hash, p_orders: ids, p_reason: reason, p_money: money, p_mode: mode });
+    },
+
+    /** Staff without the permission: ask the owners (they get a phone notification if they switched them on). */
+    async requestDelete(caller, a, key, hash) {
+      if (!core.can(caller.perms, 'orders') && !core.can(caller.perms, 'new')) throw forbidden('orders');
+      const orderId = uuid(a?.order_id, 'Which slip?');
+      const reason = text(a?.reason);
+      if (!reason) throw bad('Write why the slip should be deleted.');
+      const r = await rpc('api_request_delete', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: orderId, p_reason: reason });
+      let notified = 0;
+      if (push?.vapid && !r.replayed) {
+        for (const o of r.owners || []) {
+          const L = { en: 0, hi: 1, hn: 2 }[o.lang] ?? 0;
+          const msg = { title: `${['Delete request', 'डिलीट करने की मांग', 'Delete karne ki maang'][L]} · #${r.slip_no}`,
+            body: `${r.asked_by}: ${r.reason}`, url: `#/slip/${r.order_id}`, tag: `delete-${r.request_id}` };
+          for (const s of o.subs || []) {
+            const res = await push.sendPush(s, msg, push.vapid).catch(() => ({ ok: false, gone: false }));
+            await rpc('api_push_result', { p_endpoint: s.endpoint, p_ok: res.ok, p_gone: res.gone });
+            if (res.ok) notified++;
+          }
+        }
+      }
+      return { request_id: r.request_id, order_id: r.order_id, slip_no: r.slip_no, notified, replayed: r.replayed || undefined };
+    },
+
+    /** Deleted slips (newest first) and open requests to delete — owners. order_id: only that slip's open request. */
+    async deletedSlips(caller, a) {
+      need(caller, 'delete');
+      const orderId = a?.order_id && isUuid(a.order_id) ? a.order_id : null;
+      return rpc('api_deleted_slips', { p_caller: caller.id, p_order: orderId });
+    },
+
+    /** Owner: a request that isn't needed. */
+    async declineDelete(caller, a, key, hash) {
+      need(caller, 'delete');
+      return rpc('api_decline_delete', { p_caller: caller.id, p_key: key, p_hash: hash, p_request: uuid(a?.request_id, 'Which request?') });
+    },
+
     // ---------- Ask Claude (steel guide) ----------
     async askSteelQuestion(caller, a) {
       const q = text(a.question, 1000);
@@ -808,7 +901,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet']);
+export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview']);
 
 /** Database error code → HTTP answer the app can show. */
 export function mapDbError(code, message) {

@@ -16,12 +16,13 @@ const MODES = ['Cash', 'UPI', 'Bank', 'Cheque'];
  * weighed:  items weighed that day   [{ slipNo, grade, expected, actual }]  (expected = weight worked out from the size)
  * waiting:  weighed before this day, not picked up [{ slipNo, customer }]
  * cancelled: [{ slipNo, customer, reason }]
+ * deleted:  slips deleted that day [{ slipNo, customer, reason, by }]
  * reminders: customers who should get a reminder [{ name, due, days }]
  * toReceive: everything customers owe right now (khata)
  * lastWeek: { total, n } for the same weekday a week earlier
  */
 export function daySummary({
-  orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], reminders = [],
+  orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], deleted = [], reminders = [],
   toReceive = 0, lastWeek = null, weightWarnPct = 5, isToday = false,
 }) {
   // ---- sales: slips finished today
@@ -79,6 +80,7 @@ export function daySummary({
     if (Math.abs(w.actual - w.expected) / w.expected > weightWarnPct / 100) look.push({ type: 'weight', slipNo: w.slipNo, grade: w.grade, actual: r2(w.actual), expected: r2(w.expected), pct });
   }
   for (const c of [...cancelled]) look.push({ type: 'cancelled', slipNo: c.slipNo, customer: c.customer, reason: c.reason || '' });
+  for (const d of [...deleted]) look.push({ type: 'deleted', slipNo: d.slipNo, customer: d.customer, reason: d.reason || '', by: d.by || null });
   for (const p of real.filter((x) => x.amount < 0 && x.kind === 'refund' && !x.rev)) look.push({ type: 'money_out', customer: p.customer, amount: -p.amount, mode: p.mode });
   for (const r of [...reminders].sort((a, b) => b.due - a.due).slice(0, 3)) look.push({ type: 'overdue', customer: r.name, amount: r2(r.due), days: r.days });
   if (waiting.length) look.push({ type: 'waiting', n: waiting.length, customers: [...new Set(waiting.map((w) => w.customer))].slice(0, 3) });

@@ -15,6 +15,7 @@ import { More } from './screens/More.jsx';
 import { Soon } from './screens/Soon.jsx';
 import { NewOrder } from './screens/order/NewOrder.jsx';
 import { Slips } from './screens/slips/Slips.jsx';
+import { DeletedSlips } from './screens/slips/DeletedSlips.jsx';
 import { Slip } from './screens/slips/Slip.jsx';
 import { WeighList, Weigh } from './screens/weigh/Weigh.jsx';
 import { Pickup } from './screens/pickup/Pickup.jsx';
@@ -40,6 +41,7 @@ const SCREENS = {
   '/more': () => <More />,
   '/new': () => <NewOrder />,
   '/slips': () => <Slips />,
+  '/slips/deleted': () => <DeletedSlips />,
   '/slip/:id': ({ id }) => <Slip id={id} key={id} />,
   '/weigh': () => <WeighList />,
   '/weigh/:id': ({ id }) => <Weigh id={id} key={id} />,

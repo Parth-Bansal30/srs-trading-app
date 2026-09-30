@@ -217,6 +217,38 @@ const rl2 = await api(owner, 'reminderList', {});
 check('not asked again right after sending', !(rl2.data.data || []).some((x) => x.customer.id === CUST && x.side === 'kacha'));
 check('sales (no khata permission) can\'t see reminders', (await api(sales, 'reminderList', {})).status === 403);
 
+console.log('\n10a. Deleting a slip: staff ask, owner confirms with the SMS code');
+const dOrder = await api(owner, 'createOrder', { customer_id: CUST, items: [items[0]], accept: true, advance: { amount: 300, mode: 'Cash' } });
+const DEL = dOrder.data.data?.order_id;
+check('a slip to delete (accepted, 300 advance)', dOrder.status === 200 && DEL, short(dOrder.data));
+const k0 = (await api(owner, 'khata', { customer_id: CUST })).data.data?.[0] || {};
+const ask1 = await api(sales, 'requestDelete', { order_id: DEL, reason: 'Entered twice' });
+check('sales asks the owner to delete', ask1.status === 200 && ask1.data.data.request_id && ask1.data.data.owners === undefined, short(ask1.data));
+const reqs = await api(owner, 'deletedSlips', { order_id: DEL });
+check('owner sees the request', reqs.data.data?.requests?.[0]?.reason === 'Entered twice', short(reqs.data));
+check('sales can\'t get a delete code', (await api(sales, 'deleteCode', { order_ids: [DEL] })).status === 403);
+const pv = await api(owner, 'deletePreview', { order_ids: [DEL] });
+check('preview shows the 300 taken, no phone number', Number(pv.data.data?.orders?.[0]?.paid) === 300 && pv.data.data?.phone === undefined, short(pv.data));
+let dc = await api(owner, 'deleteCode', { order_ids: [DEL] });
+if (dc.status === 429) { console.log('    (waiting 60 s: one SMS code per minute per number)'); await sleep(61000); dc = await api(owner, 'deleteCode', { order_ids: [DEL] }); }
+check('SMS code sent to the owner (only last digits shown)', dc.status === 200 && dc.data.data.to === '+91 ••••• ••904', short(dc.data));
+const bad = await api(owner, 'deleteSlips', { order_ids: [DEL], reason: 'Entered twice', money: 'credit', code: '000000' });
+check('wrong code → nothing deleted', bad.data.error === 'wrong_code', short(bad.data));
+const dkey = randomUUID();
+const dargs = { order_ids: [DEL], reason: 'Entered twice', money: 'credit', code: CODE };
+const dd = await api(owner, 'deleteSlips', dargs, dkey);
+check('right code → slip deleted', dd.status === 200 && dd.data.data.deleted?.[0]?.id === DEL, short(dd.data));
+const dd2 = await api(owner, 'deleteSlips', dargs, dkey);
+check('network retry after the code was used: same answer', dd2.status === 200 && dd2.data.data.replayed === true, short(dd2.data));
+const [gone] = await rows(owner, 'orders', `select=status,deleted_from,delete_reason&id=eq.${DEL}`);
+check('kept as deleted, with the stage and reason', gone?.status === 'deleted' && gone.deleted_from === 'accepted' && gone.delete_reason === 'Entered twice', short(gone));
+const k1 = (await api(owner, 'khata', { customer_id: CUST })).data.data?.[0] || {};
+check('the 300 advance moved from "on an open slip" to the customer\'s khata credit (owner still unlocked)',
+  Math.round((k0.pending_advance - k1.pending_advance) * 100) === 30000 && k1.credit === k0.credit, `pending ${k0.pending_advance} → ${k1.pending_advance}, credit ${k0.credit} → ${k1.credit}`);
+check('no new money on a deleted slip', (await api(owner, 'addAdvance', { order_id: DEL, amount: 10, mode: 'Cash' })).status >= 400);
+const dl = await api(owner, 'deletedSlips', {});
+check('it is in the deleted list; the request is closed', dl.data.data?.deleted?.some((x) => x.id === DEL) && !dl.data.data.requests.some((r) => r.order_id === DEL), short(dl.data).slice(0, 160));
+
 console.log('\n10. Ask Claude and the PIN lock');
 const ask = await api(sales, 'askSteelQuestion', { question: 'EN8 or EN24 for a gear shaft?' });
 check('Ask Claude answers, or says it isn\'t switched on yet', ask.status === 200 || ask.data.error === 'ai_not_configured', short(ask.data));

@@ -6,7 +6,7 @@ import { SHAPE_LOOK } from '../config/options.js';
 import { money, kg, shortDate } from './format.js';
 
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
-const ORDER = 'id,slip_no,internal_no,status,bill_type,customer_id,created_at,accepted_at,weighed_at,done_at,cancelled_at,cancel_reason,pay_mode,in_khata,gst_pct,kacha_pct,total_weight,base_amount,material_amount,cutting_amount,gst_amount,total_amount,pricing_rules';
+const ORDER = 'id,slip_no,internal_no,status,bill_type,customer_id,created_at,accepted_at,weighed_at,done_at,cancelled_at,cancel_reason,deleted_at,deleted_by,delete_reason,deleted_from,pay_mode,in_khata,gst_pct,kacha_pct,total_weight,base_amount,material_amount,cutting_amount,gst_amount,total_amount,pricing_rules';
 
 export async function loadOrder(id) {
   const o = await q(db.from('orders').select(`${ORDER},customers(id,name,phone),order_items(id,position,material_id,grade_code,shape,unit,dims,sell_rate,cut_rate,density,special_rate,actual_weight,weigh_batch_id,order_item_lengths(position,len,pcs,cuts)),payments(id,amount,mode,kind,note,received_at,reverses_payment_id,from_payment_id)`).eq('id', id).maybeSingle());
@@ -25,6 +25,7 @@ export async function listOrders({ stage, search, limit = 60 } = {}) {
   let r = db.from('orders').select('id,slip_no,status,bill_type,total_amount,created_at,done_at,in_khata,customers(name),order_items(count)').order('created_at', { ascending: false }).limit(limit);
   if (stage === 'open') r = r.in('status', ['estimate', 'accepted', 'weighed']);
   else if (stage && stage !== 'all') r = r.eq('status', stage);
+  else r = r.neq('status', 'deleted'); // deleted slips have their own list (owners)
   if (search) r = r.or(`slip_no.ilike.%${search}%`);
   return q(r);
 }

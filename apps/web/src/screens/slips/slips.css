@@ -1,0 +1,23 @@
+/* Deleting slips: red button, reason chips, money choice, the 6 code boxes, select mode. */
+.btn-bad{background:var(--bad);color:#fff}
+.btn-bad:disabled{opacity:.45}
+.del-chips{display:flex;flex-wrap:wrap;gap:8px}
+.del-chips>button{min-height:40px;padding:0 14px;border-radius:999px;background:var(--sunk);color:var(--ink-2);font-weight:600;font-size:14.5px}
+.del-chips>button.on{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.del-radios{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.del-radios>button{display:flex;gap:10px;align-items:flex-start;text-align:left;padding:6px 0;min-height:36px;color:var(--ink)}
+.del-radios .dot{width:22px;height:22px;border-radius:11px;border:2px solid var(--line-2);flex:none;margin-top:1px;position:relative}
+.del-radios>button.on .dot{border-color:var(--accent)}
+.del-radios>button.on .dot::after{content:'';position:absolute;inset:3.5px;border-radius:50%;background:var(--accent)}
+.del-radios b{display:block;font-size:14.5px;font-weight:600}
+.del-radios small{display:block;font-size:12.5px;color:var(--ink-3);font-weight:600;margin-top:1px}
+.del-shield{width:68px;height:68px;border-radius:22px;background:var(--bad-soft);color:var(--bad);display:flex;align-items:center;justify-content:center;margin:4px auto 0}
+.code-boxes{position:relative;display:flex;gap:8px;justify-content:center;margin-top:20px}
+.code-boxes>span{width:46px;height:58px;border-radius:14px;background:var(--surface);border:1.5px solid var(--line-2);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;color:var(--ink)}
+.code-boxes>span.here{border:2px solid var(--accent)}
+.code-boxes>input{position:absolute;inset:0;opacity:0;width:100%;height:100%;font-size:16px;caret-color:transparent}
+.sel-box{width:26px;height:26px;border-radius:8px;flex:none;border:2px solid var(--line-2);display:flex;align-items:center;justify-content:center}
+.sel-box.on{background:var(--bad);border-color:var(--bad);color:#fff}
+.del-banner{border-radius:16px;padding:12px 14px;margin-bottom:12px;display:flex;gap:12px;align-items:flex-start}
+.del-banner .t{font-weight:800;font-size:15px}
+.del-banner .s{font-size:13.5px;margin-top:2px;opacity:.9}

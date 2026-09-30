@@ -23,7 +23,7 @@ export async function loadToday({ perms, tz }) {
       out.counts.accepted = rows.filter((r) => r.status === 'accepted').length;
     }));
     jobs.push(q(db.from('orders').select('id,slip_no,status,bill_type,total_amount,created_at,done_at,customers(name),order_items(count)')
-      .order('created_at', { ascending: false }).limit(8)).then((rows) => { out.recent = rows; }));
+      .neq('status', 'deleted').order('created_at', { ascending: false }).limit(8)).then((rows) => { out.recent = rows; }));
   }
   if (perms.money && perms.today) {
     jobs.push(q(db.from('payments').select('amount').eq('mode', 'Cash').gte('received_at', since)).then((rows) => {

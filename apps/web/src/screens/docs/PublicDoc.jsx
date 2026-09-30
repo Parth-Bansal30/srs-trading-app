@@ -17,7 +17,7 @@ export function PublicDoc({ token }) {
     db.rpc('shared_doc', { p_token: token }).then(({ data, error }) => setD(error ? null : data || null)).catch(() => setD(null));
   }, [token]);
   useEffect(() => {
-    if (!d) return;
+    if (!d || d.cancelled) return;
     const doc = d.doc;
     document.title = doc.kind === 'slip' ? `#${doc.slip.no} · ${doc.shop.name}` : `${doc.customer.name} · ${doc.shop.name}`;
   }, [d]);
@@ -35,6 +35,20 @@ export function PublicDoc({ token }) {
     );
   }
 
+  if (d.cancelled) {
+    const l = d.lang || 'en';
+    return (
+      <div class="pub" style="justify-content:center">
+        <div class="card pad" style="max-width:420px;text-align:center">
+          <Icon name="Info" size={28} />
+          <div style="font-weight:800;font-size:17px;margin-top:10px">{tIn(l, 'pub_cancelled')}</div>
+          <div class="muted" style="margin-top:6px">{tIn(l, 'pub_cancelled_s', d.slip_no || '')}</div>
+          {d.shop?.name && <div style="font-weight:700;margin-top:14px">{d.shop.name}</div>}
+          {d.shop?.phone && <a class="btn btn-ghost btn-block" style="margin-top:12px" href={`tel:${d.shop.phone.replace(/[^\d+]/g, '')}`}><Icon name="Phone" size={19} />{tIn(l, 'pub_call')}</a>}
+        </div>
+      </div>
+    );
+  }
   const doc = d.doc; const l = doc.lang;
   const paper = doc.kind === 'slip' ? <SlipPaper doc={doc} /> : <StatementPaper doc={doc} madeAt={d.made_at} />;
   const upi = doc.upi && !isSampleUpi(doc.upi.id) && doc.upi.amount > 0 ? doc.upi : null;

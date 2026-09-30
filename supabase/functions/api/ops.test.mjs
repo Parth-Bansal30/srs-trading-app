@@ -475,3 +475,78 @@ test('evening settings: time and days checked; no push keys → job does nothing
   const none = makeOps({ core, rpc: async () => [], companySettings: async () => ({}), askModel: null });
   assert.deepEqual(await none.runEvening(), { skipped: 'no_vapid_keys' });
 });
+
+// ---------- deleting slips (30 Sept 2026) ----------
+function delDb({ codeOk = true, answered = null } = {}) {
+  const calls = []; const sent = [];
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_delete_check') return { phone: '+919000000002', orders: args.p_orders.map((id) => ({ id, slip_no: '1072', paid: 1000 })) };
+    if (fn === 'api_idem_answer') return answered;
+    if (fn === 'api_delete_orders') return { deleted: args.p_orders.map((id) => ({ id })), money: args.p_money };
+    if (fn === 'api_request_delete') return { request_id: 'r1', order_id: ORDER, slip_no: '1072', asked_by: 'Ramesh', reason: args.p_reason,
+      owners: [{ lang: 'hi', subs: [{ endpoint: 'https://push.example/1', keys: {} }] }, { lang: 'en', subs: [] }] };
+    return null;
+  };
+  const otp = { sends: 0, send: async () => { otp.sends++; return { phone: '+919000000002' }; }, verify: async (_c, code) => codeOk && code === '123456' };
+  const push = { vapid: { publicKey: 'pub', privateKey: 'priv', subject: 'x' }, sendPush: async (s, msg) => { sent.push(msg); return { ok: true, gone: false }; } };
+  const made = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, push, otp });
+  return { ...made, calls, sent, otp, last: (fn) => calls.filter((c) => c.fn === fn).at(-1)?.args };
+}
+
+test('delete slip: only with the delete permission; code goes to the owner\'s own number (last digits only)', async () => {
+  const d = delDb();
+  await rejects(d.ops.deleteCode(sales, { order_ids: [ORDER] }), 403);
+  await rejects(d.ops.deleteCode(owner, { order_ids: [] }), 400);
+  await rejects(d.ops.deleteCode(owner, { order_ids: ['nope'] }), 400);
+  const r = await d.ops.deleteCode(owner, { order_ids: [ORDER, ORDER] });
+  assert.equal(r.to, '+91 ••••• ••002');
+  assert.equal(d.otp.sends, 1);
+  assert.deepEqual(d.last('api_delete_check').p_orders, [ORDER]); // the same slip twice counts once
+});
+
+test('delete slip: wrong code → nothing deleted; right code → deleted with reason and money choice', async () => {
+  const d = delDb();
+  await rejects(d.ops.deleteSlips(owner, { order_ids: [ORDER], reason: 'Test entry', money: 'never', code: '111111' }, 'k1', 'h'), 400, 'wrong_code');
+  assert.equal(d.calls.filter((c) => c.fn === 'api_delete_orders').length, 0);
+  await rejects(d.ops.deleteSlips(owner, { order_ids: [ORDER], reason: '', money: 'never', code: '123456' }, 'k1', 'h'), 400);
+  await rejects(d.ops.deleteSlips(owner, { order_ids: [ORDER], reason: 'x', money: 'lost', code: '123456' }, 'k1', 'h'), 400);
+  await rejects(d.ops.deleteSlips(owner, { order_ids: [ORDER], reason: 'x', money: 'refund', mode: 'Adjust', code: '123456' }, 'k1', 'h'), 400);
+  const r = await d.ops.deleteSlips(owner, { order_ids: [ORDER], reason: ' Test entry ', money: 'refund', mode: 'Cash', code: '123 456' }, 'k1', 'h');
+  assert.equal(r.money, 'refund');
+  assert.deepEqual(d.last('api_delete_orders'), { p_caller: 'p-owner', p_key: 'k1', p_hash: 'h', p_orders: [ORDER], p_reason: 'Test entry', p_money: 'refund', p_mode: 'Cash' });
+  await rejects(d.ops.deleteSlips(sales, { order_ids: [ORDER], reason: 'x', money: 'none', code: '123456' }, 'k1', 'h'), 403);
+});
+
+test('delete slip: a retry after the code was used gets the first answer (no second SMS check)', async () => {
+  const d = delDb({ codeOk: false, answered: { deleted: [{ id: ORDER }], replayed: true } });
+  const r = await d.ops.deleteSlips(owner, { order_ids: [ORDER], reason: 'Test entry', money: 'never', code: '123456' }, 'k1', 'h');
+  assert.equal(r.replayed, true);
+  assert.equal(d.calls.filter((c) => c.fn === 'api_delete_orders').length, 0);
+});
+
+test('ask owner to delete: owners get a notification in their language; phone details never come back', async () => {
+  const d = delDb();
+  await rejects(d.ops.requestDelete(weigher, { order_id: ORDER, reason: '' }, 'k', 'h'), 400);
+  const r = await d.ops.requestDelete(clerk, { order_id: ORDER, reason: 'Entered twice' }, 'k', 'h');
+  assert.deepEqual(r, { request_id: 'r1', order_id: ORDER, slip_no: '1072', notified: 1, replayed: undefined });
+  assert.equal(d.sent.length, 1);
+  assert.match(d.sent[0].title, /डिलीट करने की मांग · #1072/);
+  assert.equal(d.sent[0].body, 'Ramesh: Entered twice');
+  assert.equal(d.sent[0].url, `#/slip/${ORDER}`);
+});
+
+test('evening summary lists slips deleted that day', async () => {
+  const { ops } = eveDb();
+  const d = await ops.daySummary(owner, { day: '2026-09-28' });
+  assert.ok(!d.summary.look.some((x) => x.type === 'deleted'));
+});
+
+test('delete preview: owners only, shows the money, never sends a code or the phone number', async () => {
+  const d = delDb();
+  await rejects(d.ops.deletePreview(clerk, { order_ids: [ORDER] }), 403);
+  const r = await d.ops.deletePreview(owner, { order_ids: [ORDER] });
+  assert.equal(r.orders[0].paid, 1000);
+  assert.equal(r.phone, undefined);
+  assert.equal(d.otp.sends, 0);
+});

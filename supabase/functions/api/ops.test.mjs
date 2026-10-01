@@ -313,7 +313,7 @@ function docDb({ bill = 'pakka', upi = { id: 'srs.sample@upi', name: 'SRS Tradin
     if (fn === 'api_slip_data') {
       return { ...header, order: { id: ORDER, slip_no: '1061', done_at: '2026-09-28T06:12:00Z', bill, gst_pct: 18, total_weight: 37.2,
         material: 3018, cutting: 133.7, gst: bill === 'pakka' ? 567.31 : 0, total: bill === 'pakka' ? 3719.01 : 3151.7 },
-        items: [{ grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], weight: 25.8, lengths: [{ len: '300', pcs: 12 }, { len: '150', pcs: 4 }] }],
+        items: [{ grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], weight: 25.8, hsn: '722830', lengths: [{ len: '300', pcs: 12 }, { len: '150', pcs: 4 }] }],
         payments: [{ at: '2026-09-26T08:00:00Z', amount: 2000, mode: 'UPI', kind: 'advance' }] };
     }
     if (fn === 'api_doc_header') return structuredClone(header);
@@ -345,6 +345,7 @@ test('slipDoc: the customer copy has totals, paid and balance — never rates, n
   assert.equal(d.shop.gstin, '07AAACE1234F1Z8');
   assert.equal(d.customer.gstin, '03AAKFR5521L1Z4');
   assert.equal(d.slip.items[0].pcs, 16);
+  assert.equal(d.slip.items[0].hsn, '722830'); // GST slip: HSN from the stock it came from
   const text = JSON.stringify(d);
   assert.ok(!/kacha|sell_rate|cut_rate|rate/i.test(text), text);
   const s = last('api_save_doc');
@@ -358,6 +359,7 @@ test('slipDoc: no-bill slip has no GST numbers; paid in full → no QR; weight h
   assert.equal(r.doc.shop.gstin, null);
   assert.equal(r.doc.customer.gstin, null);
   assert.equal(r.doc.slip.items[0].weight, null);
+  assert.equal(r.doc.slip.items[0].hsn, null); // no HSN on a no-bill slip
   assert.equal(r.doc.slip.total_weight, null);
   assert.equal(last('api_save_doc').p_no_bill, true);
   assert.ok(!/kacha/i.test(JSON.stringify(r.doc)));

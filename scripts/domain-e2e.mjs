@@ -290,6 +290,15 @@ check('a bill whose stock is partly gone can\'t be cancelled', (await api(owner,
 const ev = await api(owner, 'daySummary', {});
 check('evening summary has today\'s stock', ev.data.data?.summary?.stock?.bought?.kg >= 1300 && ev.data.data.summary.stock.groups.some((g) => g.code === 'EN8'), short(ev.data.data?.summary?.stock));
 
+const ho = await api(owner, 'createOrder', { customer_id: CUST, items: [{ ...items[0], stock_item_id: S75 }], accept: true });
+const HO = ho.data.data?.order_id;
+const hItem = (await api(weigher, 'weighingList', { order_id: HO })).data.data[0].items[0];
+await api(weigher, 'recordWeights', { order_id: HO, weights: [{ item_id: hItem.id, weight: 22.5 }], submit: true });
+const hf = await api(owner, 'finalizeOrder', { order_id: HO, bill: 'pakka', pay_mode: 'now', pay_method: 'Cash' });
+const hd = hf.status === 200 ? await api(owner, 'slipDoc', { order_id: HO }) : hf;
+check('GST slip shows the HSN of the stock it came from (never the buying rate)', hd.data.data?.doc?.slip?.items?.[0]?.hsn === '721499'
+  && !JSON.stringify(hd.data.data.doc).includes('"rate"'), short(hd.data));
+
 console.log('\n10. Ask Claude and the PIN lock');
 const ask = await api(sales, 'askSteelQuestion', { question: 'EN8 or EN24 for a gear shaft?' });
 check('Ask Claude answers, or says it isn\'t switched on yet', ask.status === 200 || ask.data.error === 'ai_not_configured', short(ask.data));

@@ -110,6 +110,6 @@ The same key also switches on **reading purchase bills** (PDF or photo). Optiona
 npm run test:api          # 38 unit tests of the operations (no network)
 npm run db:test           # 06_domain_operations.sql: ~90 checks in the database itself
 npm run db:parity-check   # database slip numbers = @srs/core for 2,000 moments, 6 time zones
-npm run domain:e2e        # 86 checks over the internet with real logins (dev numbers 904–906)
+npm run domain:e2e        # 87 checks over the internet with real logins (dev numbers 904–906)
 npm run seed:dev          # practice copy of SRS Trading from the prototype's own data (dev only)
 ```

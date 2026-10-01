@@ -138,7 +138,7 @@ export function slipText(doc, url) {
     const lens = it.lengths.length && it.lengths[0].len != null && it.lengths[0].len !== ''
       ? it.lengths.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ')
       : `${it.pcs} ${tIn(l, 'pcs')}`;
-    return [`${it.grade} ${size}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : '')];
+    return [`${it.grade} ${size}${it.hsn ? ` HSN ${it.hsn}` : ''}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : '')];
   });
   const lines = [[tIn(l, 'material'), s.material], [tIn(l, 'cutting'), s.cutting], ...(s.gst ? [[tIn(l, 'gst_line', s.gst_pct), s.gst_amount]] : [])];
   const pays = s.payments.map((p) => `${p.amount < 0 ? tIn(l, 'doc_returned') : p.kind === 'advance' ? tIn(l, 'doc_pay_adv') : tIn(l, 'doc_pay')} ${shortDate(p.at, doc.timezone)} ${modeWord(l, p.mode)}: ${p.amount < 0 ? '+' : '−'} ${money(Math.abs(p.amount), true)}`.replace(/\s+:/, ':'));

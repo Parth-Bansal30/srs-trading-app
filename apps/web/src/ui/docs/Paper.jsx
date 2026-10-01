@@ -108,7 +108,7 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
         <div class="pp-dash" />
         {s.items.map((it) => (
           <div>
-            <div>{it.grade} {tIn(l, SHAPE_LOOK[it.shape]?.word || it.shape)} {sizeText(it)}</div>
+            <div>{it.grade} {tIn(l, SHAPE_LOOK[it.shape]?.word || it.shape)} {sizeText(it)}{it.hsn ? ` · HSN ${it.hsn}` : ''}</div>
             <div class="pp-lr"><span> {lengthRows(it, l).join(', ')}</span><span>{it.weight != null ? `${it.weight.toFixed(2)}kg` : ''}</span></div>
           </div>
         ))}
@@ -140,7 +140,7 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
           {s.items.map((it, i) => (
             <tr>
               <td>{i + 1}</td>
-              <td><b>{it.grade}</b><div class="pp-mute pp-small">{tIn(l, SHAPE_LOOK[it.shape]?.word || it.shape)}</div></td>
+              <td><b>{it.grade}</b><div class="pp-mute pp-small">{tIn(l, SHAPE_LOOK[it.shape]?.word || it.shape)}{it.hsn ? ` · HSN ${it.hsn}` : ''}</div></td>
               <td class="pp-num">{sizeText(it)}</td>
               <td class="pp-num">{lengthRows(it, l).map((x) => <div>{x}</div>)}</td>
               {s.show_weight && <td class="pp-num r" style="font-weight:700">{it.weight != null ? `${it.weight.toFixed(2)} kg` : ''}</td>}

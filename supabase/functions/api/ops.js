@@ -724,6 +724,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
             lengths: (i.lengths || []).map((l) => ({ len: l.len, pcs: Number(l.pcs) })),
             pcs: (i.lengths || []).reduce((x, l) => x + Number(l.pcs), 0),
             weight: raw.show_weight !== false && i.weight != null ? Number(i.weight) : null,
+            hsn: gst && i.hsn ? String(i.hsn) : null, // GST slips only, from the stock the item came from
           })),
           material: Number(o.material), cutting: Number(o.cutting), gst_amount: gst ? Number(o.gst) : 0, total,
           payments, paid, balance,

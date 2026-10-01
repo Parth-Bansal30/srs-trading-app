@@ -1,0 +1,35 @@
+/* Stock and purchase bills */
+.stock-sec{margin-top:18px}
+.stock-big{font-size:32px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+.bad{color:var(--bad)}.ok{color:var(--ok)}
+.stock-bar{height:10px;border-radius:5px;background:var(--sunk);margin-top:10px;overflow:hidden}
+.stock-bar>div{height:100%;background:var(--ok);border-radius:5px}
+.cap{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.pu-hero{background:var(--brand);color:var(--on-brand);border-radius:22px;padding:18px}
+.pu-ways{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px}
+.pu-ways>button{border-radius:16px;padding:14px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:700;font-size:13.5px;background:rgba(255,255,255,.08);color:var(--on-brand);min-height:88px}
+.pu-ways>button.on{background:var(--accent);color:var(--accent-ink)}
+.pu-ways>button:disabled{opacity:.5}
+.pu-progress{height:6px;border-radius:3px;background:var(--sunk);margin-top:8px;overflow:hidden}
+.pu-progress>div{width:40%;height:100%;background:var(--accent);border-radius:3px;animation:pu-slide 1.2s ease-in-out infinite}
+@keyframes pu-slide{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+.pu-thumb{display:block;width:100%;max-height:220px;object-fit:contain;background:var(--sunk);border-radius:14px;margin-bottom:10px}
+.pu-sugg{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.pu-sugg>button{text-align:left;padding:10px 12px;border-radius:12px;background:var(--sunk);font-size:14px}
+.pu-line{margin-bottom:10px}
+.pu-saveas{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line-2)}
+.pu-warn{margin-top:6px;font-size:12.5px;font-weight:700;color:var(--warn)}
+.field.unsure{background:var(--warn-soft) !important;border-color:var(--warn) !important}
+.unitsel{border:0;background:transparent;font-weight:700;color:var(--ink-2);font-size:14px;padding:0 2px}
+.grade.empty{color:var(--accent)}
+.shapes.sm{margin-top:8px}
+.shapes.sm>button{min-height:52px;font-size:11.5px}
+.pu-done{width:64px;height:64px;border-radius:22px;background:var(--ok-soft);color:var(--ok);display:flex;align-items:center;justify-content:center;margin:0 auto}
+/* stock line under an order item, and the picker */
+.stockline{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;border-radius:12px;padding:10px 12px;margin-top:10px;font-size:13.5px;line-height:1.4}
+.stockline .link{font-size:13.5px}
+.radio{width:22px;height:22px;border-radius:11px;border:2px solid var(--line-2);flex:none;position:relative}
+.radio.on{border-color:var(--accent)}
+.radio.on::after{content:'';position:absolute;inset:3.5px;border-radius:50%;background:var(--accent)}
+.li.picked{background:var(--accent-soft)}
+.shapes.sm{grid-template-columns:repeat(4,1fr)}

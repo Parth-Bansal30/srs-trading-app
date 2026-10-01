@@ -100,6 +100,89 @@ export function coreItemFromDb(i) {
   };
 }
 
+// ---------- stock and purchases ----------
+const BILL_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+
+/** What the AI is asked (reading an Indian steel purchase bill). */
+export const BILL_PROMPT = `You read purchase bills (tax invoices) of steel bought by a steel trading shop in India.
+Return ONLY one JSON object, no other text, in exactly this shape:
+{"supplier":{"name":string|null,"gstin":string|null,"city":string|null,"phone":string|null},
+ "bill_no":string|null,"bill_date":"YYYY-MM-DD"|null,"has_gst":boolean,
+ "lines":[{"description":string,"hsn":string|null,"qty":number|null,"qty_unit":"kg"|"mt"|"qtl","rate":number|null,"rate_unit":"kg"|"mt"|"qtl","amount":number|null}],
+ "freight":number|null,"other_charges":number|null,"cgst":number|null,"sgst":number|null,"igst":number|null,"round_off":number|null,"total":number|null,
+ "unsure":[string]}
+Rules: one entry in "lines" per item row of the bill (material lines only; freight, loading, packing, TCS go into freight / other_charges).
+Numbers without commas or ₹. qty_unit / rate_unit as printed (MT or tonne = "mt", quintal = "qtl", kg = "kg"). The supplier is the SELLER, not the buyer.
+Dates as YYYY-MM-DD. If something is missing or unreadable use null. Never guess numbers: put the field in "unsure" instead,
+e.g. "lines.0.qty", "bill_no", "total". Do not add any field that is not on the bill.`;
+
+/** The model's answer → a plain object (it may wrap the JSON in ``` fences). */
+export function parseBillJson(text) {
+  const t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  const start = t.indexOf('{'); const end = t.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('no JSON in the answer');
+  return JSON.parse(t.slice(start, end + 1));
+}
+
+/** The AI's reading in the app's shape: kg and ₹/kg per line (core.billLine), totals checked (core.billTotals). */
+export function normalizeBill(core, x) {
+  const n = (v) => (v == null || v === '' || !Number.isFinite(Number(String(v).replace(/[,₹\s]/g, ''))) ? null : Number(String(v).replace(/[,₹\s]/g, '')));
+  const unsure = new Set(Array.isArray(x?.unsure) ? x.unsure.map(String) : []);
+  const lines = (Array.isArray(x?.lines) ? x.lines : []).slice(0, 100).map((l, i) => {
+    const b = core.billLine({ qty: l?.qty, qtyUnit: l?.qty_unit, rate: l?.rate, rateUnit: l?.rate_unit, amount: l?.amount });
+    return { description: String(l?.description || '').slice(0, 200), hsn: core.cleanHsn(l?.hsn), qty_kg: b.kg, rate: b.rateKg, amount: b.amount,
+      line_ok: b.ok, unsure: ['qty', 'rate', 'amount', 'hsn', 'description'].filter((f) => unsure.has(`lines.${i}.${f}`)) };
+  });
+  const gst = (n(x?.cgst) || 0) + (n(x?.sgst) || 0) + (n(x?.igst) || 0);
+  const out = {
+    supplier: { name: x?.supplier?.name ? String(x.supplier.name).slice(0, 120) : null, gstin: x?.supplier?.gstin ? String(x.supplier.gstin).replace(/\s/g, '').toUpperCase().slice(0, 15) : null,
+      city: x?.supplier?.city ? String(x.supplier.city).slice(0, 80) : null, phone: x?.supplier?.phone ? String(x.supplier.phone).slice(0, 30) : null },
+    bill_no: x?.bill_no ? String(x.bill_no).slice(0, 40) : null,
+    bill_date: /^\d{4}-\d{2}-\d{2}$/.test(String(x?.bill_date || '')) ? x.bill_date : null,
+    bill_type: x?.has_gst === false && gst === 0 ? 'kacha' : 'pakka',
+    freight: n(x?.freight) || 0, other: n(x?.other_charges) || 0, gst: Math.round(gst * 100) / 100, round_off: n(x?.round_off) || 0, total: n(x?.total),
+    lines, unsure: [...unsure].filter((f) => !f.startsWith('lines.')),
+  };
+  out.totals = core.billTotals({ lines, freight: out.freight, other: out.other, gst: out.gst, roundOff: out.round_off, total: out.total });
+  return out;
+}
+
+/** Stock data in the app's shape, with what is already booked on open orders (expected weight, worked out with core). */
+export function stockFromDb(core, raw) {
+  const booked = new Map();
+  const orders = new Map();
+  for (const b of raw.booked || []) {
+    const c = core.calcItem({ shape: b.shape, unit: b.unit, d: b.dims, rows: (b.lengths || []).map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
+      rate: 0, cutRate: 0, density: Number(b.density) }, 'est', { minInch: b.min_inch ?? 1 });
+    const kgv = c ? c.est : 0;
+    booked.set(b.stock_item_id, Math.round(((booked.get(b.stock_item_id) || 0) + kgv) * 1000) / 1000);
+    orders.set(b.stock_item_id, [...(orders.get(b.stock_item_id) || []), b.slip_no]);
+  }
+  return {
+    can_cost: !!raw.can_cost,
+    materials: raw.materials || [],
+    items: (raw.items || []).map((it) => {
+      const onHand = Number(it.on_hand || 0);
+      const bk = booked.get(it.id) || 0;
+      return { ...it, on_hand: onHand, booked: bk, free: Math.round((onHand - bk) * 1000) / 1000, booked_slips: [...new Set(orders.get(it.id) || [])] };
+    }),
+  };
+}
+
+/** The day's stock for the evening summary. */
+export function dayStockFromDb(s) {
+  const groups = (s.groups || []).map((g) => ({ code: g.code, shape: g.shape, kg: Number(g.kg || 0), lowKg: g.low_kg == null ? null : Number(g.low_kg),
+    value: g.value == null ? null : Number(g.value), negative: !!g.negative }));
+  return {
+    canCost: !!s.can_cost,
+    bought: { n: Number(s.bought?.n || 0), kg: Number(s.bought?.kg || 0), amount: s.bought?.amount == null ? null : Number(s.bought.amount) },
+    soldKg: Number(s.sold_kg || 0),
+    onHandKg: Math.round(groups.reduce((a, g) => a + Math.max(0, g.kg), 0) * 1000) / 1000,
+    value: s.can_cost ? Math.round(groups.reduce((a, g) => a + (g.value || 0), 0) * 100) / 100 : null,
+    groups, noStock: s.no_stock || [],
+  };
+}
+
 /** Show only the last 3 digits of a phone number: +91 ••••• ••321 */
 export const maskPhone = (p) => {
   const d = String(p || '').replace(/\D/g, '');
@@ -112,7 +195,11 @@ const DELETE_MONEY = ['none', 'never', 'credit', 'refund'];
  * otp (optional): the one-time SMS code for deleting slips — { send(caller) → { phone }, verify(caller, code) → true/false }.
  * It uses the same SMS as login (Supabase Auth); the api function passes the caller's own login in caller.token.
  */
-export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null, otp = null }) {
+/**
+ * files (optional): the purchase bill files — { save(caller, base64, mime) → key, url(key) → a short-lived link }.
+ * readBill (optional): the AI that reads a bill — (base64, mime) → the model's text (JSON as asked in BILL_PROMPT).
+ */
+export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null, otp = null, files = null, readBill = null }) {
   /** '' clears it; otherwise it must be a correct GST number (typing mistakes are caught). */
   const gstinValue = (v) => {
     const s = String(v ?? '').trim();
@@ -211,6 +298,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         db: {
           material_id: m.id, grade_code: m.code, shape: it.shape, unit, dims: d,
           sell_rate: rate, cut_rate: cutRate, density, special_rate: special,
+          stock_item_id: isUuid(it.stock_item_id) ? it.stock_item_id : null, // which stock it comes from (checked by the database)
           lengths: rows.map((r) => ({ len: r.len, pcs: r.pcs, cuts: r.cuts === '' ? null : r.cuts })),
         },
       };
@@ -695,6 +783,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const day = /^\d{4}-\d{2}-\d{2}$/.test(a?.day || '') ? a.day : null;
       const raw = await rpc('api_day_data', { p_caller: caller.id, p_day: day });
       const deleted = await rpc('api_day_deleted', { p_caller: caller.id, p_day: raw.day });
+      const stock = await rpc('api_day_stock', { p_caller: caller.id, p_day: raw.day });
       let reminders = []; let toReceive = 0;
       if (core.can(caller.perms, 'khata')) {
         const kraw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
@@ -717,6 +806,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         waiting: (raw.waiting || []).map((w) => ({ slipNo: w.slip_no, customer: w.customer })),
         cancelled: (raw.cancelled || []).map((x) => ({ slipNo: x.slip_no, customer: x.customer, reason: x.reason })),
         deleted: (deleted || []).map((x) => ({ slipNo: x.slip_no, customer: x.customer, reason: x.reason, by: x.by })),
+        stock: stock ? dayStockFromDb(stock) : null,
         lastWeek: raw.last_week ? { total: Number(raw.last_week.total), n: Number(raw.last_week.n) } : null,
         weightWarnPct: Number(raw.settings.weight_warn_pct ?? 5), isToday: raw.day === raw.today,
       });
@@ -848,6 +938,138 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return rpc('api_decline_delete', { p_caller: caller.id, p_key: key, p_hash: hash, p_request: uuid(a?.request_id, 'Which request?') });
     },
 
+    // ---------- stock and purchases (30 Sept 2026) ----------
+    /** All stock (for the stock screen and the "take from which stock?" picker). Buying rates only with "stock". */
+    async stockData(caller) {
+      const raw = await rpc('api_stock_data', { p_caller: caller.id });
+      return stockFromDb(core, raw);
+    },
+
+    async stockItem(caller, a) {
+      return rpc('api_stock_item', { p_caller: caller.id, p_item: uuid(a?.id, 'Which stock?') });
+    },
+
+    async purchaseContext(caller) {
+      need(caller, 'stock');
+      return { ...(await rpc('api_purchase_context', { p_caller: caller.id })), can_read: !!readBill };
+    },
+
+    /**
+     * A bill file (PDF or photo, base64): kept privately with the bill, and read by the AI when it is
+     * switched on. Nothing is saved as stock here — the person checks everything first (savePurchase).
+     */
+    async readPurchaseBill(caller, a) {
+      need(caller, 'stock');
+      const mime = String(a?.mime || '');
+      if (!BILL_MIMES.includes(mime)) throw bad('Send a PDF or a photo (JPG / PNG).');
+      const data = String(a?.data || '').replace(/^data:[^,]*,/, '');
+      if (!data || !/^[A-Za-z0-9+/=\s]+$/.test(data)) throw bad('That file could not be read.');
+      const bytes = Math.floor(data.replace(/\s/g, '').length * 3 / 4);
+      if (bytes > 8 * 1024 * 1024) throw bad('The file is too big (over 8 MB). Send a smaller photo or the PDF.');
+      const fileKey = files ? await files.save(caller, data, mime) : null;
+      if (!readBill) return { file_key: fileKey, ai: false };
+      const allowed = await rpc('api_ai_take', { p_caller: caller.id });
+      if (!allowed) return { file_key: fileKey, ai: false, reason: 'daily_limit' };
+      let parsed;
+      try { parsed = parseBillJson(await readBill(data, mime)); } catch (e) { console.error('readBill:', e?.message); return { file_key: fileKey, ai: false, reason: 'unreadable' }; }
+      return { file_key: fileKey, ai: true, bill: normalizeBill(core, parsed) };
+    },
+
+    /** Save a checked bill: every line into its stock item (grade + shape + HSN + rate). */
+    async savePurchase(caller, a, key, hash) {
+      need(caller, 'stock');
+      const b = a?.bill || {};
+      const kind = b.kind === 'opening' ? 'opening' : 'bill';
+      const billType = kind === 'opening' ? 'kacha' : b.bill_type;
+      if (!BILLS.includes(billType)) throw bad('Is it a GST bill or without bill?');
+      if (billType === 'kacha') need(caller, 'kacha');
+      const date = String(b.bill_date || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) throw bad('Enter the bill date.');
+      const linesIn = Array.isArray(b.lines) ? b.lines : [];
+      if (!linesIn.length || linesIn.length > 100) throw bad('Add at least one line.');
+      const lines = linesIn.map((l, i) => {
+        const n = i + 1;
+        const qty = Number(l.qty_kg);
+        if (!(qty > 0 && qty <= 1e7)) throw bad(`Line ${n}: enter the weight.`);
+        const rate = Number(l.rate);
+        if (!(rate >= 0 && rate <= 1e6)) throw bad(`Line ${n}: enter the rate per kg.`);
+        const amt = l.amount == null || l.amount === '' ? r2(qty * rate) : Number(l.amount);
+        if (!(amt >= 0 && amt <= 1e10)) throw bad(`Line ${n}: enter the amount.`);
+        if (!isUuid(l.material_id)) throw bad(`Line ${n}: choose the grade.`);
+        if (l.shape != null && l.shape !== '' && !core.SHAPE_IDS.includes(l.shape)) throw bad(`Line ${n}: choose the shape.`);
+        const description = text(l.description, 200) || `Line ${n}`;
+        return { description, hsn: core.cleanHsn(l.hsn), qty_kg: Math.round(qty * 1000) / 1000, rate: Math.round(rate * 1000) / 1000, amount: r2(amt),
+          material_id: l.material_id, shape: l.shape || null, label: text(l.label, 60), desc_key: core.descKey(description) };
+      });
+      const money = (v, what) => { const x = v == null || v === '' ? 0 : Number(v); if (!(x >= 0 && x <= 1e10)) throw bad(`Enter the ${what}.`); return r2(x); };
+      const freight = money(b.freight, 'freight');
+      const other = money(b.other, 'other charges');
+      const gst = billType === 'kacha' ? 0 : money(b.gst, 'GST');
+      const roundOff = Number(b.round_off || 0);
+      if (!(Math.abs(roundOff) <= 100)) throw bad('Round-off is more than ₹100. Please check the bill.');
+      const t = core.billTotals({ lines, freight, other, gst, roundOff, total: b.total == null || b.total === '' ? null : Number(b.total) });
+      if (!t.ok && !a.accept_diff) throw new ApiError(400, 'totals_differ', `The lines add up to ${t.computed}, the bill says ${t.total} (difference ${t.diff}).`, { totals: t });
+      const shares = core.landedCosts(lines.map((l) => ({ kg: l.qty_kg, rateKg: l.rate })), r2(freight + other));
+      const supplier = kind === 'opening' ? null : (isUuid(b.supplier?.id) ? { id: b.supplier.id }
+        : { name: text(b.supplier?.name, 120), gstin: gstinValue(b.supplier?.gstin) || null, phone: text(b.supplier?.phone, 30), city: text(b.supplier?.city, 80) });
+      if (supplier && !supplier.id && !supplier.name) throw bad('Write who the bill is from.');
+      return rpc('api_save_purchase', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+        kind, bill_type: billType, bill_no: text(b.bill_no, 40), bill_date: date, supplier,
+        freight, other, gst, round_off: r2(roundOff), total: t.total, pay_status: b.pay_status === 'paid' ? 'paid' : 'to_pay',
+        // a bill file can only be one this company uploaded
+        file_key: typeof b.file_key === 'string' && b.file_key.startsWith(`${caller.company_id}/`) ? b.file_key.slice(0, 200) : null,
+        read_by_ai: !!b.read_by_ai, note: text(b.note),
+        lines: lines.map((l, i) => ({ ...l, freight_share: shares[i].share })),
+      } });
+    },
+
+    async purchases(caller, a) {
+      need(caller, 'stock');
+      return rpc('api_purchases', { p_caller: caller.id, p_limit: Math.min(500, Math.max(1, Number(a?.limit) || 100)) });
+    },
+
+    async purchase(caller, a) {
+      need(caller, 'stock');
+      const r = await rpc('api_purchase', { p_caller: caller.id, p_id: uuid(a?.id, 'Which bill?') });
+      const fk = r?.purchase?.file_key;
+      return { ...r, file_url: fk && files && fk.startsWith(`${caller.company_id}/`) ? await files.url(fk).catch(() => null) : null };
+    },
+
+    async purchasePaid(caller, a, key, hash) {
+      need(caller, 'stock');
+      return rpc('api_purchase_paid', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which bill?'), p_paid: !!a.paid });
+    },
+
+    async purchaseCancel(caller, a, key, hash) {
+      need(caller, 'stock');
+      const reason = text(a?.reason);
+      if (!reason) throw bad('Write why the bill is cancelled.');
+      return rpc('api_purchase_cancel', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which bill?'), p_reason: reason });
+    },
+
+    /** count = the kg really there; close = this stock is finished (what's left is scrap / weight difference). */
+    async stockCount(caller, a, key, hash) {
+      need(caller, 'stock');
+      const count = Number(a?.count);
+      if (!(count >= 0 && count <= 1e7)) throw bad('Enter the kg that are really there.');
+      return rpc('api_stock_count', { p_caller: caller.id, p_key: key, p_hash: hash, p_item: uuid(a?.id, 'Which stock?'),
+        p_count: Math.round(count * 1000) / 1000, p_close: !!a.close, p_note: text(a.note, 300) });
+    },
+
+    async setLowStock(caller, a, key, hash) {
+      need(caller, 'stock');
+      const kgv = a?.kg == null || a.kg === '' ? null : Number(a.kg);
+      if (kgv != null && !(kgv >= 0 && kgv <= 1e7)) throw bad('Enter the kg.');
+      return rpc('api_set_low_stock', { p_caller: caller.id, p_key: key, p_hash: hash, p_material: uuid(a?.material_id, 'Which grade?'), p_kg: kgv });
+    },
+
+    /** Which stock an order item comes from (until it is weighed). stock_item_id null = sell without stock. */
+    async setItemStock(caller, a, key, hash) {
+      if (!core.can(caller.perms, 'new') && !core.can(caller.perms, 'weigh')) throw forbidden('new');
+      const stock = a?.stock_item_id == null || a.stock_item_id === '' ? null : uuid(a.stock_item_id, 'Which stock?');
+      return rpc('api_set_item_stock', { p_caller: caller.id, p_key: key, p_hash: hash, p_item: uuid(a?.item_id, 'Which item?'), p_stock: stock });
+    },
+
     // ---------- Ask Claude (steel guide) ----------
     async askSteelQuestion(caller, a) {
       const q = text(a.question, 1000);
@@ -901,7 +1123,8 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview']);
+export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+  'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill']);
 
 /** Database error code → HTTP answer the app can show. */
 export function mapDbError(code, message) {

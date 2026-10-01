@@ -76,6 +76,19 @@ export function DayReport({ d, madeAt = new Date().toISOString() }) {
         </div>}
       </div>
 
+      {s.stock?.groups.length > 0 && <>
+        <div class="rep-h">{t('eve_stock')}</div>
+        <div class="pp-small pp-mute" style="margin-top:4px">{t('eve_bought')}: {n2(s.stock.bought.kg)} kg ({t('eve_bills_n', s.stock.bought.n)}{s.stock.bought.amount != null ? `, ${money(s.stock.bought.amount, true)}` : ''}) · {t('eve_sold_kg')}: {n2(s.stock.soldKg)} kg</div>
+        <table class="pp-table pp-stmt">
+          <thead><tr><th>{t('pu_grade')}</th><th class="r">kg</th>{s.stock.value != null && <th class="r">{t('st_value')}</th>}</tr></thead>
+          <tbody>
+            {[...s.stock.groups].sort((a, b) => b.kg - a.kg).map((g) => <tr><td>{g.code} · {g.shape ? t(`sh_${g.shape}`) : t('st_any_shape')}{g.lowKg != null && g.kg < g.lowKg ? ` (${t('st_low')})` : ''}</td>
+              <td class="pp-num r">{n2(g.kg)}</td>{s.stock.value != null && <td class="pp-num r">{g.value != null ? n2(g.value) : ''}</td>}</tr>)}
+            <tr class="rep-tot"><td>{t('eve_in_stock')}</td><td class="pp-num r">{n2(s.stock.onHandKg)}</td>{s.stock.value != null && <td class="pp-num r">{n2(s.stock.value)}</td>}</tr>
+          </tbody>
+        </table>
+      </>}
+
       <div class="rep-h">{s.look.length ? t('eve_look', s.look.length) : t('eve_all_good')}</div>
       {s.look.map((x) => { const [a, b] = lookLine(x, l); return <div class="rep-look">• <b>{a}</b>{b ? <span class="pp-mute"> — {b}</span> : null}</div>; })}
 

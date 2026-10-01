@@ -550,3 +550,99 @@ test('delete preview: owners only, shows the money, never sends a code or the ph
   assert.equal(r.phone, undefined);
   assert.equal(d.otp.sends, 0);
 });
+
+// ---------- stock and purchases (30 Sept 2026) ----------
+import { parseBillJson, normalizeBill } from './ops.js';
+const MAT = '50000000-0000-4000-8000-000000000001';
+function stockDb({ reader = null, quota = true } = {}) {
+  const calls = []; const saved = [];
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_ai_take') return quota;
+    if (fn === 'api_save_purchase') return { purchase_id: 'p1', lines: args.p.lines.map((l, i) => ({ stock_item_id: `s${i}`, new: true })) };
+    if (fn === 'api_stock_data') return { can_cost: false, materials: [], items: [{ id: 's1', material_id: MAT, code: 'EN8', shape: 'round', on_hand: 500, rate: null }],
+      booked: [{ stock_item_id: 's1', slip_no: '1072', shape: 'round', unit: 'mm', dims: ['32'], density: 7850, min_inch: 1, lengths: [{ len: '1000', pcs: 12, cuts: null }] }] };
+    return null;
+  };
+  const files = { save: async (c, data, mime) => { saved.push({ c: c.id, mime, n: data.length }); return `${c.company_id}/f1.pdf`; }, url: async (k) => `https://signed/${k}` };
+  const made = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, files, readBill: reader });
+  return { ...made, calls, saved, last: (fn) => calls.filter((c) => c.fn === fn).at(-1)?.args };
+}
+const goodBill = (over = {}) => ({ kind: 'bill', bill_type: 'pakka', bill_no: '1187', bill_date: '2026-09-30', supplier: { name: 'Ludhiana Steel Rolling Mills', gstin: '03aakfr5521l1z4' },
+  freight: 6000, gst: 58536, total: 383736, pay_status: 'to_pay',
+  lines: [{ description: 'M.S. Round Bars', hsn: '7214 99', qty_kg: 5020, rate: 52.5, amount: 263550, material_id: MAT, shape: 'round' },
+    { description: 'MS Square Bars 20 mm', hsn: '721499', qty_kg: 1050, rate: 53, amount: 55650, material_id: MAT, shape: 'square' }], ...over });
+
+test('purchase bill: totals must add up (or be accepted), freight shared per kg, only "stock" people', async () => {
+  const d = stockDb();
+  await rejects(d.ops.savePurchase(sales, { bill: goodBill() }, 'k', 'h'), 403);
+  await rejects(d.ops.savePurchase(owner, { bill: goodBill({ total: 383836 }) }, 'k', 'h'), 400, 'totals_differ');
+  const r = await d.ops.savePurchase(owner, { bill: goodBill() }, 'k', 'h');
+  assert.equal(r.purchase_id, 'p1');
+  const p = d.last('api_save_purchase').p;
+  assert.equal(p.total, 383736);
+  assert.deepEqual(p.lines.map((l) => [l.hsn, l.freight_share, l.desc_key]), [['721499', 0.99, 'M S ROUND BARS'], ['721499', 0.99, 'MS SQUARE BARS 20 MM']]);
+  assert.equal(p.supplier.gstin, '03AAKFR5521L1Z4');
+  await d.ops.savePurchase(owner, { bill: goodBill({ total: 383836 }), accept_diff: true }, 'k2', 'h');
+  assert.equal(d.last('api_save_purchase').p.total, 383836, 'accepted as on the bill');
+  await rejects(d.ops.savePurchase(owner, { bill: goodBill({ lines: [{ qty_kg: 10, rate: 5, material_id: 'x' }] }) }, 'k', 'h'), 400);
+  await rejects(d.ops.savePurchase(owner, { bill: goodBill({ bill_date: '30/09/2026' }) }, 'k', 'h'), 400);
+  await d.ops.savePurchase(owner, { bill: { kind: 'opening', bill_date: '2026-09-30', lines: [{ description: 'Old stock', qty_kg: 300, rate: 70, material_id: MAT }] } }, 'k3', 'h');
+  const o = d.last('api_save_purchase').p;
+  assert.equal(o.bill_type, 'kacha'); assert.equal(o.supplier, null); assert.equal(o.gst, 0); assert.equal(o.total, 21000, 'opening stock: no supplier, no GST');
+  await rejects(d.ops.savePurchase(sales, { bill: { ...goodBill(), bill_type: 'kacha', gst: 0, total: 325200 } }, 'k', 'h'), 403);
+});
+
+test('reading a bill: file kept; without the AI the person types it; with it, the reading comes back in kg and ₹/kg', async () => {
+  let d = stockDb();
+  await rejects(d.ops.readPurchaseBill(owner, { mime: 'text/html', data: 'aGVsbG8=' }), 400);
+  let r = await d.ops.readPurchaseBill(owner, { mime: 'application/pdf', data: 'JVBERi0xLjQ=' });
+  assert.deepEqual(r, { file_key: 'c1/f1.pdf', ai: false });
+  assert.equal(d.saved.length, 1);
+  const answer = '```json\n' + JSON.stringify({ supplier: { name: 'Ludhiana Steel Rolling Mills', gstin: '03AAKFR5521L1Z4' }, bill_no: '1187', bill_date: '2026-09-30', has_gst: true,
+    lines: [{ description: 'MS Round Bars', hsn: '7214', qty: 5.02, qty_unit: 'mt', rate: 52500, rate_unit: 'mt', amount: 263550 },
+      { description: 'MS Square Bars 20mm', hsn: '7214', qty: 1050, qty_unit: 'kg', rate: 53, rate_unit: 'kg', amount: 55650 }],
+    freight: 6000, cgst: null, sgst: null, igst: 58536, round_off: 0, total: 383736, unsure: ['lines.1.qty'] }) + '\n```';
+  d = stockDb({ reader: async () => answer });
+  r = await d.ops.readPurchaseBill(owner, { mime: 'image/jpeg', data: 'aGVsbG8=' });
+  assert.equal(r.ai, true);
+  assert.deepEqual(r.bill.lines.map((l) => [l.qty_kg, l.rate, l.amount, l.line_ok]), [[5020, 52.5, 263550, true], [1050, 53, 55650, true]]);
+  assert.deepEqual(r.bill.lines[1].unsure, ['qty']);
+  assert.equal(r.bill.gst, 58536); assert.equal(r.bill.bill_type, 'pakka'); assert.ok(r.bill.totals.ok);
+  d = stockDb({ reader: async () => 'sorry, I cannot read this' });
+  assert.deepEqual(await d.ops.readPurchaseBill(owner, { mime: 'image/png', data: 'aGVsbG8=' }), { file_key: 'c1/f1.pdf', ai: false, reason: 'unreadable' });
+  d = stockDb({ reader: async () => answer, quota: false });
+  assert.equal((await d.ops.readPurchaseBill(owner, { mime: 'image/png', data: 'aGVsbG8=' })).reason, 'daily_limit');
+  await rejects(stockDb().ops.readPurchaseBill(weigher, { mime: 'image/png', data: 'aGVsbG8=' }), 403);
+});
+
+test('bill reading helpers', () => {
+  assert.deepEqual(parseBillJson('Here it is: {"a":1} thanks'), { a: 1 });
+  assert.throws(() => parseBillJson('nothing'));
+  const b = normalizeBill(core, { lines: [{ description: 'X', qty: 12.5, qty_unit: 'qtl', rate: 7800, rate_unit: 'qtl', amount: 97500 }], has_gst: false, total: 97500 });
+  assert.equal(b.bill_type, 'kacha'); assert.equal(b.lines[0].qty_kg, 1250); assert.equal(b.lines[0].rate, 78); assert.ok(b.totals.ok);
+  assert.equal(core.descKey(' M.S.  Round-Bars '), 'M S ROUND BARS');
+});
+
+test('stock data: what is already booked on open orders is worked out from the sizes', async () => {
+  const d = stockDb();
+  const r = await d.ops.stockData(weigher);
+  const it = r.items[0];
+  assert.ok(it.booked > 75 && it.booked < 76.5, `12 × 1 m of 32 mm round ≈ 75.8 kg (got ${it.booked})`);
+  assert.equal(it.free, Math.round((500 - it.booked) * 1000) / 1000);
+  assert.deepEqual(it.booked_slips, ['1072']);
+});
+
+test('orders carry the stock each item comes from', async () => {
+  const { ops, last } = fakeDb();
+  await ops.createOrder(owner, { customer_id: CUST, items: [{ material_id: EN8, shape: 'round', unit: 'mm', d: ['32'], rows: [{ len: '300', pcs: 12 }], stock_item_id: '60000000-0000-4000-8000-000000000001' }] }, 'k', 'h');
+  assert.equal(last('api_create_order').p_items[0].stock_item_id, '60000000-0000-4000-8000-000000000001');
+  await ops.createOrder(owner, { customer_id: CUST, items: [{ material_id: EN8, shape: 'round', unit: 'mm', d: ['32'], rows: [{ len: '300', pcs: 12 }], stock_item_id: 'nope' }] }, 'k2', 'h');
+  assert.equal(last('api_create_order').p_items[0].stock_item_id, null, 'not a real id → no stock');
+});
+
+test('evening summary: low stock, below zero and sold without stock need a look', () => {
+  const s = core.daySummary({ stock: { groups: [{ code: 'EN8', shape: 'round', kg: 390, lowKg: 500 }, { code: 'EN24', shape: null, kg: -12, lowKg: null, negative: true }, { code: 'MS', kg: 900, lowKg: 500 }], noStock: ['1080', '1081'] } });
+  assert.deepEqual(s.look.map((x) => x.type), ['stock_negative', 'stock_low', 'no_stock']);
+  assert.equal(s.look[2].n, 2);
+});

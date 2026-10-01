@@ -9,7 +9,7 @@
 // The steel maths is done with @srs/core (copied into ../_shared/core by scripts/sync-core.mjs).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as core from '../_shared/core/index.js';
-import { ApiError, API_VERSION, SUPPORTED_VERSIONS, READ_OPS, isUuid, makeOps, mapDbError, stableStringify } from './ops.js';
+import { ApiError, API_VERSION, SUPPORTED_VERSIONS, READ_OPS, BILL_PROMPT, isUuid, makeOps, mapDbError, stableStringify } from './ops.js';
 import { sendPush } from './webpush.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -17,6 +17,8 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const ANTHROPIC_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-haiku-4-5';
+// Reading purchase bills (PDF / photo) needs a model that reads documents well.
+const BILL_MODEL = Deno.env.get('ANTHROPIC_BILL_MODEL') ?? 'claude-sonnet-4-5';
 // Phone notifications (evening summary). Set by scripts/evening-setup.mjs; without them the job does nothing.
 const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') ?? '';
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? '';
@@ -95,7 +97,42 @@ const otp = {
     return true;
   },
 };
-const { ops, runEvening } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push, otp });
+// Purchase bill files: kept privately in Storage (bucket "bills"), per company; only the api reads and writes them.
+const files = {
+  async save(caller: Caller, base64: string, mime: string) {
+    const ext = mime === 'application/pdf' ? 'pdf' : mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+    const bytes = Uint8Array.from(atob(base64.replace(/\s/g, '')), (ch) => ch.charCodeAt(0));
+    const path = `${caller.company_id}/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await admin.storage.from('bills').upload(path, bytes, { contentType: mime, upsert: false });
+    if (error) { console.error('bill file upload failed', error.message); return null; }
+    return path;
+  },
+  async url(key: string) {
+    const { data, error } = await admin.storage.from('bills').createSignedUrl(key, 600);
+    return error ? null : data.signedUrl;
+  },
+};
+
+/** The AI reads a bill (PDF or photo) and answers with the JSON asked for in BILL_PROMPT. */
+async function readBill(base64: string, mime: string): Promise<string> {
+  const doc = mime === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+    : { type: 'image', source: { type: 'base64', media_type: mime, data: base64 } };
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: BILL_MODEL, max_tokens: 4096, messages: [{ role: 'user', content: [doc, { type: 'text', text: BILL_PROMPT }] }] }),
+  });
+  if (!r.ok) {
+    console.error('readBill: model call failed', r.status, (await r.text()).slice(0, 300));
+    throw new Error(`model ${r.status}`);
+  }
+  const body = await r.json();
+  return (body.content || []).filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('');
+}
+
+const { ops, runEvening } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push, otp,
+  files, readBill: ANTHROPIC_KEY ? readBill : null });
 
 /** Same length + same bytes, without leaking where they differ. */
 function sameSecret(a: string, b: string) {

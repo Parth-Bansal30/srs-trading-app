@@ -26,6 +26,9 @@ export function lookLine(x, l) {
     case 'rate': return [tIn(l, 'look_rate', x.slipNo, x.grade, money(x.rate)), tIn(l, 'look_rate_s', money(x.std), [x.customer, x.by].filter(Boolean).join(' · ')), 'BadgeIndianRupee', 'warn', x.orderId ? `/slip/${x.orderId}` : null];
     case 'weight': return [tIn(l, 'look_weight', x.slipNo, x.grade, Math.abs(x.pct), tIn(l, x.pct > 0 ? 'look_more' : 'look_less')), tIn(l, 'look_weight_s', kg(x.actual), kg(x.expected)), 'Scale', 'warn', null];
     case 'cancelled': return [tIn(l, 'look_cancel', x.slipNo, x.customer), x.reason || '', 'X', 'neutral', null];
+    case 'stock_low': return [tIn(l, 'look_stock_low', `${x.code}${x.shape ? ` ${tIn(l, `sh_${x.shape}`)}` : ''}`, kg(x.kg, 0)), tIn(l, 'look_stock_low_s', kg(x.lowKg, 0)), 'Boxes', 'warn', '/stock'];
+    case 'stock_negative': return [tIn(l, 'look_stock_neg', `${x.code}${x.shape ? ` ${tIn(l, `sh_${x.shape}`)}` : ''}`, kg(x.kg, 0)), tIn(l, 'look_stock_neg_s'), 'Boxes', 'bad', '/stock'];
+    case 'no_stock': return [x.n === 1 ? tIn(l, 'look_no_stock1') : tIn(l, 'look_no_stock', x.n), x.slips.map((n) => `#${n}`).join(', '), 'Boxes', 'neutral', null];
     case 'deleted': return [tIn(l, 'look_deleted', x.slipNo, x.by || ''), [x.customer, x.reason].filter(Boolean).join(' · '), 'Trash2', 'neutral', '/slips/deleted'];
     case 'money_out': return [tIn(l, 'look_out', m0(x.amount), x.customer), x.mode || '', 'RefreshCw', 'neutral', null];
     case 'overdue': return [tIn(l, 'look_overdue', x.customer, m0(x.amount)), tIn(l, 'look_overdue_s', x.days), 'Clock', 'bad', '/reminders'];
@@ -52,6 +55,8 @@ export function eveningText(d, l, url) {
       ? `*${tIn(l, 'eve_cash')}* ${tIn(l, 'eve_expected', m0(s.cash.expected))} · ${tIn(l, 'eve_counted', m0(s.cash.counted))}${s.cash.diff ? `\n⚠️ *${tIn(l, s.cash.diff < 0 ? 'eve_short' : 'eve_over', m0(Math.abs(s.cash.diff)))}*` : ' ✓'}`
       : `*${tIn(l, 'eve_cash')}* ${tIn(l, 'eve_expected', m0(s.cash.expected))} · ${tIn(l, 'eve_not_counted')}`,
     '',
+    s.stock && s.stock.groups.length ? `*${tIn(l, 'eve_stock_now')}* ${kg(s.stock.onHandKg, 0)}${s.stock.bought.n ? ` · ${tIn(l, 'eve_bought')} ${kg(s.stock.bought.kg, 0)}` : ''} · ${tIn(l, 'eve_sold_kg')} ${kg(s.stock.soldKg, 0)}` : null,
+    s.stock && s.stock.groups.length ? '' : null,
     d.khata ? `*${tIn(l, 'nav_khata')}* +${m0(s.khata.newDues)} · ${tIn(l, 'eve_old_dues')} ${m0(s.khata.collected)}\n${tIn(l, 'eve_to_receive')}: ${m0(s.khata.toReceive)}` : null,
     '',
     s.look.length ? `*${tIn(l, 'eve_look', s.look.length)}*` : `✓ ${tIn(l, 'eve_all_good')}`,

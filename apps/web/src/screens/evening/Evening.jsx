@@ -141,8 +141,22 @@ export function Evening() {
           </div>}
         </>}
 
-        <div class="sec"><h3>{t('eve_stock')}</h3><span class="chip tone-neutral">{t('eve_stock_soon')}</span></div>
-        <div class="card pad faint" style="border-style:dashed;font-size:14px">{t('eve_stock_s')}</div>
+        <div class="sec"><h3>{t('eve_stock')}</h3>{s.stock?.groups.length > 0 && <button class="link" style="min-height:0" onClick={() => go('/stock')}>{t('pu_view_stock')}</button>}</div>
+        {!s.stock || !s.stock.groups.length
+          ? <div class="card pad faint" style="border-style:dashed;font-size:14px">{t('eve_no_stock_yet')}{can('stock') && <><br /><button class="link" onClick={() => go('/purchases/new')}>{t('st_add_bill')}</button></>}</div>
+          : <>
+            <div class="eve-grid">
+              <div class="card eve-tile"><div class="eve-k">{t('eve_bought')}</div><div class="num eve-v">{kg(s.stock.bought.kg, 0)}</div>
+                <div class="muted num eve-s">{t('eve_bills_n', s.stock.bought.n)}{s.stock.bought.amount != null ? ` · ${money(s.stock.bought.amount, false)}` : ''}</div></div>
+              <div class="card eve-tile"><div class="eve-k">{t('eve_sold_kg')}</div><div class="num eve-v">{kg(s.stock.soldKg, 0)}</div></div>
+            </div>
+            <div class="card" style="margin-top:10px;padding:4px 16px">
+              {[...s.stock.groups].sort((a, b) => b.kg - a.kg).slice(0, 8).map((g) => (
+                <Row a={`${g.code} · ${g.shape ? t(`sh_${g.shape}`) : t('st_any_shape')}`} b={<span style={g.negative || g.kg < 0 ? 'color:var(--bad)' : g.lowKg != null && g.kg < g.lowKg ? 'color:var(--warn)' : ''}>{kg(g.kg, 0)}</span>} />
+              ))}
+              <Row a={t('eve_in_stock')} b={`${kg(s.stock.onHandKg, 0)}${s.stock.value != null ? ` · ${money(s.stock.value, false)}` : ''}`} top strong />
+            </div>
+          </>}
 
         <div class="eve-actions">
           <button class="btn btn-wa" onClick={sendWa}><Icon name="MessageCircle" size={20} stroke={2.4} />{t('eve_wa')}</button>

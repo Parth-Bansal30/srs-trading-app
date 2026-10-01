@@ -72,6 +72,18 @@ Authorization: Bearer <the person's login token>
 | `deleteSlips` | delete (+kacha for a no-bill slip) | with `code` (6 digits), `reason` and `money`: `never` (payments reversed — test / typed twice), `credit` (kept as the customer's khata credit), `refund` + `mode` (given back), `none`. Any stage, old slips too. The slip is kept with status `deleted`, who / when / why / from which stage; it counts nowhere (sales, khata, statements), its number is never reused, its customer link says "cancelled by the shop". The code is checked on the server (throwaway login, signed out at once — the person's own login stays unlocked); a retry with the same request key returns the first answer even though the code is used up |
 | `requestDelete` | orders or new | staff ask the owners to delete a slip (reason); owners with notifications switched on get a phone notification. One open request per slip |
 | `deletedSlips` (read) / `declineDelete` | delete | deleted slips (newest first) and open requests (`order_id` = only that slip's); "not needed" closes a request |
+| `stockData` (read) | orders | every stock item grouped by grade + shape: kg on hand, **booked** (expected weight on open orders that take from it), free, first bought, supplier, HSN. Buying rate, cost and stock value only with **stock** |
+| `stockItem` (read) | orders | one stock item with every move (bought, sold, undone, counted) and the bill / slip it came from. Rates only with stock |
+| `purchaseContext` (read) | stock | grades, existing stock items (to show "adds to your stock"), suppliers, names remembered from earlier bills, whether automatic reading is on (`can_read`) |
+| `readPurchaseBill` | stock | `{file_key}` of a PDF/photo already uploaded to the private `bills` bucket → the lines read by Claude (`ANTHROPIC_API_KEY`), or `{ai:false}` so the person types them. Nothing is saved |
+| `savePurchase` | stock | supplier, bill no./date, GST bill or not, lines `{description, hsn, qty, qty_unit, rate, rate_unit, amount, material_id, shape, label}`, freight, other, GST, round-off, total, paid. **A stock item = grade + shape + HSN + rate per kg**: a line whose four match an item adds to it, anything else makes a new item. Lines + charges + GST must equal the total (±₹1) unless `accept_diff`. Freight/other is shared by weight into each item's cost. Same supplier + bill no. twice → `409 duplicate`. `kind: 'opening'` = stock already in the godown (no bill) |
+| `purchases` (read) / `purchase` (read) | stock | bills, newest first; one bill with lines, its stock items and a 10-minute link to the bill file; `can_cancel` |
+| `purchasePaid` / `purchaseCancel` | stock | mark a bill paid; cancel a bill (reason) — its kg come off again, refused when less is left than the bill brought in (some already sold or counted down) — correct the count instead |
+| `stockCount` | stock | `{id, count, close?, note}`: the real kg after counting (the difference is saved as a correction), or close a finished item (rest written off) |
+| `setLowStock` | stock | warn in the evening summary when a grade is below `kg` (`null` = off) |
+| `setItemStock` | orders | change which stock an order item takes from — only while the order is an estimate or accepted, and only stock of the same grade |
+
+**Stock rule:** stock comes off when a slip is **weighed** (the real weight), and goes back if a weighed slip is cancelled or a weighed/finished slip is deleted. Every move is a new row in `stock_moves` — nothing is edited. New orders pick the stock for each item with core `stockChoices`: same grade, same shape (or no shape), the oldest that still has enough free kg; if none has enough, the one with the most (flagged). Selling with no stock is allowed and flagged in the evening summary.
 
 **Evening job:** pg_cron calls the api every 10 minutes with header `x-cron-secret` (from Vault; set up by `npm run evening:setup`). The api sends each due shop's summary as a phone notification (Web Push, `webpush.js`, RFC 8291/8292) to everyone who gets it, once per day (`private.evening_log`). Phones that unsubscribed are removed.
 | `askSteelQuestion` | any staff | the prototype's steel guide, through the backend so the AI key never sits in the app. Daily limit per company (default 100) |
@@ -85,6 +97,8 @@ numbers, tested). Daily/monthly/yearly numbers only have to be unique **within t
 2. Supabase dashboard → Edge Functions → Secrets → add `ANTHROPIC_API_KEY` (typed there by the
    owner — never pasted in a chat). Optional: `ANTHROPIC_MODEL`.
 Until then the app says "Ask Claude is not switched on yet".
+The same key also switches on **reading purchase bills** (PDF or photo). Optional: `ANTHROPIC_BILL_MODEL`
+(default `claude-sonnet-4-5`). Without it, the bill file is still kept and the lines are typed in.
 
 ## Files
 - `supabase/migrations/20260926120000_domain_operations.sql` — the `api_*` database functions (backend only).
@@ -93,9 +107,9 @@ Until then the app says "Ask Claude is not switched on yet".
 
 ## Tests
 ```
-npm run test:api          # 11 unit tests of the operations (no network)
+npm run test:api          # 38 unit tests of the operations (no network)
 npm run db:test           # 06_domain_operations.sql: ~90 checks in the database itself
 npm run db:parity-check   # database slip numbers = @srs/core for 2,000 moments, 6 time zones
-npm run domain:e2e        # 44 checks over the internet with real logins (dev numbers 904–906)
+npm run domain:e2e        # 86 checks over the internet with real logins (dev numbers 904–906)
 npm run seed:dev          # practice copy of SRS Trading from the prototype's own data (dev only)
 ```

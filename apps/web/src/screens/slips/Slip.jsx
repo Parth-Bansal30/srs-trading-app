@@ -1,6 +1,6 @@
 // One slip: items, weights, amounts, money taken — and the next step for its stage.
 import { useEffect, useState } from 'preact/hooks';
-import { r2 } from '@srs/core';
+import { r2, calcItem } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { loadOrder, dimText, lengthsText, shapeName, totalPcs } from '../../lib/orders.js';
@@ -15,6 +15,8 @@ import { Sheet } from '../../ui/Sheet.jsx';
 import { GiveSlip } from '../docs/GiveSlip.jsx';
 import { call } from '../../lib/api.js';
 import { DeleteSheet, AskDeleteSheet } from './DeleteSheet.jsx';
+import { loadStock, forgetStock } from '../../lib/stock.js';
+import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
 import '../docs/docs-screens.css';
 import './slips.css';
 
@@ -25,15 +27,19 @@ export function Slip({ id }) {
   const [sheet, setSheet] = useState(null); // 'advance' | 'adjust' | 'cancel' | 'accept' | 'menu' | 'delete' | 'ask'
   const [req, setReq] = useState(null);     // an open "please delete" request (owners)
   const [deleter, setDeleter] = useState('');
+  const [stock, setStock] = useState(null);      // to show / change which stock each item comes from
+  const [pickFor, setPickFor] = useState(null);  // item whose stock is being changed
   const tz = company.value?.timezone;
   const load = () => loadOrder(id).then((x) => {
     setO(x);
     if (x?.status === 'deleted' && x.deleted_by) db.from('people').select('display_name').eq('id', x.deleted_by).maybeSingle().then(({ data }) => setDeleter(data?.display_name || '')).catch(() => {});
     if (x && x.status !== 'deleted' && can('delete')) call('deletedSlips', { order_id: x.id }).then((r) => setReq(r.requests?.[0] || null)).catch(() => {});
     else setReq(null);
+    if (x && (x.order_items.some((i) => i.stock_item_id) || ['estimate', 'accepted'].includes(x.status))) loadStock(true).then(setStock).catch(() => {});
   }).catch(() => setO(null));
   useEffect(() => { load(); }, [id]);
   const decline = useAction('declineDelete');
+  const setStockOf = useAction('setItemStock');
   const done = (msg) => { setSheet(null); toast(msg || t('done_ok')); load(); };
 
   if (o === undefined) return <><TopBar title="…" /><div class="page"><Skeleton h={120} /><Skeleton h={200} style="margin-top:12px" /></div></>;
@@ -46,6 +52,13 @@ export function Slip({ id }) {
   const showBar = !deleted && o.status !== 'cancelled' && (o.status !== 'done' || justDone || (extra > 0 && can('money')));
   const billed = o.status === 'done' || o.deleted_from === 'done';
   const menu = deleted ? [] : can('delete') ? ['delete'] : (can('orders') || can('new')) ? ['ask'] : [];
+  const stockOpen = ['estimate', 'accepted'].includes(o.status) && (can('new') || can('weigh'));
+  const needOf = (it) => {
+    const c = calcItem({ shape: it.shape, unit: it.unit, d: it.dims, rows: it.order_item_lengths.map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
+      rate: 0, cutRate: 0, density: Number(it.density) }, 'est', { minInch: o.pricing_rules?.min_inch ?? 1 });
+    return { materialId: it.material_id, shape: it.shape, kg: Number(it.actual_weight) || (c ? c.est : 0) };
+  };
+  const pickItem = pickFor && o.order_items.find((i) => i.id === pickFor);
   const due = o.status === 'done' ? Math.max(0, r2(Number(o.total_amount) - o.paid)) : 0;
 
   return (
@@ -87,7 +100,7 @@ export function Slip({ id }) {
         <div class="sec" style="margin-top:4px"><h3>{t('items_title')}</h3>{o.total_weight && <span class="muted num">{t('weight_total')} {kg(o.total_weight)}</span>}</div>
         <div class="card">
           {o.order_items.map((it, i) => (
-            <div class="li">
+            <div class="li slip-item" style="flex-wrap:wrap">
               <div class="iconbox tone-neutral num" style="font-weight:800">{i + 1}</div>
               <div class="grow">
                 <div class="t">{it.grade_code} · {shapeName(it.shape)} {dimText(it)}</div>
@@ -97,6 +110,9 @@ export function Slip({ id }) {
                 {it.actual_weight ? <div class="num" style="font-weight:700">{kg(it.actual_weight)}</div> : <span class="faint" style="font-size:13px">{t('waiting_weight')}</span>}
                 {can('money') && <div class="faint num" style="font-size:12px">{money(it.sell_rate)}/kg{it.special_rate ? ' ★' : ''}</div>}
               </div>
+              {stock && (it.stock_item_id || stockOpen) && <div style="flex-basis:100%;padding-left:52px">
+                <StockLine stock={stock} value={it.stock_item_id || null} need={needOf(it)} sellRate={it.sell_rate}
+                  readOnly={!stockOpen} onOpen={() => setPickFor(it.id)} /></div>}
             </div>
           ))}
         </div>
@@ -167,6 +183,8 @@ export function Slip({ id }) {
       {can('delete') && <DeleteSheet open={sheet === 'delete'} ids={[o.id]} onClose={() => setSheet(null)}
         onDone={() => done(t('del_done_1', o.slip_no))} />}
       <AskDeleteSheet open={sheet === 'ask'} o={o} onClose={() => setSheet(null)} onDone={() => done(t('del_ask_done'))} />
+      {stock && pickItem && <StockPick open={!!pickItem} stock={stock} need={needOf(pickItem)} value={pickItem.stock_item_id || null} onClose={() => setPickFor(null)}
+        onPick={(id) => setStockOf.run({ item_id: pickItem.id, stock_item_id: id }).then(() => { setPickFor(null); forgetStock(); load(); }).catch((e) => { setPickFor(null); toast(e.message); })} />}
     </>
   );
 }

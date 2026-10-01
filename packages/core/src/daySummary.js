@@ -17,12 +17,13 @@ const MODES = ['Cash', 'UPI', 'Bank', 'Cheque'];
  * waiting:  weighed before this day, not picked up [{ slipNo, customer }]
  * cancelled: [{ slipNo, customer, reason }]
  * deleted:  slips deleted that day [{ slipNo, customer, reason, by }]
+ * stock:    { groups: [{ code, shape, kg, lowKg, negative }], noStock: [slip numbers sold without stock], … } | null
  * reminders: customers who should get a reminder [{ name, due, days }]
  * toReceive: everything customers owe right now (khata)
  * lastWeek: { total, n } for the same weekday a week earlier
  */
 export function daySummary({
-  orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], deleted = [], reminders = [],
+  orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], deleted = [], reminders = [], stock = null,
   toReceive = 0, lastWeek = null, weightWarnPct = 5, isToday = false,
 }) {
   // ---- sales: slips finished today
@@ -81,6 +82,12 @@ export function daySummary({
   }
   for (const c of [...cancelled]) look.push({ type: 'cancelled', slipNo: c.slipNo, customer: c.customer, reason: c.reason || '' });
   for (const d of [...deleted]) look.push({ type: 'deleted', slipNo: d.slipNo, customer: d.customer, reason: d.reason || '', by: d.by || null });
+  // stock below zero first (sold more than the app knew about), then stock running low
+  for (const g of stock?.groups || []) if (g.negative) look.push({ type: 'stock_negative', code: g.code, shape: g.shape || null, kg: r2(g.kg) });
+  for (const g of stock?.groups || []) {
+    if (!g.negative && g.lowKg != null && g.kg < g.lowKg) look.push({ type: 'stock_low', code: g.code, shape: g.shape || null, kg: r2(g.kg), lowKg: r2(g.lowKg) });
+  }
+  if (stock?.noStock?.length) look.push({ type: 'no_stock', n: stock.noStock.length, slips: stock.noStock.slice(0, 5) });
   for (const p of real.filter((x) => x.amount < 0 && x.kind === 'refund' && !x.rev)) look.push({ type: 'money_out', customer: p.customer, amount: -p.amount, mode: p.mode });
   for (const r of [...reminders].sort((a, b) => b.due - a.due).slice(0, 3)) look.push({ type: 'overdue', customer: r.name, amount: r2(r.due), days: r.days });
   if (waiting.length) look.push({ type: 'waiting', n: waiting.length, customers: [...new Set(waiting.map((w) => w.customer))].slice(0, 3) });
@@ -94,5 +101,5 @@ export function daySummary({
   }
   const top = [...byCust.values()].sort((a, b) => b.total - a.total).slice(0, 3);
 
-  return { sales, slips, money, cash, khata, look, top, lastWeek };
+  return { sales, slips, money, cash, khata, look, top, lastWeek, stock };
 }

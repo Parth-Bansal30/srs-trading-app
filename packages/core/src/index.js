@@ -18,3 +18,4 @@ export * from './reminders.js';
 export * from './gstin.js';
 export * from './statement.js';
 export * from './daySummary.js';
+export * from './stock.js';

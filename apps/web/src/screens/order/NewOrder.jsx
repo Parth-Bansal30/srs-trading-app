@@ -16,6 +16,8 @@ import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { PAY_METHODS } from '../../config/options.js';
 import { ItemCard } from './ItemCard.jsx';
+import { loadStock } from '../../lib/stock.js';
+import { choicesFor } from '../../ui/stock/StockPick.jsx';
 import { CustomerPicker } from './CustomerPicker.jsx';
 import './order.css';
 
@@ -32,6 +34,7 @@ export function NewOrder() {
   const [pickCust, setPickCust] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
   const [problem, setProblem] = useState(null);
+  const [stock, setStock] = useState(null); // for "take from which stock?"
   const create = useAction('createOrder');
   const update = useAction('updateOrder');
 
@@ -40,13 +43,14 @@ export function NewOrder() {
     loadCatalog().then(async (c) => {
       setCat(c);
       if (editId) {
-        const { data: o } = await db.from('orders').select('id,slip_no,status,customer_id,customers(id,name,phone),order_items(position,material_id,shape,unit,dims,sell_rate,cut_rate,special_rate,order_item_lengths(position,len,pcs,cuts))').eq('id', editId).single();
+        const { data: o } = await db.from('orders').select('id,slip_no,status,customer_id,customers(id,name,phone),order_items(position,material_id,shape,unit,dims,sell_rate,cut_rate,special_rate,stock_item_id,order_item_lengths(position,len,pcs,cuts))').eq('id', editId).single();
         setEditing(o);
         setCustomer(o.customers);
         setItems(o.order_items.sort((a, b) => a.position - b.position).map((i) => ({
           key: Math.random().toString(36).slice(2), material_id: i.material_id, shape: i.shape, unit: i.unit, d: i.dims,
           rows: i.order_item_lengths.sort((a, b) => a.position - b.position).map((l) => ({ len: l.len ?? '', pcs: String(l.pcs), cuts: l.cuts == null ? '' : String(l.cuts) })),
           rate: i.special_rate ? null : Number(i.sell_rate), cut_rate: Number(i.cut_rate),
+          stock_item_id: i.stock_item_id ?? undefined,
         })));
       } else {
         const d = store.json(DRAFT);
@@ -59,6 +63,7 @@ export function NewOrder() {
   }, [editId]);
 
   useEffect(() => { customerRates(customer?.id).then(setSpecial); }, [customer?.id]);
+  useEffect(() => { loadStock(true).then(setStock).catch(() => setStock(null)); }, []);
   useEffect(() => { if (!editId && items) store.setJson(DRAFT, { customer, items }); }, [customer, items]); // survive a closed app
 
   const settings = cat?.settings || {};
@@ -76,9 +81,14 @@ export function NewOrder() {
     const cutRate = it.cut_rate != null && it.cut_rate !== '' ? Number(it.cut_rate) : Number(m.cut_rate ?? 0);
     const density = m.density_override != null ? Number(m.density_override) : Number(fam[m.family]);
     const core = { matId: m.id, shape: it.shape, unit: it.unit, d: it.d, rows: it.rows, rate, cutRate, density, aw: null };
-    return { m, rate, cutRate, isSpecial: sp != null && rate === sp, core, calc: calcItem(core, 'est', { minInch }) };
+    const calc = calcItem(core, 'est', { minInch });
+    // which stock it comes from: the person's choice, or the best one (oldest that has enough)
+    const need = { materialId: m.id, shape: it.shape, kg: calc ? calc.est : 0 };
+    const choice = choicesFor(stock, need);
+    const stockId = it.stock_item_id !== undefined ? it.stock_item_id : choice.pick;
+    return { m, rate, cutRate, isSpecial: sp != null && rate === sp, core, calc, need, stockId };
   };
-  const resolved = useMemo(() => (items || []).map(resolve), [items, cat, special]);
+  const resolved = useMemo(() => (items || []).map(resolve), [items, cat, special, stock]);
   const totals = useMemo(() => {
     const coreItems = resolved.filter((r) => r.calc).map((r) => r.core);
     const opt = { minInch, gstPct: Number(settings.gst_pct ?? 18), kachaPct: Number(settings.kacha_pct ?? 10) };
@@ -98,8 +108,9 @@ export function NewOrder() {
 
   const payload = () => ({
     customer_id: customer?.id,
-    items: items.map((it) => ({
+    items: items.map((it, i) => ({
       material_id: it.material_id, shape: it.shape, unit: it.unit, d: it.d.slice(0, SHAPES[it.shape].dims.length),
+      stock_item_id: resolved[i]?.stockId ?? null,
       rows: it.rows.filter((r) => r.len !== '' || r.pcs !== '').map((r) => ({ len: r.len, pcs: Number(r.pcs), cuts: r.cuts === '' ? '' : Number(r.cuts) })),
       ...(can('price') && it.rate != null && it.rate !== '' ? { rate: Number(it.rate) } : {}),
       ...(can('price') && it.cut_rate != null && it.cut_rate !== '' ? { cut_rate: Number(it.cut_rate) } : {}),
@@ -156,7 +167,7 @@ export function NewOrder() {
         </button>
 
         {items.map((it, i) => (
-          <ItemCard key={it.key} index={i} item={it} r={resolved[i]} cat={cat} customer={customer} editingId={editing?.id}
+          <ItemCard key={it.key} index={i} item={it} r={resolved[i]} cat={cat} customer={customer} editingId={editing?.id} stock={stock}
             onChange={(patch) => setItem(i, patch)} onUnit={(u) => changeUnit(i, u)}
             onRemove={items.length > 1 ? () => setItems(items.filter((_, k) => k !== i)) : null} />
         ))}

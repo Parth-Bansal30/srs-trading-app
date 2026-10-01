@@ -16,6 +16,11 @@ import { Soon } from './screens/Soon.jsx';
 import { NewOrder } from './screens/order/NewOrder.jsx';
 import { Slips } from './screens/slips/Slips.jsx';
 import { DeletedSlips } from './screens/slips/DeletedSlips.jsx';
+import { Stock } from './screens/stock/Stock.jsx';
+import { StockItem } from './screens/stock/StockItem.jsx';
+import { Purchases } from './screens/stock/Purchases.jsx';
+import { Purchase } from './screens/stock/Purchase.jsx';
+import { PurchaseNew } from './screens/stock/PurchaseNew.jsx';
 import { updateReady, updateNow } from './lib/update.js';
 import { Slip } from './screens/slips/Slip.jsx';
 import { WeighList, Weigh } from './screens/weigh/Weigh.jsx';
@@ -43,6 +48,11 @@ const SCREENS = {
   '/new': () => <NewOrder />,
   '/slips': () => <Slips />,
   '/slips/deleted': () => <DeletedSlips />,
+  '/stock': () => <Stock />,
+  '/stock/:id': ({ id }) => <StockItem id={id} key={id} />,
+  '/purchases': () => <Purchases />,
+  '/purchases/new': () => <PurchaseNew />,
+  '/purchase/:id': ({ id }) => <Purchase id={id} key={id} />,
   '/slip/:id': ({ id }) => <Slip id={id} key={id} />,
   '/weigh': () => <WeighList />,
   '/weigh/:id': ({ id }) => <Weigh id={id} key={id} />,

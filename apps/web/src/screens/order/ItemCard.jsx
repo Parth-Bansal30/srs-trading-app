@@ -9,9 +9,12 @@ import { SHAPE_LOOK } from '../../config/options.js';
 import { Icon, Chip } from '../../ui/kit.jsx';
 import { GradePicker } from './GradePicker.jsx';
 import { GradeInfo, InfoButton } from '../../ui/grades/GradeInfo.jsx';
+import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
+import '../stock/stock.css';
 
-export function ItemCard({ index, item, r, cat, customer, editingId, onChange, onUnit, onRemove }) {
+export function ItemCard({ index, item, r, cat, customer, editingId, stock, onChange, onUnit, onRemove }) {
   const [pickGrade, setPickGrade] = useState(false);
+  const [pickStock, setPickStock] = useState(false);
   const [info, setInfo] = useState(false);
   const [hint, setHint] = useState(null);
   const sh = SHAPES[item.shape];
@@ -42,7 +45,7 @@ export function ItemCard({ index, item, r, cat, customer, editingId, onChange, o
 
       <div class="shapes">
         {Object.keys(SHAPE_LOOK).map((id) => (
-          <button class={item.shape === id ? 'on' : ''} onClick={() => onChange({ shape: id, d: item.d.slice(0, SHAPES[id].dims.length) })}>
+          <button class={item.shape === id ? 'on' : ''} onClick={() => onChange({ shape: id, d: item.d.slice(0, SHAPES[id].dims.length), stock_item_id: undefined })}>
             <Icon name={SHAPE_LOOK[id].icon} size={20} stroke={item.shape === id ? 2.2 : 1.8} /><span>{t(SHAPE_LOOK[id].word)}</span>
           </button>
         ))}
@@ -99,6 +102,8 @@ export function ItemCard({ index, item, r, cat, customer, editingId, onChange, o
         </>
       )}
 
+      {m && stock && <StockLine stock={stock} value={r.stockId} need={r.need} sellRate={r.rate} onOpen={() => setPickStock(true)} />}
+
       <div class="itemfoot">
         {r.calc ? (
           <>
@@ -109,9 +114,11 @@ export function ItemCard({ index, item, r, cat, customer, editingId, onChange, o
       </div>
 
       <GradePicker open={pickGrade} materials={cat.materials} onClose={() => setPickGrade(false)}
-        onPick={(mat) => { onChange({ material_id: mat.id, rate: null, cut_rate: null }); setPickGrade(false); }} />
+        onPick={(mat) => { onChange({ material_id: mat.id, rate: null, cut_rate: null, stock_item_id: undefined }); setPickGrade(false); }} />
+      {m && stock && <StockPick open={pickStock} stock={stock} need={r.need} value={r.stockId} onClose={() => setPickStock(false)}
+        onPick={(id) => { onChange({ stock_item_id: id }); setPickStock(false); }} />}
       <GradeInfo m={m} materials={cat.materials} open={info && !!m} onClose={() => setInfo(false)}
-        onUse={(alt) => { onChange({ material_id: alt.id, rate: null, cut_rate: null }); setInfo(false); }} />
+        onUse={(alt) => { onChange({ material_id: alt.id, rate: null, cut_rate: null, stock_item_id: undefined }); setInfo(false); }} />
     </div>
   );
 }

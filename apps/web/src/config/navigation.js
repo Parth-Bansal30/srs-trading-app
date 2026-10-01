@@ -16,6 +16,8 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'slips', route: '/slips', word: 'nav_slips', icon: 'ReceiptText', perm: 'orders' },
   { id: 'weigh', route: '/weigh', word: 'nav_weigh', icon: 'Scale', perm: 'weigh', badge: 'toWeigh' },
   { id: 'khata', route: '/khata', word: 'nav_khata', icon: 'BookOpenText', perm: 'khata' },
+  { id: 'stock', route: '/stock', word: 'nav_stock', icon: 'Boxes', perm: 'orders' },
+  { id: 'purchases', route: '/purchases', word: 'nav_purchases', icon: 'Truck', perm: 'stock' },
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
@@ -35,4 +37,4 @@ export const NEEDS = [
 ];
 
 // Screens that use the whole screen (their own bottom buttons), so the bottom bar hides.
-export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/', '/start'];
+export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/', '/start', '/purchases/new'];

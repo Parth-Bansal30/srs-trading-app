@@ -81,6 +81,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
   const done = orders.filter((o) => o.status === 'done');
   const khata = r2(done.filter((o) => o.in_khata).reduce((a, o) => a + Math.max(0, Number(o.total || 0) - Number(o.paid || 0)), 0));
   const open_ = orders.some((o) => ['estimate', 'accepted', 'weighed'].includes(o.status));
+  const stockBack = orders.reduce((a, o) => a + Number(o.stock_back_kg || 0), 0);
   // "never really received" only when no part was already given back / moved (the server says per slip)
   const canUndo = orders.every((o) => o.can_undo !== false || !(Number(o.paid) > 0));
   const why = reasonText(reason, other);
@@ -121,6 +122,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
                 {done.length > 0 && <Effect icon="ChartColumn">{t('del_out_sales')}</Effect>}
                 {khata > 0 && <Effect icon="BookOpenText">{t('del_out_khata', money(khata, true))}</Effect>}
                 {open_ && <Effect icon="PackageCheck">{t('del_out_open')}</Effect>}
+                {stockBack > 0 && <Effect icon="Boxes">{t('del_stock_back', `${Math.round(stockBack * 100) / 100} kg`)}</Effect>}
                 {paid > 0 && (
                   <div class="li" style="padding:10px 0;align-items:flex-start">
                     <div class="iconbox tone-warn" style="width:34px;height:34px"><Icon name="Banknote" size={17} /></div>

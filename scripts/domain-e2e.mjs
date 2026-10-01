@@ -249,6 +249,47 @@ check('no new money on a deleted slip', (await api(owner, 'addAdvance', { order_
 const dl = await api(owner, 'deletedSlips', {});
 check('it is in the deleted list; the request is closed', dl.data.data?.deleted?.some((x) => x.id === DEL) && !dl.data.data.requests.some((r) => r.order_id === DEL), short(dl.data).slice(0, 160));
 
+console.log('\n10b. Purchase bills and stock');
+check('sales can\'t enter purchase bills', (await api(sales, 'purchaseContext', {})).status === 403);
+const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF').toString('base64');
+const rb = await api(owner, 'readPurchaseBill', { mime: 'application/pdf', data: pdf });
+check('bill file kept privately for this company (AI reading is off until the key is added)', rb.status === 200 && rb.data.data.file_key?.startsWith(`${co.id}/`) && rb.data.data.ai === false, short(rb.data));
+const billNo = `E2E-${Date.now()}`;
+const bill = { kind: 'bill', bill_type: 'pakka', bill_no: billNo, bill_date: today, supplier: { name: 'E2E Steel Mill', gstin: '03AAKFR5521L1Z4' },
+  freight: 1000, gst: 18108, total: 118708, file_key: rb.data.data.file_key,
+  lines: [{ description: 'EN8 Round Bars', hsn: '721499', qty_kg: 600, rate: 75, amount: 45000, material_id: EN8, shape: 'round' },
+    { description: 'EN8 Round Bars', hsn: '721499', qty_kg: 700, rate: 78, amount: 54600, material_id: EN8, shape: 'round' }] };
+check('totals that don\'t add up are caught', (await api(owner, 'savePurchase', { bill: { ...bill, total: 119999 } })).data.error === 'totals_differ');
+const sp = await api(owner, 'savePurchase', { bill });
+check('bill saved: same grade + HSN at two rates = two stock items', sp.status === 200 && sp.data.data.lines.length === 2 && sp.data.data.lines[0].stock_item_id !== sp.data.data.lines[1].stock_item_id, short(sp.data));
+const S75 = sp.data.data.lines[0].stock_item_id;
+check('the same bill can\'t be saved twice', (await api(owner, 'savePurchase', { bill })).status === 409);
+const pu = await api(owner, 'purchase', { id: sp.data.data.purchase_id });
+const fileOk = pu.data.data?.file_url ? (await fetch(pu.data.data.file_url)).status === 200 : false;
+check('the bill file opens with a short-lived link', fileOk, short(pu.data).slice(0, 120));
+const sw = await api(weigher, 'stockData', {});
+const s75w = sw.data.data?.items?.find((x) => x.id === S75);
+check('weigher sees the stock kg but not the buying rate', s75w && s75w.rate == null && s75w.on_hand >= 600, short(s75w));
+const before = Number((await api(owner, 'stockItem', { id: S75 })).data.data.item.on_hand);
+const so = await api(owner, 'createOrder', { customer_id: CUST, items: [{ ...items[0], stock_item_id: S75 }], accept: true });
+const SO = so.data.data?.order_id;
+check('order item takes from the ₹75 stock', so.status === 200 && (await rows(owner, 'order_items', `select=stock_item_id&order_id=eq.${SO}`))[0]?.stock_item_id === S75, short(so.data));
+const sdBooked = (await api(owner, 'stockData', {})).data.data.items.find((x) => x.id === S75);
+check('it shows as booked on an open order', sdBooked.booked > 0 && sdBooked.booked_slips.length >= 1, short(sdBooked));
+const wItem = (await api(weigher, 'weighingList', { order_id: SO })).data.data[0].items[0];
+const ww = await api(weigher, 'recordWeights', { order_id: SO, weights: [{ item_id: wItem.id, weight: 22.5 }], submit: true });
+const after = Number((await api(owner, 'stockItem', { id: S75 })).data.data.item.on_hand);
+check('weighed: 22.5 kg came off that stock', ww.status === 200 && Math.round((before - after) * 1000) === 22500, `${before} → ${after}`);
+check('wrong-grade stock is refused', (await api(owner, 'createOrder', { customer_id: CUST, items: [{ ...items[2], stock_item_id: S75 }] })).status === 400);
+const cxo = await api(owner, 'cancelOrder', { order_id: SO, reason: 'e2e: stock test' });
+const back = Number((await api(owner, 'stockItem', { id: S75 })).data.data.item.on_hand);
+check('order cancelled after weighing: the weight goes back', cxo.status === 200 && back === before, `${back} vs ${before}`);
+const cnt = await api(owner, 'stockCount', { id: S75, count: 100, note: 'e2e count' });
+check('stock count: only 100 kg really there', cnt.status === 200 && Math.round(Number(cnt.data.data.diff) * 1000) === Math.round((100 - back) * 1000), short(cnt.data));
+check('a bill whose stock is partly gone can\'t be cancelled', (await api(owner, 'purchaseCancel', { id: sp.data.data.purchase_id, reason: 'e2e' })).status === 409);
+const ev = await api(owner, 'daySummary', {});
+check('evening summary has today\'s stock', ev.data.data?.summary?.stock?.bought?.kg >= 1300 && ev.data.data.summary.stock.groups.some((g) => g.code === 'EN8'), short(ev.data.data?.summary?.stock));
+
 console.log('\n10. Ask Claude and the PIN lock');
 const ask = await api(sales, 'askSteelQuestion', { question: 'EN8 or EN24 for a gear shaft?' });
 check('Ask Claude answers, or says it isn\'t switched on yet', ask.status === 200 || ask.data.error === 'ai_not_configured', short(ask.data));

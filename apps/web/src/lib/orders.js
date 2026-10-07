@@ -9,7 +9,7 @@ const q = async (p) => { const { data, error } = await p; if (error) throw error
 const ORDER = 'id,slip_no,internal_no,status,bill_type,customer_id,created_at,accepted_at,weighed_at,done_at,cancelled_at,cancel_reason,deleted_at,deleted_by,delete_reason,deleted_from,pay_mode,in_khata,gst_pct,kacha_pct,total_weight,base_amount,material_amount,cutting_amount,gst_amount,total_amount,pricing_rules';
 
 export async function loadOrder(id) {
-  const o = await q(db.from('orders').select(`${ORDER},customers(id,name,phone),order_items(id,position,material_id,grade_code,shape,unit,dims,sell_rate,cut_rate,density,special_rate,actual_weight,weigh_batch_id,stock_item_id,order_item_lengths(position,len,pcs,cuts)),payments(id,amount,mode,kind,note,received_at,reverses_payment_id,from_payment_id)`).eq('id', id).maybeSingle());
+  const o = await q(db.from('orders').select(`${ORDER},customers(id,name,phone),order_items(id,position,material_id,grade_code,shape,unit,dims,sell_rate,cut_rate,density,special_rate,actual_weight,weigh_batch_id,stock_item_id,order_item_lengths(position,len,pcs,cuts)),payments(id,amount,mode,kind,note,received_at,reverses_payment_id,from_payment_id,payment_parts(amount,method,money_accounts(name,is_drawer)))`).eq('id', id).maybeSingle());
   if (!o) return null;
   o.order_items.sort((a, b) => a.position - b.position).forEach((i) => i.order_item_lengths.sort((a, b) => a.position - b.position));
   o.payments.sort((a, b) => new Date(a.received_at) - new Date(b.received_at));

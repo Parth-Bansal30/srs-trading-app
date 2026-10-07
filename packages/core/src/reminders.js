@@ -107,7 +107,7 @@ export function reminderMessage({ lang = 'en', shop, customer, due, maxSlips = 1
   if (due.slips.length > maxSlips) lines.push(w.more(due.slips.length - maxSlips));
   lines.push('', `${w.total}: ${money(due.due)}`);
   if (due.recentPayments?.length) {
-    lines.push(`${w.got}: ${due.recentPayments.map((p) => w.pay(money(p.amount), p.mode, shortDate(p.date))).join(', ')}`);
+    lines.push(`${w.got}: ${due.recentPayments.map((p) => w.pay(money(p.amount), String(p.mode).split('+').join(' + '), shortDate(p.date))).join(', ')}`);
   }
   lines.push('', w.end);
   return lines.join('\n');

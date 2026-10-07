@@ -180,9 +180,12 @@ check('khata payment recorded', kp.status === 200, short(kp.data));
 const cash = await api(owner, 'saveCashCount', { counted: 1000, note: 'e2e' });
 const today = core.businessDate(new Date().toISOString(), 'Asia/Kolkata');
 check('cash count filed under the shop\'s (Indian) date', cash.data.data?.business_date === today, short(cash.data));
-const [{ exp }] = await query(`select coalesce(sum(amount),0)::numeric as exp from public.payments where company_id = ${lit(co.id)} and mode = 'Cash'
-  and (received_at at time zone 'Asia/Kolkata')::date = ${lit(today)}`);
-check('expected cash = today\'s cash payments', Number(cash.data.data?.expected) === Number(exp), `${cash.data.data?.expected} vs ${exp}`);
+// the cash part of each payment (a payment split across accounts is only partly cash; older ones by their mode)
+const [{ exp }] = await query(`select coalesce(sum(case when exists (select 1 from public.payment_parts pp where pp.payment_id = p.id)
+    then (select coalesce(sum(pp.amount), 0) from public.payment_parts pp where pp.payment_id = p.id and pp.mode = 'Cash')
+    when p.mode = 'Cash' then p.amount else 0 end), 0)::numeric as exp
+  from public.payments p where p.company_id = ${lit(co.id)} and (p.received_at at time zone 'Asia/Kolkata')::date = ${lit(today)}`);
+check('expected cash = the cash part of today\'s payments', Number(cash.data.data?.expected) === Number(exp), `${cash.data.data?.expected} vs ${exp}`);
 check('weigher can\'t do the cash count', (await api(weigher, 'saveCashCount', { counted: 1 })).status === 403);
 
 console.log('\n9. Advance returned / moved / kept as credit, cancelling, old balances, reminders');
@@ -216,38 +219,6 @@ check('owner taps Yes: logged, WhatsApp link ready', sr.status === 200 && /^http
 const rl2 = await api(owner, 'reminderList', {});
 check('not asked again right after sending', !(rl2.data.data || []).some((x) => x.customer.id === CUST && x.side === 'kacha'));
 check('sales (no khata permission) can\'t see reminders', (await api(sales, 'reminderList', {})).status === 403);
-
-console.log('\n10a. Deleting a slip: staff ask, owner confirms with the SMS code');
-const dOrder = await api(owner, 'createOrder', { customer_id: CUST, items: [items[0]], accept: true, advance: { amount: 300, mode: 'Cash' } });
-const DEL = dOrder.data.data?.order_id;
-check('a slip to delete (accepted, 300 advance)', dOrder.status === 200 && DEL, short(dOrder.data));
-const k0 = (await api(owner, 'khata', { customer_id: CUST })).data.data?.[0] || {};
-const ask1 = await api(sales, 'requestDelete', { order_id: DEL, reason: 'Entered twice' });
-check('sales asks the owner to delete', ask1.status === 200 && ask1.data.data.request_id && ask1.data.data.owners === undefined, short(ask1.data));
-const reqs = await api(owner, 'deletedSlips', { order_id: DEL });
-check('owner sees the request', reqs.data.data?.requests?.[0]?.reason === 'Entered twice', short(reqs.data));
-check('sales can\'t get a delete code', (await api(sales, 'deleteCode', { order_ids: [DEL] })).status === 403);
-const pv = await api(owner, 'deletePreview', { order_ids: [DEL] });
-check('preview shows the 300 taken, no phone number', Number(pv.data.data?.orders?.[0]?.paid) === 300 && pv.data.data?.phone === undefined, short(pv.data));
-let dc = await api(owner, 'deleteCode', { order_ids: [DEL] });
-if (dc.status === 429) { console.log('    (waiting 60 s: one SMS code per minute per number)'); await sleep(61000); dc = await api(owner, 'deleteCode', { order_ids: [DEL] }); }
-check('SMS code sent to the owner (only last digits shown)', dc.status === 200 && dc.data.data.to === '+91 ••••• ••904', short(dc.data));
-const bad = await api(owner, 'deleteSlips', { order_ids: [DEL], reason: 'Entered twice', money: 'credit', code: '000000' });
-check('wrong code → nothing deleted', bad.data.error === 'wrong_code', short(bad.data));
-const dkey = randomUUID();
-const dargs = { order_ids: [DEL], reason: 'Entered twice', money: 'credit', code: CODE };
-const dd = await api(owner, 'deleteSlips', dargs, dkey);
-check('right code → slip deleted', dd.status === 200 && dd.data.data.deleted?.[0]?.id === DEL, short(dd.data));
-const dd2 = await api(owner, 'deleteSlips', dargs, dkey);
-check('network retry after the code was used: same answer', dd2.status === 200 && dd2.data.data.replayed === true, short(dd2.data));
-const [gone] = await rows(owner, 'orders', `select=status,deleted_from,delete_reason&id=eq.${DEL}`);
-check('kept as deleted, with the stage and reason', gone?.status === 'deleted' && gone.deleted_from === 'accepted' && gone.delete_reason === 'Entered twice', short(gone));
-const k1 = (await api(owner, 'khata', { customer_id: CUST })).data.data?.[0] || {};
-check('the 300 advance moved from "on an open slip" to the customer\'s khata credit (owner still unlocked)',
-  Math.round((k0.pending_advance - k1.pending_advance) * 100) === 30000 && k1.credit === k0.credit, `pending ${k0.pending_advance} → ${k1.pending_advance}, credit ${k0.credit} → ${k1.credit}`);
-check('no new money on a deleted slip', (await api(owner, 'addAdvance', { order_id: DEL, amount: 10, mode: 'Cash' })).status >= 400);
-const dl = await api(owner, 'deletedSlips', {});
-check('it is in the deleted list; the request is closed', dl.data.data?.deleted?.some((x) => x.id === DEL) && !dl.data.data.requests.some((r) => r.order_id === DEL), short(dl.data).slice(0, 160));
 
 console.log('\n10b. Purchase bills and stock');
 check('sales can\'t enter purchase bills', (await api(sales, 'purchaseContext', {})).status === 403);
@@ -298,6 +269,71 @@ const hf = await api(owner, 'finalizeOrder', { order_id: HO, bill: 'pakka', pay_
 const hd = hf.status === 200 ? await api(owner, 'slipDoc', { order_id: HO }) : hf;
 check('GST slip shows the HSN of the stock it came from (never the buying rate)', hd.data.data?.doc?.slip?.items?.[0]?.hsn === '721499'
   && !JSON.stringify(hd.data.data.doc).includes('"rate"'), short(hd.data));
+
+console.log('\n10c. Money accounts');
+const accName = `E2E Bank ${Date.now().toString().slice(-6)}`;
+const sa = await api(owner, 'saveAccount', { account: { name: accName, kind: 'bank', owner: 'firm', number: '50100012347730' } });
+const BANKACC = sa.data.data?.id;
+check('owner adds a bank account; sales can\'t', sa.status === 200 && (await api(sales, 'saveAccount', { account: { name: 'X', kind: 'upi' } })).status === 403, short(sa.data));
+const accs = (await api(sales, 'accounts', {})).data.data || [];
+const DRAWER = accs.find((x) => x.is_drawer)?.id;
+check('sales can choose the drawer and the new account, without its number', DRAWER && accs.some((x) => x.id === BANKACC && x.number == null));
+const sp1 = await api(owner, 'recordPayment', { customer_id: CUST, amount: 3000, side: 'pakka', note: 'e2e split',
+  parts: [{ account_id: DRAWER, amount: 1000 }, { account_id: BANKACC, amount: 2000, method: 'RTGS' }] });
+const prt = sp1.status === 200 ? await rows(owner, 'payment_parts', `select=amount,mode,method&payment_id=eq.${sp1.data.data.payment_id}&order=amount`) : [];
+check('a payment split into cash + bank (RTGS) is saved as two parts', prt.length === 2 && prt[0].mode === 'Cash' && prt[1].mode === 'Bank' && prt[1].method === 'RTGS', short(sp1.data) + short(prt));
+check('a split that doesn\'t add up is refused', (await api(owner, 'recordPayment', { customer_id: CUST, amount: 3000, side: 'pakka',
+  parts: [{ account_id: DRAWER, amount: 1000 }, { account_id: BANKACC, amount: 1000 }] })).data.error === 'split_differs');
+const evA = await api(owner, 'daySummary', {});
+const bankRow = evA.data.data?.summary?.accounts?.rows?.find((r) => r.id === BANKACC);
+const evS = await api(sales, 'daySummary', {});
+check('evening tally shows the bank account; staff don\'t get the tally', bankRow?.net === 2000 && evS.status === 200 && evS.data.data.summary.accounts == null,
+  short(evA.data.data?.summary?.accounts));
+const ao = await api(owner, 'createOrder', { customer_id: CUST, items: [items[0]], accept: true,
+  advance: { amount: 900, note: 'e2e split advance', parts: [{ account_id: DRAWER, amount: 400 }, { account_id: BANKACC, amount: 500, method: 'UPI' }] } });
+const aop = ao.status === 200 ? await rows(owner, 'payments', `select=mode,amount,payment_parts(amount,mode)&order_id=eq.${ao.data.data.order_id}`) : [];
+check('new order with its advance split cash + bank (UPI)', aop.length === 1 && aop[0].mode === 'Cash+UPI' && aop[0].payment_parts.length === 2, short(ao.data) + short(aop));
+const AO = ao.data.data?.order_id;
+const aoItem = (await api(weigher, 'weighingList', { order_id: AO })).data.data?.[0]?.items?.[0];
+await api(weigher, 'recordWeights', { order_id: AO, weights: [{ item_id: aoItem?.id, weight: 20 }], submit: true });
+const fz = await api(owner, 'finalizeOrder', { order_id: AO, bill: 'pakka', pay_mode: 'part', paid: 100,
+  parts: [{ account_id: DRAWER, amount: 30 }, { account_id: BANKACC, amount: 70, method: 'NEFT' }] });
+const fzp = fz.status === 200 ? await rows(owner, 'payments', `select=mode,amount,payment_parts(amount,mode,method)&order_id=eq.${AO}&kind=eq.pickup`) : [];
+check('pickup paid part cash, part bank (NEFT)', fzp.length === 1 && fzp[0].mode === 'Cash+Bank' && fzp[0].payment_parts.some((x) => x.method === 'NEFT' && Number(x.amount) === 70),
+  short(fz.data) + short(fzp));
+await api(owner, 'saveAccount', { account: { id: BANKACC, name: accName, kind: 'bank', hidden: true } }); // tidy: hide it again
+
+console.log('\n10a. Deleting a slip: staff ask, owner confirms with the SMS code');
+const dOrder = await api(owner, 'createOrder', { customer_id: CUST, items: [items[0]], accept: true, advance: { amount: 300, mode: 'Cash' } });
+const DEL = dOrder.data.data?.order_id;
+check('a slip to delete (accepted, 300 advance)', dOrder.status === 200 && DEL, short(dOrder.data));
+const k0 = (await api(owner, 'khata', { customer_id: CUST })).data.data?.[0] || {};
+const ask1 = await api(sales, 'requestDelete', { order_id: DEL, reason: 'Entered twice' });
+check('sales asks the owner to delete', ask1.status === 200 && ask1.data.data.request_id && ask1.data.data.owners === undefined, short(ask1.data));
+const reqs = await api(owner, 'deletedSlips', { order_id: DEL });
+check('owner sees the request', reqs.data.data?.requests?.[0]?.reason === 'Entered twice', short(reqs.data));
+check('sales can\'t get a delete code', (await api(sales, 'deleteCode', { order_ids: [DEL] })).status === 403);
+const pv = await api(owner, 'deletePreview', { order_ids: [DEL] });
+check('preview shows the 300 taken, no phone number', Number(pv.data.data?.orders?.[0]?.paid) === 300 && pv.data.data?.phone === undefined, short(pv.data));
+let dc = await api(owner, 'deleteCode', { order_ids: [DEL] });
+if (dc.status === 429) { console.log('    (waiting 60 s: one SMS code per minute per number)'); await sleep(61000); dc = await api(owner, 'deleteCode', { order_ids: [DEL] }); }
+check('SMS code sent to the owner (only last digits shown)', dc.status === 200 && dc.data.data.to === '+91 ••••• ••904', short(dc.data));
+const bad = await api(owner, 'deleteSlips', { order_ids: [DEL], reason: 'Entered twice', money: 'credit', code: '000000' });
+check('wrong code → nothing deleted', bad.data.error === 'wrong_code', short(bad.data));
+const dkey = randomUUID();
+const dargs = { order_ids: [DEL], reason: 'Entered twice', money: 'credit', code: CODE };
+const dd = await api(owner, 'deleteSlips', dargs, dkey);
+check('right code → slip deleted', dd.status === 200 && dd.data.data.deleted?.[0]?.id === DEL, short(dd.data));
+const dd2 = await api(owner, 'deleteSlips', dargs, dkey);
+check('network retry after the code was used: same answer', dd2.status === 200 && dd2.data.data.replayed === true, short(dd2.data));
+const [gone] = await rows(owner, 'orders', `select=status,deleted_from,delete_reason&id=eq.${DEL}`);
+check('kept as deleted, with the stage and reason', gone?.status === 'deleted' && gone.deleted_from === 'accepted' && gone.delete_reason === 'Entered twice', short(gone));
+const k1 = (await api(owner, 'khata', { customer_id: CUST })).data.data?.[0] || {};
+check('the 300 advance moved from "on an open slip" to the customer\'s khata credit (owner still unlocked)',
+  Math.round((k0.pending_advance - k1.pending_advance) * 100) === 30000 && k1.credit === k0.credit, `pending ${k0.pending_advance} → ${k1.pending_advance}, credit ${k0.credit} → ${k1.credit}`);
+check('no new money on a deleted slip', (await api(owner, 'addAdvance', { order_id: DEL, amount: 10, mode: 'Cash' })).status >= 400);
+const dl = await api(owner, 'deletedSlips', {});
+check('it is in the deleted list; the request is closed', dl.data.data?.deleted?.some((x) => x.id === DEL) && !dl.data.data.requests.some((r) => r.order_id === DEL), short(dl.data).slice(0, 160));
 
 console.log('\n10. Ask Claude and the PIN lock');
 const ask = await api(sales, 'askSteelQuestion', { question: 'EN8 or EN24 for a gear shaft?' });

@@ -1,4 +1,5 @@
 import { r2 } from './round.js';
+import { modeAmounts, accountTally } from './money.js';
 
 const sum = (xs, f = (x) => x) => r2(xs.reduce((a, x) => a + Number(f(x) || 0), 0));
 const ADVANCE_KINDS = ['advance', 'refund', 'transfer'];
@@ -10,20 +11,22 @@ const MODES = ['Cash', 'UPI', 'Bank', 'Cheque'];
  *
  * orders:   slips finished that day  [{ id, slipNo, customer, bill: 'pakka'|'kacha', total, weight, inKhata, by,
  *             items: [{ grade, rate, stdRate, special }], payments: [{ amount, kind, mode }] }]
- * payments: money moved that day     [{ amount, kind, rev, mode, customer, orderId }]   (mode 'Adjust' = moved, not money;
- *           a correction (rev) carries the kind of the payment it corrects)
+ * payments: money moved that day     [{ amount, kind, rev, mode, customer, orderId, parts? }]   (mode 'Adjust' = moved, not money;
+ *           a correction (rev) carries the kind of the payment it corrects; parts = [{ mode, amount }] when split
+ *           across money accounts, mode then e.g. "Cash+Bank")
  * cashClose: the day's cash count    { expected, counted, by, at } | null
  * weighed:  items weighed that day   [{ slipNo, grade, expected, actual }]  (expected = weight worked out from the size)
  * waiting:  weighed before this day, not picked up [{ slipNo, customer }]
  * cancelled: [{ slipNo, customer, reason }]
  * deleted:  slips deleted that day [{ slipNo, customer, reason, by }]
  * stock:    { groups: [{ code, shape, kg, lowKg, negative }], noStock: [slip numbers sold without stock], … } | null
+ * accounts: the money-accounts tally (owners) { list, parts, checks } | null — see money.js accountTally
  * reminders: customers who should get a reminder [{ name, due, days }]
  * toReceive: everything customers owe right now (khata)
  * lastWeek: { total, n } for the same weekday a week earlier
  */
 export function daySummary({
-  orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], deleted = [], reminders = [], stock = null,
+  orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], deleted = [], reminders = [], stock = null, accounts = null,
   toReceive = 0, lastWeek = null, weightWarnPct = 5, isToday = false,
 }) {
   // ---- sales: slips finished today
@@ -47,7 +50,9 @@ export function daySummary({
 
   // ---- money that came in (or went out) today
   const real = payments.filter((p) => p.mode !== 'Adjust');
-  const byMode = Object.fromEntries(MODES.map((m) => [m, sum(real.filter((p) => p.mode === m), (p) => p.amount)]));
+  // a payment split across accounts counts in each of its modes (e.g. part Cash, part Bank)
+  const pieces = real.flatMap(modeAmounts);
+  const byMode = Object.fromEntries(MODES.map((m) => [m, sum(pieces.filter((x) => x.mode === m), (x) => x.amount)]));
   const money = {
     total: sum(real, (p) => p.amount), byMode,
     list: real.map((p) => ({ at: p.at || null, customer: p.customer || '', kind: p.kind, rev: !!p.rev, mode: p.mode, amount: r2(Number(p.amount)) })),
@@ -87,6 +92,8 @@ export function daySummary({
   for (const g of stock?.groups || []) {
     if (!g.negative && g.lowKg != null && g.kg < g.lowKg) look.push({ type: 'stock_low', code: g.code, shape: g.shape || null, kg: r2(g.kg), lowKg: r2(g.lowKg) });
   }
+  const acc = accounts ? accountTally({ accounts: accounts.list || [], parts: accounts.parts || [], payments: real, checks: accounts.checks || [] }) : null;
+  if (acc && acc.notPlaced !== 0 && (accounts.list || []).some((a) => !a.isDrawer)) look.push({ type: 'not_placed', amount: acc.notPlaced });
   if (stock?.noStock?.length) look.push({ type: 'no_stock', n: stock.noStock.length, slips: stock.noStock.slice(0, 5) });
   for (const p of real.filter((x) => x.amount < 0 && x.kind === 'refund' && !x.rev)) look.push({ type: 'money_out', customer: p.customer, amount: -p.amount, mode: p.mode });
   for (const r of [...reminders].sort((a, b) => b.due - a.due).slice(0, 3)) look.push({ type: 'overdue', customer: r.name, amount: r2(r.due), days: r.days });
@@ -101,5 +108,5 @@ export function daySummary({
   }
   const top = [...byCust.values()].sort((a, b) => b.total - a.total).slice(0, 3);
 
-  return { sales, slips, money, cash, khata, look, top, lastWeek, stock };
+  return { sales, slips, money, cash, khata, look, top, lastWeek, stock, accounts: acc };
 }

@@ -14,6 +14,9 @@ import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { Preview } from '../../ui/docs/Preview.jsx';
 import { DayReport } from '../../ui/docs/DayReport.jsx';
+import { call } from '../../lib/api.js';
+import { accName, kindOf, modeText } from '../../lib/accounts.js';
+import '../../ui/money/money.css';
 import './evening.css';
 
 const slipsKg = (n, w) => (n === 1 ? t('eve_slip1_kg', w) : t('eve_slips_kg', n, w));
@@ -106,6 +109,8 @@ export function Evening() {
           {d.khata && <Row a={t('eve_to_receive')} b={money(s.khata.toReceive, false)} top strong />}
         </div>
 
+        {can('settings') && <AccountTally d={d} />}
+
         {s.look.length > 0 && <div class="sec"><h3>{t('eve_look', s.look.length)}</h3></div>}
         {s.look.length > 0 ? (
           <div class="card">
@@ -170,6 +175,84 @@ export function Evening() {
           <button class="btn btn-brand grow" disabled={!!busy} onClick={pdf}><Icon name="FileDown" size={18} />{busy === 'pdf' ? t('making_pdf') : t('download')}</button>
         </div>}>
         {pdfOpen && <Preview><DayReport d={d} /></Preview>}
+      </Sheet>
+    </>
+  );
+}
+
+
+/** Owners: each money account's day — tick it once checked in the bank / Paytm app; tap to see each payment. */
+function AccountTally({ d }) {
+  const acc = d.summary.accounts;
+  const [ticks, setTicks] = useState(() => new Set((acc?.rows || []).filter((r) => r.checked).map((r) => r.id)));
+  const [open, setOpen] = useState(null);
+  if (!acc) return null;
+  const rows = acc.rows.filter((r) => r.n > 0);
+  const others = acc.rows.some((r) => !r.isDrawer);
+  const tick = (r) => {
+    const on = !ticks.has(r.id);
+    const next = new Set(ticks); on ? next.add(r.id) : next.delete(r.id); setTicks(next);
+    call('checkAccount', { account_id: r.id, day: d.day, checked: on }).catch((e) => {
+      toast(e.message || t('err_generic'));
+      setTicks((cur) => { const back = new Set(cur); on ? back.delete(r.id) : back.add(r.id); return back; });
+    });
+  };
+  const unticked = rows.filter((r) => !ticks.has(r.id)).length;
+  const parts = (id) => (d.account_parts || []).filter((x) => x.accountId === id);
+  const sel = open && acc.rows.find((r) => r.id === open);
+  return (
+    <>
+      <div class="sec"><h3>{t('eve_tally')}</h3>{rows.length > 0 && <span class="faint" style="font-size:13px;font-weight:600">{t('eve_tally_s')}</span>}</div>
+      {!others && rows.length <= 1 && acc.notPlaced === 0 ? (
+        <div class="card pad faint" style="border-style:dashed;font-size:14px">{t('eve_no_accounts')}<br /><button class="link" onClick={() => go('/settings/accounts')}>{t('acc_setup_hint')}</button></div>
+      ) : <>
+        <div class="card tally">
+          {rows.map((r) => {
+            const k = kindOf({ kind: r.kind, is_drawer: r.isDrawer });
+            const n = r.n === 1 ? t('acc_part1') : t('acc_parts', r.n);
+            return (
+              <div class="li">
+                <button class={`acc-tick ${ticks.has(r.id) ? 'on' : ''}`} onClick={() => tick(r)} aria-pressed={ticks.has(r.id)} aria-label={r.name}>{ticks.has(r.id) && <Icon name="Check" size={16} stroke={3} />}</button>
+                <button class="grow row" style="gap:10px;min-width:0;text-align:left" onClick={() => setOpen(r.id)}>
+                  <span class="grow" style="min-width:0">
+                    <span class="acc-name">{accName({ name: r.name, is_drawer: r.isDrawer })}<span style={`font-size:11.5px;font-weight:700;margin-left:6px;color:${r.owner === 'personal' ? 'var(--warn)' : 'var(--pakka)'}`}>{t(r.owner === 'personal' ? 'acc_personal' : 'acc_firm')}</span></span>
+                    <span class="acc-sub">{n}{r.out > 0 ? ` · ${t('acc_out', money(r.out, false))}` : ''}</span>
+                  </span>
+                  <b class="num" style={r.net < 0 ? 'color:var(--bad)' : ''}>{money(r.net, false)}</b>
+                </button>
+              </div>
+            );
+          })}
+          {acc.notPlaced !== 0 && (
+            <div class="li"><div class="iconbox tone-warn" style="width:26px;height:26px;border-radius:8px"><Icon name="CircleDashed" size={15} /></div>
+              <div class="grow"><div class="t" style="font-size:14.5px">{t('eve_not_placed')}</div><div class="s">{t('eve_not_placed_s')}</div></div><b class="num">{money(acc.notPlaced, false)}</b></div>
+          )}
+          <div class="li" style="border-top:1.5px solid var(--line-2)"><div class="grow t">{d.day === d.today ? t('eve_money_in') : t('eve_money_on')}</div><b class="num" style="font-size:17px">{money(acc.total, false)}</b></div>
+        </div>
+        <div class="tally-tot">
+          <div class="card"><div class="k" style="color:var(--pakka)">{t('acc_firm')}</div><div class="v num">{money(acc.firm, false)}</div></div>
+          <div class="card"><div class="k" style="color:var(--warn)">{t('acc_personal')}</div><div class="v num">{money(acc.personal, false)}</div></div>
+        </div>
+        {rows.length > 0 && (
+          <div class={`notice ${unticked ? 'tone-warn' : 'tone-ok'} row`} style="gap:10px;margin-top:10px">
+            <Icon name={unticked ? 'CircleDashed' : 'CircleCheck'} size={18} />
+            <span class="grow">{unticked ? (unticked === 1 ? t('eve_unchecked1') : t('eve_unchecked', unticked)) : t('eve_all_ticked')}
+              {unticked > 0 && <span style="display:block;font-weight:500;font-size:12.5px">{t('eve_unchecked_s')}</span>}</span>
+          </div>
+        )}
+      </>}
+      <Sheet open={!!sel} onClose={() => setOpen(null)} title={sel ? accName({ name: sel.name, is_drawer: sel.isDrawer }) : ''}>
+        {sel && (parts(sel.id).length === 0 ? <div class="muted">{t('eve_acc_none')}</div> : (
+          <div class="card">
+            {parts(sel.id).map((x) => (
+              <button class="li" onClick={() => x.orderId && go(`/slip/${x.orderId}`)} style={x.orderId ? '' : 'cursor:default'}>
+                <div class="grow"><div class="t" style="font-size:14.5px">{x.customer}{x.slipNo ? ` · #${x.slipNo}` : ''}</div>
+                  <div class="s">{[time(x.at, d.timezone), modeText(x.mode), x.method].filter(Boolean).join(' · ')}</div></div>
+                <b class="num" style={x.amount < 0 ? 'color:var(--bad)' : ''}>{money(x.amount, false)}</b>
+              </button>
+            ))}
+          </div>
+        ))}
       </Sheet>
     </>
   );

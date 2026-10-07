@@ -12,7 +12,8 @@ import { CustomerEdit } from './CustomerEdit.jsx';
 import { StatementSheet } from '../docs/StatementSheet.jsx';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
-import { PAY_METHODS } from '../../config/options.js';
+import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
+import { whereArgs, whereProblem, modeText, modeIcon } from '../../lib/accounts.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { ReminderSheet } from './Reminders.jsx';
@@ -109,8 +110,8 @@ export function Customer({ id }) {
             </button>
           ) : (
             <div class="li" style={e.pending ? 'opacity:.7' : ''}>
-              <div class={`iconbox tone-${e.amt < 0 ? 'bad' : 'ok'}`}><Icon name={PAY_METHODS.find((m) => m.id === e.mode)?.icon || 'RefreshCw'} size={18} /></div>
-              <div class="grow"><div class="t">{e.pending ? t('pending_adv') : t(KIND_WORD[e.kind] || 'payment')}{e.mode && e.mode !== 'Adjust' ? ` · ${e.mode}` : ''}</div>
+              <div class={`iconbox tone-${e.amt < 0 ? 'bad' : 'ok'}`}><Icon name={e.mode && e.mode !== 'Adjust' ? modeIcon(e.mode) : 'RefreshCw'} size={18} /></div>
+              <div class="grow"><div class="t">{e.pending ? t('pending_adv') : t(KIND_WORD[e.kind] || 'payment')}{e.mode && e.mode !== 'Adjust' ? ` · ${modeText(e.mode)}` : ''}</div>
                 <div class="s ellip">{shortDate(e.date, tz)}{e.oid && r.slips?.[e.oid] ? ` · #${r.slips[e.oid]}` : ''}{e.note ? ` · ${e.note}` : ''}</div></div>
               <div class="num" style={`font-weight:700;color:${e.amt < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{e.amt < 0 ? money(-e.amt) : `− ${money(e.amt)}`}</div>
             </div>
@@ -134,16 +135,18 @@ function SideSeg({ sides, side, setSide }) {
 }
 
 function PaySheet({ open, c, sides, onClose, onDone }) {
-  const [amt, setAmt] = useState(''); const [mode, setMode] = useState('Cash'); const [note, setNote] = useState(''); const [side, setSide] = useState('pakka');
+  const [amt, setAmt] = useState(''); const [note, setNote] = useState(''); const [side, setSide] = useState('pakka');
+  const [where, setWhere, accs] = useWhere(open);
   const a = useAction('recordPayment');
+  const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('add_payment')}
-      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0)} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), mode, side, note }).then(() => onDone(amt)).catch(() => {})}>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</button>}>
+      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }).then(() => onDone(amt)).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('amount')}</div>
       <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
       <SideSeg sides={sides} side={side} setSide={setSide} />
-      <div class="lbl" style="margin-top:14px">{t('how_paid')}</div>
-      <div class="pick">{PAY_METHODS.map((p) => <button class={mode === p.id ? 'on' : ''} onClick={() => setMode(p.id)}><Icon name={p.icon} size={18} />{t(p.word)}</button>)}</div>
+      <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
+      <MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
       <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
       {a.error && <div class="error">{a.error.message}</div>}

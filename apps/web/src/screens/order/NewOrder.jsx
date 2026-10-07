@@ -14,7 +14,8 @@ import { go, route } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
-import { PAY_METHODS } from '../../config/options.js';
+import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
+import { whereArgs, whereProblem } from '../../lib/accounts.js';
 import { ItemCard } from './ItemCard.jsx';
 import { loadStock } from '../../lib/stock.js';
 import { choicesFor } from '../../ui/stock/StockPick.jsx';
@@ -199,13 +200,14 @@ export function NewOrder() {
 
 function AdvanceSheet({ open, onClose, onAccept, busy }) {
   const [amt, setAmt] = useState('');
-  const [mode, setMode] = useState('Cash');
   const [note, setNote] = useState('');
   const money_ = can('money');
+  const [where, setWhere, accs] = useWhere(open && money_);
+  const bad = money_ && Number(amt) > 0 ? whereProblem(where, r2(Number(amt)), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('accept')}
-      footer={<button class="btn btn-accent btn-block" disabled={busy} onClick={() => onAccept(money_ && Number(amt) > 0 ? { amount: r2(Number(amt)), mode, note } : null)}>
-        <Icon name="Check" size={20} stroke={2.6} />{Number(amt) > 0 ? `${t('accept')} · ${money(amt)}` : t('accept')}</button>}>
+      footer={<button class="btn btn-accent btn-block" disabled={busy || !!bad} onClick={() => onAccept(money_ && Number(amt) > 0 ? { amount: r2(Number(amt)), note, ...whereArgs(where, r2(Number(amt))) } : null)}>
+        <Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : Number(amt) > 0 ? `${t('accept')} · ${money(amt)}` : t('accept')}</button>}>
       {money_ ? (
         <>
           <div class="muted" style="margin-bottom:14px">{t('adv_note')}</div>
@@ -213,8 +215,8 @@ function AdvanceSheet({ open, onClose, onAccept, busy }) {
           <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
           {Number(amt) > 0 && (
             <>
-              <div class="lbl" style="margin-top:14px">{t('how_paid')}</div>
-              <div class="pick">{PAY_METHODS.map((p) => <button class={mode === p.id ? 'on' : ''} onClick={() => setMode(p.id)}><Icon name={p.icon} size={18} />{t(p.word)}</button>)}</div>
+              <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
+              <MoneyTo amount={r2(Number(amt))} value={where} onChange={setWhere} accounts={accs} />
               <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
               <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
             </>

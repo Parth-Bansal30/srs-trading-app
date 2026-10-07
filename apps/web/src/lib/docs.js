@@ -92,7 +92,9 @@ const line = (left, right) => {
   const l = left.length > room ? `${left.slice(0, room - 1)}…` : left;
   return `${l.padEnd(room)} ${right}`;
 };
-const modeWord = (l, mode) => ({ Cash: 'pm_cash', UPI: 'pm_upi', Bank: 'pm_bank', Cheque: 'pm_cheque' }[mode] ? tIn(l, { Cash: 'pm_cash', UPI: 'pm_upi', Bank: 'pm_bank', Cheque: 'pm_cheque' }[mode]) : '');
+const MODE_WORD = { Cash: 'pm_cash', UPI: 'pm_upi', Bank: 'pm_bank', Cheque: 'pm_cheque' };
+// a split payment shows its modes ("Cash + Bank"), never an account name
+const modeWord = (l, mode) => String(mode || '').split('+').filter((m) => MODE_WORD[m]).map((m) => tIn(l, MODE_WORD[m])).join(' + ');
 const upiLine = (l, upi) => (upi?.id && !isSampleUpi(upi.id) ? tIn(l, 'tx_upi', upi.id) : null);
 
 /** Statement rows that fit in one message; longer statements go as PDF. */

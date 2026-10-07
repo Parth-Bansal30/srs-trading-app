@@ -19,7 +19,8 @@ const sizeText = (it) => {
 const lengthRows = (it, l) => (SHAPES[it.shape]?.len
   ? it.lengths.map((r) => `${r.len}${unit(it.unit)} × ${r.pcs}`)
   : [`${it.pcs} ${tIn(l, 'pcs')}`]);
-const modeWord = (l, mode) => { const m = PAY_METHODS.find((x) => x.id === mode); return m ? tIn(l, m.word) : null; };
+// a payment split across accounts shows its modes, e.g. "Cash + Bank" (never an account name)
+const modeWord = (l, mode) => String(mode || '').split('+').map((x) => PAY_METHODS.find((m) => m.id === x)).filter(Boolean).map((m) => tIn(l, m.word)).join(' + ') || null;
 const payLabel = (l, p, tz) => {
   const what = p.amount < 0 ? tIn(l, 'doc_returned') : p.kind === 'advance' ? tIn(l, 'doc_pay_adv') : tIn(l, 'doc_pay');
   return [what, shortDate(p.at, tz), modeWord(l, p.mode)].filter(Boolean).join(' · ');

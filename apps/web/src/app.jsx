@@ -31,6 +31,7 @@ import { Reminders } from './screens/khata/Reminders.jsx';
 import { Rates } from './screens/admin/Rates.jsx';
 import { People } from './screens/admin/People.jsx';
 import { Settings } from './screens/admin/Settings.jsx';
+import { Accounts } from './screens/admin/Accounts.jsx';
 import { Summary } from './screens/admin/Summary.jsx';
 import { Guide } from './screens/Guide.jsx';
 import { PublicDoc } from './screens/docs/PublicDoc.jsx';
@@ -63,6 +64,7 @@ const SCREENS = {
   '/rates': () => <Rates />,
   '/people': () => <People />,
   '/settings': () => <Settings />,
+  '/settings/accounts': () => <Accounts />,
   '/reports': () => <Summary />,
   '/guide': () => <Guide />,
   '/start': () => <Start />,

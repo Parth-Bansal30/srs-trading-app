@@ -1,5 +1,6 @@
 // Reading data for the screens. The database only returns what this person may see
 // (no money for the weigher, no kacha without permission), so screens stay simple.
+import { cashOf } from '@srs/core';
 import { db } from './backend.js';
 import { call } from './api.js';
 import { dayStartISO } from './format.js';
@@ -26,8 +27,9 @@ export async function loadToday({ perms, tz }) {
       .neq('status', 'deleted').order('created_at', { ascending: false }).limit(8)).then((rows) => { out.recent = rows; }));
   }
   if (perms.money && perms.today) {
-    jobs.push(q(db.from('payments').select('amount').eq('mode', 'Cash').gte('received_at', since)).then((rows) => {
-      out.cash = rows.reduce((a, r) => a + Number(r.amount), 0);
+    // cash in the drawer today: the cash part of every payment (a split payment is only partly cash)
+    jobs.push(q(db.from('payments').select('amount,mode,parts:payment_parts(mode,amount)').neq('mode', 'Adjust').gte('received_at', since)).then((rows) => {
+      out.cash = rows.reduce((a, r) => a + cashOf(r), 0);
     }));
   }
   if (perms.weigh) jobs.push(call('weighingList', {}).then((list) => { out.counts.toWeigh = list.length; out.weighing = list; }));

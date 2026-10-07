@@ -9,7 +9,7 @@ import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate, time } from '../../lib/format.js';
 import { go, route } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
-import { STAGES, BILLS, PAY_METHODS } from '../../config/options.js';
+import { STAGES, BILLS } from '../../config/options.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { GiveSlip } from '../docs/GiveSlip.jsx';
@@ -17,6 +17,8 @@ import { call } from '../../lib/api.js';
 import { DeleteSheet, AskDeleteSheet } from './DeleteSheet.jsx';
 import { loadStock, forgetStock } from '../../lib/stock.js';
 import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
+import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
+import { whereArgs, whereProblem, modeText, modeIcon, accName } from '../../lib/accounts.js';
 import '../docs/docs-screens.css';
 import './slips.css';
 
@@ -134,8 +136,9 @@ export function Slip({ id }) {
             <div class="card">
               {o.payments.length === 0 ? <div class="li muted">{t('no_payments')}</div> : o.payments.map((p) => (
                 <div class="li" style={p.reversed ? 'opacity:.5' : ''}>
-                  <div class={`iconbox tone-${Number(p.amount) < 0 ? 'bad' : 'ok'}`}><Icon name={PAY_METHODS.find((m) => m.id === p.mode)?.icon || 'RefreshCw'} size={18} /></div>
-                  <div class="grow"><div class="t">{t(KIND_WORD[p.kind] || p.kind)} · {p.mode === 'Adjust' ? '—' : t(PAY_METHODS.find((m) => m.id === p.mode)?.word || p.mode)}</div>
+                  <div class={`iconbox tone-${Number(p.amount) < 0 ? 'bad' : 'ok'}`}><Icon name={p.mode === 'Adjust' ? 'RefreshCw' : modeIcon(p.mode)} size={18} /></div>
+                  <div class="grow"><div class="t">{t(KIND_WORD[p.kind] || p.kind)} · {p.mode === 'Adjust' ? '—' : modeText(p.mode)}</div>
+                    {p.payment_parts?.length > 0 && <div class="s">{p.payment_parts.map((x) => `${accName({ ...x.money_accounts })}${p.payment_parts.length > 1 ? ` ${money(Math.abs(x.amount))}` : ''}${x.method ? ` (${x.method})` : ''}`).join(' · ')}</div>}
                     <div class="s">{shortDate(p.received_at, tz)} · {time(p.received_at, tz)}{p.note ? ` · ${p.note}` : ''}</div></div>
                   <div class="num" style={`font-weight:700;color:${Number(p.amount) < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{money(p.amount)}</div>
                 </div>
@@ -194,19 +197,18 @@ const Line = ({ a, b, top }) => <div class="row" style={`justify-content:space-b
 function MoneyInput({ value, onInput }) {
   return <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={value} onInput={(e) => onInput(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>;
 }
-function Methods({ value, onPick }) {
-  return <div class="pick">{PAY_METHODS.map((p) => <button class={value === p.id ? 'on' : ''} onClick={() => onPick(p.id)}><Icon name={p.icon} size={18} />{t(p.word)}</button>)}</div>;
-}
 const Err = ({ a }) => a.error && <div class="error">{a.error.message}</div>;
 
 function AcceptSheet({ open, o, onClose, onDone }) {
-  const [amt, setAmt] = useState(''); const [mode, setMode] = useState('Cash'); const [note, setNote] = useState('');
+  const [amt, setAmt] = useState(''); const [note, setNote] = useState('');
+  const [where, setWhere, accs] = useWhere(open && can('money'));
   const a = useAction('acceptOrder');
-  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), mode, note } : null }).then(onDone).catch(() => {});
+  const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
+  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null }).then(onDone).catch(() => {});
   return (
-    <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button>}>
+    <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy || !!bad} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : t('accept')}</button>}>
       {can('money') && <><div class="muted" style="margin-bottom:12px">{t('adv_note')}</div><div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
-        {Number(amt) > 0 && <><div class="lbl" style="margin-top:14px">{t('how_paid')}</div><Methods value={mode} onPick={setMode} />
+        {Number(amt) > 0 && <><div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt)} value={where} onChange={setWhere} accounts={accs} />
           <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} /></>}</>}
       <Err a={a} />
     </Sheet>
@@ -214,13 +216,15 @@ function AcceptSheet({ open, o, onClose, onDone }) {
 }
 
 function AdvanceSheet({ open, o, onClose, onDone }) {
-  const [amt, setAmt] = useState(''); const [mode, setMode] = useState('Cash'); const [note, setNote] = useState('');
+  const [amt, setAmt] = useState(''); const [note, setNote] = useState('');
+  const [where, setWhere, accs] = useWhere(open);
   const a = useAction('addAdvance');
+  const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('adv_add')}
-      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0)} onClick={() => a.run({ order_id: o.id, amount: Number(amt), mode, note }).then(onDone).catch(() => {})}>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</button>}>
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }).then(onDone).catch(() => {})}>{bad ? t(bad) : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
-      <div class="lbl" style="margin-top:14px">{t('how_paid')}</div><Methods value={mode} onPick={setMode} />
+      <div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
       <Err a={a} />
     </Sheet>
@@ -232,7 +236,7 @@ function AdjustSheet({ open, o, extra, onClose, onDone }) {
   const avail = onlyRefund ? extra : o.advance;
   const [action, setAction] = useState('refund');
   const [amt, setAmt] = useState('');
-  const [mode, setMode] = useState('Cash');
+  const [where, setWhere, accs] = useWhere(open);
   const [note, setNote] = useState('');
   const [target, setTarget] = useState(null);
   const [side, setSide] = useState('pakka');
@@ -245,7 +249,7 @@ function AdjustSheet({ open, o, extra, onClose, onDone }) {
       .then(({ data }) => setOthers(data || []));
   }, [open]);
   const ok = Number(amt) > 0 && Number(amt) <= avail && (action !== 'refund' || note.trim()) && (action !== 'move' || target);
-  const submit = () => a.run({ order_id: o.id, action, amount: Number(amt), mode: action === 'refund' ? mode : undefined,
+  const submit = () => a.run({ order_id: o.id, action, amount: Number(amt), ...(action === 'refund' ? whereArgs(where, Number(amt)) : {}),
     note: note || undefined, target_order_id: action === 'move' ? target : undefined, side: action === 'credit' ? side : undefined }).then(onDone).catch(() => {});
   return (
     <Sheet open={open} onClose={onClose} title={onlyRefund ? t('act_return_extra') : t('act_adjust')}
@@ -253,7 +257,7 @@ function AdjustSheet({ open, o, extra, onClose, onDone }) {
       <div class="muted" style="margin-bottom:12px">{t('adj_on_slip', money(avail))}</div>
       {!onlyRefund && <div class="seg" style="margin-bottom:14px">{[['refund', 'adj_refund'], ['move', 'adj_move'], ['credit', 'adj_credit']].map(([id, w]) => <button class={action === id ? 'on' : ''} onClick={() => setAction(id)}>{t(w)}</button>)}</div>}
       <div class="lbl">{t('amount')}</div><MoneyInput value={amt} onInput={setAmt} />
-      {action === 'refund' && <><div class="lbl" style="margin-top:14px">{t('how_paid')}</div><Methods value={mode} onPick={setMode} /></>}
+      {action === 'refund' && <><div class="lbl" style="margin-top:14px">{t('acc_from')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} single /></>}
       {action === 'move' && <><div class="lbl" style="margin-top:14px">{t('adj_which_slip')}</div>
         {others?.length === 0 ? <div class="muted">{t('adj_no_other')}</div> : <div class="pick">{(others || []).map((x) => <button class={target === x.id ? 'on' : ''} onClick={() => setTarget(x.id)}>#{x.slip_no}</button>)}</div>}</>}
       {action === 'credit' && can('kacha') && <><div class="lbl" style="margin-top:14px">{t('adj_account')}</div>

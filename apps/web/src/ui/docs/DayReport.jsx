@@ -6,6 +6,7 @@ import { lookLine, weekdayName } from '../../lib/evening.js';
 import { lang } from '../../lib/i18n.js';
 import { ShopBadge } from './Paper.jsx';
 import './docs.css';
+import { accName } from '../../lib/accounts.js';
 
 const n2 = (v) => money(v, true).replace('₹', '');
 const KIND = { pickup: 'kind_pick', advance: 'kind_adv', khata: 'kind_old_dues', refund: 'kind_refund', transfer: 'kind_transfer' };
@@ -54,12 +55,26 @@ export function DayReport({ d, madeAt = new Date().toISOString() }) {
         <thead><tr><th>{t('rep_h_time')}</th><th>{t('customer')}</th><th>{t('rep_h_what')}</th><th>{t('rep_h_how')}</th><th class="r">{t('amount')}</th></tr></thead>
         <tbody>
           {s.money.list.map((p) => (
-            <tr><td class="pp-num">{p.at ? time(p.at, tz) : ''}</td><td>{p.customer}</td><td>{t(KIND[p.kind] || 'payment')}{p.rev ? ' ↺' : ''}</td><td>{p.mode}</td>
+            <tr><td class="pp-num">{p.at ? time(p.at, tz) : ''}</td><td>{p.customer}</td><td>{t(KIND[p.kind] || 'payment')}{p.rev ? ' ↺' : ''}</td><td>{String(p.mode || '').split('+').join(' + ')}</td>
               <td class="pp-num r" style={p.amount < 0 ? 'color:#B0413E' : ''}>{p.amount < 0 ? `− ${n2(-p.amount)}` : n2(p.amount)}</td></tr>
           ))}
           <tr class="rep-tot"><td colSpan={4}>{['Cash', 'UPI', 'Bank', 'Cheque'].filter((k) => s.money.byMode[k]).map((k) => `${k} ${n2(s.money.byMode[k])}`).join(' · ')}</td><td class="pp-num r">{n2(s.money.total)}</td></tr>
         </tbody>
       </table>
+
+      {s.accounts && s.accounts.rows.some((r) => r.n > 0) && <>
+        <div class="rep-h">{t('eve_tally')}</div>
+        <table class="pp-table pp-stmt">
+          <tbody>
+            {s.accounts.rows.filter((r) => r.n > 0).map((r) => (
+              <tr><td>{r.checked ? '☑' : '☐'} {accName({ name: r.name, is_drawer: r.isDrawer })}</td><td class="pp-mute">{t(r.owner === 'personal' ? 'acc_personal' : 'acc_firm')}</td>
+                <td class="pp-num r">{r.out > 0 ? `− ${n2(r.out)}` : ''}</td><td class="pp-num r" style="font-weight:700">{n2(r.net)}</td></tr>
+            ))}
+            {s.accounts.notPlaced !== 0 && <tr><td>{t('eve_not_placed')}</td><td /><td /><td class="pp-num r">{n2(s.accounts.notPlaced)}</td></tr>}
+            <tr class="rep-tot"><td colSpan={3}>{t('acc_firm')} {n2(s.accounts.firm)} · {t('acc_personal')} {n2(s.accounts.personal)}</td><td class="pp-num r">{n2(s.accounts.total)}</td></tr>
+          </tbody>
+        </table>
+      </>}
 
       <div class="rep-cols">
         <div>

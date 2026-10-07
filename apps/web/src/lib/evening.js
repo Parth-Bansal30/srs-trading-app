@@ -30,7 +30,8 @@ export function lookLine(x, l) {
     case 'stock_negative': return [tIn(l, 'look_stock_neg', `${x.code}${x.shape ? ` ${tIn(l, `sh_${x.shape}`)}` : ''}`, kg(x.kg, 0)), tIn(l, 'look_stock_neg_s'), 'Boxes', 'bad', '/stock'];
     case 'no_stock': return [x.n === 1 ? tIn(l, 'look_no_stock1') : tIn(l, 'look_no_stock', x.n), x.slips.map((n) => `#${n}`).join(', '), 'Boxes', 'neutral', null];
     case 'deleted': return [tIn(l, 'look_deleted', x.slipNo, x.by || ''), [x.customer, x.reason].filter(Boolean).join(' · '), 'Trash2', 'neutral', '/slips/deleted'];
-    case 'money_out': return [tIn(l, 'look_out', m0(x.amount), x.customer), x.mode || '', 'RefreshCw', 'neutral', null];
+    case 'not_placed': return [tIn(l, 'look_not_placed', m0(x.amount)), tIn(l, 'look_not_placed_s'), 'CircleDashed', 'warn', null];
+    case 'money_out': return [tIn(l, 'look_out', m0(x.amount), x.customer), String(x.mode || '').split('+').join(' + '), 'RefreshCw', 'neutral', null];
     case 'overdue': return [tIn(l, 'look_overdue', x.customer, m0(x.amount)), tIn(l, 'look_overdue_s', x.days), 'Clock', 'bad', '/reminders'];
     case 'waiting': return [tIn(l, 'look_waiting', x.n), tIn(l, 'look_waiting_s', x.customers.join(', ')), 'PackageCheck', 'neutral', '/slips?stage=weighed'];
     default: return [x.type, '', 'Info', 'neutral', null];

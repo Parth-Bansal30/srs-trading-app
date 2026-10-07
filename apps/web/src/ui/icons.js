@@ -9,6 +9,7 @@ import {
   Printer, FileDown, Eye, Share2, Pencil, Contact, StickyNote, CalendarRange, Download,
  TriangleAlert, Copy, GitCompare, Bell, MessageSquareText, Calendar, ArrowDownUp, ChartNoAxesColumn, BadgeIndianRupee,
   EllipsisVertical, ListChecks, Boxes, Truck, FileUp, Camera, Keyboard, PackagePlus, PackageMinus, Undo2, ClipboardCheck, Minus,
+  Wallet, Split, EyeOff, ArrowUp, ArrowDown, Shuffle, CircleDashed,
 } from 'lucide-preact';
 
 export const ICONS = {
@@ -21,4 +22,5 @@ export const ICONS = {
   Printer, FileDown, Eye, Share2, Pencil, Contact, StickyNote, CalendarRange, Download,
  TriangleAlert, Copy, GitCompare, Bell, MessageSquareText, Calendar, ArrowDownUp, ChartNoAxesColumn, BadgeIndianRupee,
   EllipsisVertical, ListChecks, Boxes, Truck, FileUp, Camera, Keyboard, PackagePlus, PackageMinus, Undo2, ClipboardCheck, Minus,
+  Wallet, Split, EyeOff, ArrowUp, ArrowDown, Shuffle, CircleDashed,
 };

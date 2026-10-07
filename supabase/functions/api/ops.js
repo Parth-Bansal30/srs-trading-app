@@ -54,6 +54,38 @@ const kg = (v, what) => {
   return Math.round(n * 1000) / 1000;
 };
 const payMethod = (v) => { if (!PAY_METHODS.includes(v)) throw bad('Choose how it was paid (Cash, UPI, Bank or Cheque).'); return v; };
+const BANK_METHODS = ['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque'];
+
+/**
+ * Where the money went (money accounts, 6 Oct 2026). a.parts = a split [{account_id, amount, method}] that must add up
+ * to `total`; or a.account_id (+ a.method) = all of it in one account. Neither = the old way (mode only).
+ * Returns { parts, account } for api_pay, or null.
+ */
+function placement(a, total) {
+  if (Array.isArray(a?.parts) && a.parts.length) {
+    if (a.parts.length > 8) throw bad('Up to 8 accounts for one payment.');
+    const parts = a.parts.map((x) => {
+      if (!isUuid(x?.account_id)) throw bad('Choose where the money went.');
+      const amt = Math.round(Number(x.amount) * 100) / 100;
+      if (!(amt > 0) || amt > 1e9) throw bad('Enter the amount for each account.');
+      const method = BANK_METHODS.includes(x.method) ? x.method : null;
+      return { account_id: x.account_id, amount: amt, ...(method ? { method } : {}) };
+    });
+    if (new Set(parts.map((x) => x.account_id)).size !== parts.length) throw bad('The same account is in the list twice.');
+    const placed = r2(parts.reduce((t, x) => t + x.amount, 0));
+    if (total != null && placed !== r2(total)) {
+      throw bad(`The accounts add up to ₹${placed}, but the amount is ₹${r2(total)}.`, 'split_differs');
+    }
+    return { parts, account: null };
+  }
+  if (a?.account_id != null && a.account_id !== '') {
+    if (!isUuid(a.account_id)) throw bad('Choose where the money went.');
+    return { parts: null, account: { account_id: a.account_id, ...(BANK_METHODS.includes(a.method) ? { method: a.method } : {}) } };
+  }
+  return null;
+}
+/** With an account chosen the mode follows the account (the database sets it), so any mode will do here. */
+const modeFor = (v, place) => (place ? (PAY_METHODS.includes(v) ? v : 'Cash') : payMethod(v));
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const r2 = (n) => Math.round(n * 100) / 100;
 const LANGS = ['en', 'hi', 'hn'];
@@ -170,6 +202,19 @@ export function stockFromDb(core, raw) {
 }
 
 /** The day's stock for the evening summary. */
+/** A payment's parts from the database → [{ mode, amount }] for @srs/core (null when it has none). */
+export const partsFromDb = (pp) => (Array.isArray(pp) && pp.length ? pp.map((x) => ({ mode: x.mode, amount: Number(x.amount) })) : null);
+
+/** api_day_accounts → the evening tally's input (money.js accountTally). */
+export function dayAccountsFromDb(d) {
+  return {
+    list: (d?.accounts || []).map((a) => ({ id: a.id, name: a.name, kind: a.kind, owner: a.owner, isDrawer: !!a.is_drawer, hidden: !!a.hidden })),
+    parts: (d?.parts || []).map((x) => ({ accountId: x.account_id, amount: Number(x.amount), mode: x.mode, method: x.method || null,
+      paymentId: x.payment_id, kind: x.kind, rev: !!x.rev, customer: x.customer, slipNo: x.slip_no || null, orderId: x.order_id || null, at: x.at })),
+    checks: d?.checks || [],
+  };
+}
+
 export function dayStockFromDb(s) {
   const groups = (s.groups || []).map((g) => ({ code: g.code, shape: g.shape, kg: Number(g.kg || 0), lowKg: g.low_kg == null ? null : Number(g.low_kg),
     value: g.value == null ? null : Number(g.value), negative: !!g.negative }));
@@ -320,8 +365,15 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
   const advanceArg = (caller, adv) => {
     if (!adv || adv.amount == null || adv.amount === '' || Number(adv.amount) === 0) return null;
     need(caller, 'money');
-    return { amount: amount(adv.amount, 'advance amount'), mode: payMethod(adv.mode), note: text(adv.note) };
+    const amt = amount(adv.amount, 'advance amount');
+    return { amount: amt, mode: modeFor(adv.mode, placement(adv, amt)), note: text(adv.note) };
   };
+  const advancePlace = (adv) => (adv ? placement(adv, Number(adv.amount)) : null);
+
+  /** Run a money operation; with accounts chosen it goes through api_pay (all in one go, the split checked). */
+  const payRpc = (fn, args, place) => (place
+    ? rpc('api_pay', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place.parts, p_account: place.account })
+    : rpc(fn, args));
 
   async function pricingContext(caller, customerId, items) {
     const matIds = [...new Set((Array.isArray(items) ? items : []).map((i) => i?.material_id).filter(isUuid))];
@@ -337,10 +389,10 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const ctx = await pricingContext(caller, customer, a.items);
       const built = buildItems(caller, ctx, a.items);
       const advance = a.accept ? advanceArg(caller, a.advance) : null;
-      const res = await rpc('api_create_order', {
+      const res = await payRpc('api_create_order', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: customer, p_rules: pricingRules(ctx),
         p_items: built.map((b) => b.db), p_accept: !!a.accept, p_advance: advance,
-      });
+      }, advance ? advancePlace(a.advance) : null);
       return { ...res, estimate: estimateOf(caller, built, ctx.settings.min_inch) };
     },
 
@@ -358,17 +410,20 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
 
     async acceptOrder(caller, a, key, hash) {
       need(caller, 'new');
-      return rpc('api_accept_order', {
-        p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'), p_advance: advanceArg(caller, a.advance),
-      });
+      const advance = advanceArg(caller, a.advance);
+      return payRpc('api_accept_order', {
+        p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'), p_advance: advance,
+      }, advance ? advancePlace(a.advance) : null);
     },
 
     async addAdvance(caller, a, key, hash) {
       need(caller, 'money');
-      return rpc('api_add_advance', {
+      const amt = amount(a.amount, 'advance amount');
+      const place = placement(a, amt);
+      return payRpc('api_add_advance', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'),
-        p_amount: amount(a.amount, 'advance amount'), p_mode: payMethod(a.mode), p_note: text(a.note),
-      });
+        p_amount: amt, p_mode: modeFor(a.mode, place), p_note: text(a.note),
+      }, place);
     },
 
     // ---------- weighing ----------
@@ -461,16 +516,17 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       if (problem) throw bad('Choose Pakka bill or Kacha.', problem);
       const paidNow = r2(f.paidNow);
       const T = f.T;
-      const res = await rpc('api_finalize_order', {
+      const place = paidNow > 0 ? placement(a, paidNow) : null;
+      const res = await payRpc('api_finalize_order', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: orderId,
         p_final: {
           bill: f.bill, gst_pct: gstPct, kacha_pct: kachaPct, pay_mode: f.mode, paid_now: paidNow,
-          pay_method: paidNow > 0 ? payMethod(a.pay_method) : null, note: text(a.note),
+          pay_method: paidNow > 0 ? modeFor(a.pay_method, place) : null, note: text(a.note),
           in_khata: core.staysInKhata(advance + paidNow, T.total),
           basis: { advance, weights: Object.fromEntries(ctx.items.map((i) => [i.id, i.actual_weight == null ? null : Number(i.actual_weight)])) },
           totals: { weight: r3(T.wt), base: T.base, material: T.matK, cutting: T.cutK, gst: T.gst, total: T.total },
         },
-      });
+      }, place);
       return { ...res, breakdown: { material: T.matK, cutting: T.cutK, gst: T.gst, pct: T.pct, total: T.total, advance: f.A, balance: f.B, extra: f.extra, paid_now: paidNow, due: f.due } };
     },
 
@@ -479,10 +535,12 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'money', 'khata');
       if (!BILLS.includes(a.side)) throw bad('Choose Pakka or Kacha.');
       if (a.side === 'kacha') need(caller, 'kacha');
-      return rpc('api_record_payment', {
+      const amt = amount(a.amount, 'amount received');
+      const place = placement(a, amt);
+      return payRpc('api_record_payment', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: uuid(a.customer_id, 'Choose a customer.'),
-        p_amount: amount(a.amount, 'amount received'), p_mode: payMethod(a.mode), p_side: a.side, p_note: text(a.note),
-      });
+        p_amount: amt, p_mode: modeFor(a.mode, place), p_side: a.side, p_note: text(a.note),
+      }, place);
     },
 
     async reversePayment(caller, a, key, hash) {
@@ -582,8 +640,10 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'money');
       const args = { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'),
         p_action: a.action, p_amount: amount(a.amount, 'amount'), p_mode: null, p_target: null, p_side: null, p_note: text(a.note) };
+      let place = null;
       if (a.action === 'refund') {
-        args.p_mode = payMethod(a.mode);
+        place = placement({ account_id: a.account_id, method: a.method }, null); // given back from one account
+        args.p_mode = modeFor(a.mode, place);
         if (!args.p_note) throw bad('Write why the money is returned.');
       } else if (a.action === 'move') {
         args.p_target = uuid(a.target_order_id, 'Choose the order to move it to.');
@@ -594,7 +654,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       } else {
         throw bad('Choose: return, move to another order, or keep as credit.');
       }
-      return rpc('api_adjust_advance', args);
+      return payRpc('api_adjust_advance', args, place);
     },
 
     /** Give back credit a customer holds in the khata (how much is available is worked out with @srs/core). */
@@ -607,10 +667,11 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const l = core.customerLedger({ custId: customer, ...k, sides: [a.side], allSides: ['pakka', 'kacha'] });
       const note = text(a.note);
       if (!note) throw bad('Write why the money is returned.');
-      return rpc('api_refund_credit', {
+      const place = placement({ account_id: a.account_id, method: a.method }, null);
+      return payRpc('api_refund_credit', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: customer, p_side: a.side,
-        p_amount: amount(a.amount, 'amount'), p_mode: payMethod(a.mode), p_note: note, p_available: l.bySide[a.side]?.adv ?? 0,
-      });
+        p_amount: amount(a.amount, 'amount'), p_mode: modeFor(a.mode, place), p_note: note, p_available: l.bySide[a.side]?.adv ?? 0,
+      }, place);
     },
 
     /** An old balance from the paper khata: a lump sum (no ref) or one old slip (ref = its number). */
@@ -777,6 +838,47 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     },
 
 
+    // ---------- money accounts (6 Oct 2026) ----------
+    /** Where money can go. all=true: the Settings list (owners) incl. hidden ones and account numbers. */
+    async accounts(caller, a) {
+      need(caller, 'money');
+      const all = a?.all === true;
+      if (all) need(caller, 'settings');
+      return rpc('api_accounts', { p_caller: caller.id, p_all: all });
+    },
+
+    /** Add or change an account: {id?, name, kind (bank|upi|paytm|wallet|other), owner (firm|personal), number?, staff_can, hidden}. */
+    async saveAccount(caller, a, key, hash) {
+      need(caller, 'settings');
+      const x = a?.account || {};
+      if (x.id != null && !isUuid(x.id)) throw bad('Account not found.');
+      const name = String(x.name ?? '').trim();
+      if (!name || name.length > 40) throw bad('Give the account a name (up to 40 letters).');
+      if (x.kind != null && !core.ACCOUNT_KINDS.includes(x.kind)) throw bad('Choose what kind of account it is.');
+      if (x.owner != null && !core.ACCOUNT_OWNERS.includes(x.owner)) throw bad('Choose firm or personal.');
+      const number = x.number == null ? null : String(x.number).trim().slice(0, 60) || null;
+      return rpc('api_save_account', { p_caller: caller.id, p_key: key, p_hash: hash, p_account: {
+        id: x.id || null, name, kind: x.kind || null, owner: x.owner || 'firm', number,
+        ...(x.staff_can != null ? { staff_can: !!x.staff_can } : {}), ...(x.hidden != null ? { hidden: !!x.hidden } : {}),
+      } });
+    },
+
+    /** New order of the list: ids top to bottom (the cash drawer stays first). */
+    async orderAccounts(caller, a, key, hash) {
+      need(caller, 'settings');
+      const ids = Array.isArray(a?.ids) ? a.ids : [];
+      if (!ids.length || ids.length > 100 || !ids.every(isUuid)) throw bad('Which accounts?');
+      return rpc('api_order_accounts', { p_caller: caller.id, p_key: key, p_hash: hash, p_ids: ids });
+    },
+
+    /** Evening tally: tick an account as checked in the bank / Paytm app for that day (checked=false unticks). */
+    async checkAccount(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(a?.day || '') ? a.day : null;
+      if (!day) throw bad('Choose the day.');
+      return rpc('api_check_account', { p_caller: caller.id, p_key: key, p_hash: hash, p_account: uuid(a.account_id, 'Which account?'), p_day: day, p_checked: a.checked !== false });
+    },
+
     // ---------- evening summary for the owner (29 Sept 2026) ----------
     /** Everything about one shop day (default today), as this person may see it. */
     async daySummary(caller, a) {
@@ -785,6 +887,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const raw = await rpc('api_day_data', { p_caller: caller.id, p_day: day });
       const deleted = await rpc('api_day_deleted', { p_caller: caller.id, p_day: raw.day });
       const stock = await rpc('api_day_stock', { p_caller: caller.id, p_day: raw.day });
+      // owners: each money account's day (who paid what into which account)
+      const acc = core.can(caller.perms, 'settings') ? dayAccountsFromDb(await rpc('api_day_accounts', { p_caller: caller.id, p_day: raw.day })) : null;
       let reminders = []; let toReceive = 0;
       if (core.can(caller.perms, 'khata')) {
         const kraw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
@@ -801,8 +905,10 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const summary = core.daySummary({
         orders: (raw.orders || []).map((o) => ({ id: o.id, slipNo: o.slip_no, customer: o.customer, bill: o.bill, total: Number(o.total), weight: Number(o.weight || 0),
           inKhata: o.in_khata, by: o.by, items: (o.items || []).map((i) => ({ grade: i.grade, rate: Number(i.rate), stdRate: i.std_rate == null ? null : Number(i.std_rate), special: i.special })),
-          payments: (o.payments || []).map((p) => ({ amount: Number(p.amount), kind: p.kind, rev: p.rev, mode: p.mode })) })),
-        payments: (raw.payments || []).map((p) => ({ amount: Number(p.amount), kind: p.kind, rev: p.rev, mode: p.mode, customer: p.customer, orderId: p.order_id, at: p.at })),
+          payments: (o.payments || []).map((p) => ({ amount: Number(p.amount), kind: p.kind, rev: p.rev, mode: p.mode, parts: partsFromDb(p.parts) })) })),
+        payments: (raw.payments || []).map((p) => ({ amount: Number(p.amount), kind: p.kind, rev: p.rev, mode: p.mode, customer: p.customer, orderId: p.order_id, at: p.at,
+          parts: partsFromDb(p.parts) })),
+        accounts: acc ? { list: acc.list, parts: acc.parts, checks: acc.checks } : null,
         cashClose: raw.cash_close, weighed, reminders, toReceive,
         waiting: (raw.waiting || []).map((w) => ({ slipNo: w.slip_no, customer: w.customer })),
         cancelled: (raw.cancelled || []).map((x) => ({ slipNo: x.slip_no, customer: x.customer, reason: x.reason })),
@@ -812,7 +918,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         weightWarnPct: Number(raw.settings.weight_warn_pct ?? 5), isToday: raw.day === raw.today,
       });
       return { day: raw.day, today: raw.today, timezone: raw.timezone, shop: raw.shop, kacha: core.can(caller.perms, 'kacha'),
-        khata: core.can(caller.perms, 'khata'), summary };
+        khata: core.can(caller.perms, 'khata'), summary, account_parts: acc ? acc.parts : undefined };
     },
 
     async eveningGet(caller) {
@@ -891,7 +997,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       if (!reason) throw bad('Write why the slip is deleted.');
       const money = a?.money || 'none';
       if (!DELETE_MONEY.includes(money)) throw bad('Choose what happened to the money.');
-      const mode = money === 'refund' ? payMethod(a?.mode) : null;
+      const place = money === 'refund' ? placement({ account_id: a?.account_id, method: a?.method }, null) : null;
+      const mode = money === 'refund' ? modeFor(a?.mode, place) : null;
       // a retry after the code was used up gets the first answer back
       const before = await rpc('api_idem_answer', { p_caller: caller.id, p_key: key, p_op: 'deleteSlips' });
       if (before) return before;
@@ -900,7 +1007,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       await rpc('api_delete_check', { p_caller: caller.id, p_orders: ids });
       if (!otp) throw new ApiError(503, 'sms_not_ready', 'SMS codes are not set up on the server yet.');
       if (!(await otp.verify(caller, code))) throw bad('That code is not right or has expired. Ask for a new code.', 'wrong_code');
-      return rpc('api_delete_orders', { p_caller: caller.id, p_key: key, p_hash: hash, p_orders: ids, p_reason: reason, p_money: money, p_mode: mode });
+      return payRpc('api_delete_orders', { p_caller: caller.id, p_key: key, p_hash: hash, p_orders: ids, p_reason: reason, p_money: money, p_mode: mode }, place);
     },
 
     /** Staff without the permission: ask the owners (they get a phone notification if they switched them on). */
@@ -1124,7 +1231,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['accounts', 'weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill']);
 
 /** Database error code → HTTP answer the app can show. */

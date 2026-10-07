@@ -83,6 +83,11 @@ Authorization: Bearer <the person's login token>
 | `setLowStock` | stock | warn in the evening summary when a grade is below `kg` (`null` = off) |
 | `setItemStock` | orders | change which stock an order item takes from — only while the order is an estimate or accepted, and only stock of the same grade |
 
+| `accounts` (read) | money | where money can go: Shop cash (the drawer, always there) + the shop's own bank / UPI / Paytm / wallet accounts it may choose (owners-only accounts only for people with **settings**). `all: true` (settings): the Settings list with hidden ones and account numbers |
+| `saveAccount` | settings | `{account: {id?, name, kind (bank·upi·paytm·wallet·other), owner (firm·personal), number?, staff_can, hidden}}`. The drawer can be renamed, never hidden or changed. Names unique per shop |
+| `orderAccounts` / `checkAccount` | settings | new order of the list (`ids`); tick an account as checked for a shop day (`account_id`, `day`, `checked`) |
+| **Where money went** (all money ops) | | `createOrder`/`acceptOrder` advance, `addAdvance`, `finalizeOrder`, `recordPayment` take `parts: [{account_id, amount, method?}]` (a split — must add up exactly, else `400 split_differs`) or `account_id` (+ `method`: UPI·IMPS·NEFT·RTGS·Cheque) for all of it; refunds (`adjustAdvance` refund, `refundCredit`, `deleteSlips` refund) take one `account_id`. Without them the old `mode` still works (Cash → drawer, others "not placed"). These go through `api_pay`, which runs the operation and places the payment in one transaction (`payment_parts`, never edited; a correction mirrors its parts). The payment's mode follows its parts, e.g. `Cash+Bank`. The cash count only expects the cash parts. `daySummary` has `summary.accounts` (tally per account, firm / personal, not placed, ticks) and `account_parts` for owners |
+
 **Stock rule:** stock comes off when a slip is **weighed** (the real weight), and goes back if a weighed slip is cancelled or a weighed/finished slip is deleted. Every move is a new row in `stock_moves` — nothing is edited. New orders pick the stock for each item with core `stockChoices`: same grade, same shape (or no shape), the oldest that still has enough free kg; if none has enough, the one with the most (flagged). Selling with no stock is allowed and flagged in the evening summary.
 
 **Evening job:** pg_cron calls the api every 10 minutes with header `x-cron-secret` (from Vault; set up by `npm run evening:setup`). The api sends each due shop's summary as a phone notification (Web Push, `webpush.js`, RFC 8291/8292) to everyone who gets it, once per day (`private.evening_log`). Phones that unsubscribed are removed.
@@ -107,9 +112,9 @@ The same key also switches on **reading purchase bills** (PDF or photo). Optiona
 
 ## Tests
 ```
-npm run test:api          # 38 unit tests of the operations (no network)
+npm run test:api          # 42 unit tests of the operations (no network)
 npm run db:test           # 06_domain_operations.sql: ~90 checks in the database itself
 npm run db:parity-check   # database slip numbers = @srs/core for 2,000 moments, 6 time zones
-npm run domain:e2e        # 87 checks over the internet with real logins (dev numbers 904–906)
+npm run domain:e2e        # 94 checks over the internet with real logins (dev numbers 904–906)
 npm run seed:dev          # practice copy of SRS Trading from the prototype's own data (dev only)
 ```

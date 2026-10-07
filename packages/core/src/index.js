@@ -19,3 +19,4 @@ export * from './gstin.js';
 export * from './statement.js';
 export * from './daySummary.js';
 export * from './stock.js';
+export * from './money.js';

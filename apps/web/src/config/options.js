@@ -9,6 +9,18 @@ export const PAY_METHODS = [
   { id: 'Cheque', word: 'pm_cheque', icon: 'FileText' },
 ];
 
+// Money accounts (Settings → Payment accounts). The cash drawer is always there; the rest the shop adds.
+export const ACCOUNT_KINDS = [
+  { id: 'bank', word: 'acc_k_bank', icon: 'Landmark', tone: '#2F5FD0' },
+  { id: 'upi', word: 'acc_k_upi', icon: 'Smartphone', tone: '#6B4FD8' },
+  { id: 'paytm', word: 'acc_k_paytm', icon: 'Smartphone', tone: '#0BA5E9' },
+  { id: 'wallet', word: 'acc_k_wallet', icon: 'Wallet', tone: '#C2410C' },
+  { id: 'other', word: 'acc_k_other', icon: 'CircleDashed', tone: '#5B6472' },
+];
+export const ACCOUNT_DRAWER = { id: 'cash', word: 'acc_k_cash', icon: 'Banknote', tone: '#1F8A5B' };
+/** How money reached a bank account ("Bank" for RTGS / IMPS / NEFT). */
+export const BANK_METHODS = ['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque'];
+
 export const BILLS = {
   pakka: { word: 'bill_gst_short', tone: 'pakka' },
   kacha: { word: 'bill_none_short', tone: 'kacha' },

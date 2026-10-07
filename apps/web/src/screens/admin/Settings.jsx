@@ -7,6 +7,7 @@ import { db } from '../../lib/backend.js';
 import { forgetCatalog } from '../../lib/catalog.js';
 import { useAction } from '../../lib/action.js';
 import { toast } from '../../ui/toast.js';
+import { go } from '../../lib/router.js';
 import { TopBar, Skeleton, Icon } from '../../ui/kit.jsx';
 
 export function Settings() {
@@ -54,6 +55,13 @@ export function Settings() {
     <>
       <TopBar title={t('nav_settings')} />
       <div class="page" style="padding-bottom:160px">
+        {edit && (
+          <button class="card li" style="margin-bottom:4px" onClick={() => go('/settings/accounts')}>
+            <div class="iconbox tone-ok"><Icon name="Wallet" size={20} /></div>
+            <div class="grow"><div class="t">{t('acc_set_row')}</div><div class="s">{t('acc_set_row_s')}</div></div>
+            <Icon name="ChevronRight" size={18} />
+          </button>
+        )}
         <div class="sec" style="margin-top:4px"><h3>{t('company_title')}</h3></div>
         <div class="card pad">
           <div class="lbl">{t('shop_name')}</div><div class="field"><input disabled={!edit} value={v.company_name} onInput={set('company_name')} /></div>

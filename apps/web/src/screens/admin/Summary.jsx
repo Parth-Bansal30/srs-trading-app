@@ -1,6 +1,6 @@
 // Today's summary: sales (GST / no bill), money received by kind and mode, cash count at closing, weight check.
 import { useEffect, useState } from 'preact/hooks';
-import { calcItem, r2 } from '@srs/core';
+import { calcItem, r2, modeAmounts } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company, me } from '../../lib/session.js';
 import { db } from '../../lib/backend.js';
@@ -21,7 +21,7 @@ export function Summary() {
     const since = dayStartISO(tz);
     const [done, pays, closes, weighed] = await Promise.all([
       q(db.from('orders').select('id,bill_type,total_amount').eq('status', 'done').gte('done_at', since)),
-      q(db.from('payments').select('amount,mode,kind,order_id,reverses_payment_id').gte('received_at', since)),
+      q(db.from('payments').select('amount,mode,kind,order_id,reverses_payment_id,parts:payment_parts(mode,amount)').gte('received_at', since)),
       can('today') ? q(db.from('cash_closes').select('counted_cash,expected_cash,closed_at,people(display_name)').gte('closed_at', since).order('closed_at', { ascending: false }).limit(1)).catch(() => []) : [],
       q(db.from('order_items').select('shape,unit,dims,density,actual_weight,order_item_lengths(len,pcs,cuts),orders!inner(weighed_at,pricing_rules)').gte('orders.weighed_at', since).not('actual_weight', 'is', null)).catch(() => []),
     ]);
@@ -34,7 +34,9 @@ export function Summary() {
     const fromAdv = sum(allPaidOnToday.filter((p) => ['advance', 'refund', 'transfer'].includes(p.kind)));
     const inKinds = { pickup: sum(pays.filter((p) => p.kind === 'pickup')), advance: sum(pays.filter((p) => p.kind === 'advance' && p.mode !== 'Adjust')),
       khata: sum(pays.filter((p) => p.kind === 'khata' && p.mode !== 'Adjust')), out: sum(pays.filter((p) => p.kind === 'refund' || p.kind === 'reversal')) };
-    const byMode = PAY_METHODS.map((m) => ({ ...m, v: sum(pays.filter((p) => p.mode === m.id)) }));
+    // a payment split across accounts counts in each of its modes; the drawer only expects the cash part
+    const pieces = pays.flatMap((p) => modeAmounts(p));
+    const byMode = PAY_METHODS.map((m) => ({ ...m, v: sum(pieces.filter((x) => x.mode === m.id)) }));
     let est = 0; let act = 0; let flags = 0;
     weighed.forEach((i) => {
       const c = calcItem({ shape: i.shape, unit: i.unit, d: i.dims, rows: i.order_item_lengths.map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })), rate: 0, cutRate: 0, density: Number(i.density) }, 'est', { minInch: i.orders.pricing_rules?.min_inch ?? 1 });

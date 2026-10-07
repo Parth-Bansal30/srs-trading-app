@@ -9,7 +9,8 @@ import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate } from '../../lib/format.js';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
-import { PAY_METHODS } from '../../config/options.js';
+import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
+import { whereArgs, whereProblem } from '../../lib/accounts.js';
 import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
 import './pickup.css';
 
@@ -22,7 +23,7 @@ export function Pickup({ id }) {
   const [bill, setBill] = useState(null);
   const [mode, setMode] = useState('now');
   const [paid, setPaid] = useState('');
-  const [method, setMethod] = useState('Cash');
+  const [where, setWhere, accs] = useWhere(true);
   const [note, setNote] = useState('');
   const fin = useAction('finalizeOrder');
   const tz = company.value?.timezone;
@@ -41,9 +42,10 @@ export function Pickup({ id }) {
 
   const f = calc.chosen;
   const problem = f ? finishProblem(f) : 'choose_bill';
+  const placeBad = !problem && f.paidNow > 0 ? whereProblem(where, f.paidNow, accs) : null;
   const submit = async (share) => {
     try {
-      await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, pay_method: method, note });
+      await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? pickupPay(whereArgs(where, f.paidNow)) : {}) });
       toast(t('completed_msg', o.slip_no));
       // the slip page shows "Pickup done" and the WhatsApp / Print / PDF buttons (share → the send sheet opens)
       go(`/slip/${o.id}?done=1${share ? '&send=1' : ''}`);
@@ -86,7 +88,8 @@ export function Pickup({ id }) {
             {mode === 'part' && <div class="field" style="margin-top:10px"><span class="faint">₹</span><input inputmode="decimal" value={paid} onInput={(e) => setPaid(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder={t('amount_paid_now')} /></div>}
             {mode !== 'later' && (
               <>
-                <div class="pick" style="margin-top:10px">{PAY_METHODS.map((p) => <button class={method === p.id ? 'on' : ''} onClick={() => setMethod(p.id)}><Icon name={p.icon} size={18} />{t(p.word)}</button>)}</div>
+                <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
+                <MoneyTo amount={f.paidNow} value={where} onChange={setWhere} accounts={accs} />
                 <input class="textarea" style="margin-top:10px" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note')} />
               </>
             )}
@@ -96,7 +99,7 @@ export function Pickup({ id }) {
         {fin.error && fin.error.code !== 'changed' && <div class="error">{fin.error.message}</div>}
       </div>
       <div class="dock">
-        {problem ? <button class="btn btn-block btn-ghost" disabled>{t(problem === 'need_part' ? 'need_part' : 'choose_bill')}</button> : (
+        {problem || placeBad ? <button class="btn btn-block btn-ghost" disabled>{t(placeBad || (problem === 'need_part' ? 'need_part' : 'choose_bill'))}</button> : (
           <div class="row">
             <button class="btn btn-ghost" disabled={fin.busy} onClick={() => submit(false)}>{t('finish_only')}</button>
             <button class="btn btn-accent grow" disabled={fin.busy} onClick={() => submit(true)}><Icon name="MessageCircle" size={20} stroke={2.4} />{t('finish_share')}</button>
@@ -107,4 +110,6 @@ export function Pickup({ id }) {
   );
 }
 
+// finishing at pickup names the old Cash / UPI / Bank / Cheque choice pay_method
+const pickupPay = ({ mode, ...rest }) => ({ ...rest, ...(mode ? { pay_method: mode } : {}) });
 const L = ({ a, b, top }) => <div class="row" style={`justify-content:space-between;padding:9px 0;${top ? 'border-top:1px solid var(--line)' : ''}`}><span class="muted">{a}</span><span class="num">{b}</span></div>;

@@ -648,3 +648,92 @@ test('evening summary: low stock, below zero and sold without stock need a look'
   assert.deepEqual(s.look.map((x) => x.type), ['stock_negative', 'stock_low', 'no_stock']);
   assert.equal(s.look[2].n, 2);
 });
+
+// ---------- money accounts (6 Oct 2026) ----------
+const SBI = '50000000-0000-4000-8000-000000000001', PTM = '50000000-0000-4000-8000-000000000002', CASH = '50000000-0000-4000-8000-000000000003';
+test('money accounts: a split goes through api_pay in one go and must add up', async () => {
+  const { ops, calls, last } = fakeDb();
+  await rejects(ops.recordPayment(owner, { customer_id: CUST, amount: 3000, side: 'pakka',
+    parts: [{ account_id: CASH, amount: 1000 }, { account_id: SBI, amount: 1500 }] }, 'k', 'h'), 400, 'split_differs');
+  await rejects(ops.recordPayment(owner, { customer_id: CUST, amount: 3000, side: 'pakka',
+    parts: [{ account_id: SBI, amount: 1500 }, { account_id: SBI, amount: 1500 }] }, 'k', 'h'), 400);
+  await rejects(ops.recordPayment(owner, { customer_id: CUST, amount: 3000, side: 'pakka', parts: [{ account_id: 'x', amount: 3000 }] }, 'k', 'h'), 400);
+  assert.equal(calls.length, 0);
+  await ops.recordPayment(owner, { customer_id: CUST, amount: '3000', side: 'pakka',
+    parts: [{ account_id: CASH, amount: 1000 }, { account_id: SBI, amount: '1500', method: 'RTGS' }, { account_id: PTM, amount: 500, method: 'Gold' }] }, 'k', 'h');
+  const p = last('api_pay');
+  assert.equal(p.p_op, 'api_record_payment');
+  assert.deepEqual(p.p_parts, [{ account_id: CASH, amount: 1000 }, { account_id: SBI, amount: 1500, method: 'RTGS' }, { account_id: PTM, amount: 500 }]);
+  assert.equal(p.p_account, null);
+  assert.deepEqual(p.p_args, { p_caller: 'p-owner', p_key: 'k', p_hash: 'h', p_customer: CUST, p_amount: 3000, p_mode: 'Cash', p_side: 'pakka', p_note: null });
+  // one account for the whole amount
+  await ops.addAdvance(owner, { order_id: ORDER, amount: 2000, account_id: SBI, method: 'UPI' }, 'k2', 'h');
+  assert.deepEqual(last('api_pay').p_account, { account_id: SBI, method: 'UPI' });
+  assert.equal(last('api_pay').p_op, 'api_add_advance');
+  // the old way still works (no account chosen)
+  await ops.recordPayment(owner, { customer_id: CUST, amount: 10, mode: 'UPI', side: 'pakka' }, 'k3', 'h');
+  assert.equal(calls.at(-1).fn, 'api_record_payment');
+  await rejects(ops.recordPayment(owner, { customer_id: CUST, amount: 10, side: 'pakka' }, 'k4', 'h'), 400); // neither mode nor account
+});
+
+test('money accounts: pickup, advance on a new order, refunds and deletes take accounts too', async () => {
+  const { ops, last } = fakeDb();
+  await ops.finalizeOrder(owner, { order_id: ORDER, bill: 'pakka', pay_mode: 'part', paid: 1000,
+    parts: [{ account_id: CASH, amount: 400 }, { account_id: PTM, amount: 600 }] }, 'k', 'h');
+  assert.equal(last('api_pay').p_op, 'api_finalize_order');
+  assert.equal(last('api_pay').p_args.p_final.paid_now, 1000);
+  await rejects(ops.finalizeOrder(owner, { order_id: ORDER, bill: 'pakka', pay_mode: 'part', paid: 1000,
+    parts: [{ account_id: CASH, amount: 400 }] }, 'k', 'h'), 400, 'split_differs');
+  await ops.createOrder(owner, { customer_id: CUST, items: newItems, accept: true, advance: { amount: 500, account_id: PTM } }, 'k', 'h');
+  assert.equal(last('api_pay').p_op, 'api_create_order');
+  assert.equal(last('api_pay').p_args.p_advance.amount, 500);
+  await ops.adjustAdvance(owner, { order_id: ORDER, action: 'refund', amount: 100, account_id: SBI, method: 'IMPS', note: 'asked' }, 'k', 'h');
+  assert.deepEqual(last('api_pay').p_account, { account_id: SBI, method: 'IMPS' });
+  await ops.adjustAdvance(owner, { order_id: ORDER, action: 'move', amount: 100, target_order_id: ORDER, account_id: SBI }, 'k5', 'h');
+  assert.equal(last('api_adjust_advance').p_target, ORDER, 'moving money inside the khata takes no account');
+});
+
+test('money accounts: settings list, saving, order and ticks are for owners', async () => {
+  const { ops, last } = fakeDb();
+  await rejects(ops.accounts(sales, { all: true }), 403);
+  await rejects(ops.accounts(clerk, {}), 403);
+  await ops.accounts(sales, {});
+  assert.deepEqual(last('api_accounts'), { p_caller: 'p-sales', p_all: false });
+  await rejects(ops.saveAccount(sales, { account: { name: 'SBI', kind: 'bank' } }, 'k', 'h'), 403);
+  await rejects(ops.saveAccount(owner, { account: { name: '  ', kind: 'bank' } }, 'k', 'h'), 400);
+  await rejects(ops.saveAccount(owner, { account: { name: 'X', kind: 'gold' } }, 'k', 'h'), 400);
+  await ops.saveAccount(owner, { account: { name: ' SBI current ', kind: 'bank', owner: 'firm', number: ' 50100012347730 ', staff_can: false } }, 'k', 'h');
+  assert.deepEqual(last('api_save_account').p_account, { id: null, name: 'SBI current', kind: 'bank', owner: 'firm', number: '50100012347730', staff_can: false });
+  await rejects(ops.checkAccount(owner, { account_id: SBI, day: 'today' }, 'k', 'h'), 400);
+  await ops.checkAccount(owner, { account_id: SBI, day: '2026-10-06', checked: false }, 'k', 'h');
+  assert.equal(last('api_check_account').p_checked, false);
+  await rejects(ops.orderAccounts(owner, { ids: ['x'] }, 'k', 'h'), 400);
+});
+
+test('money accounts: the evening tally comes from the parts; the drawer expects only cash', async () => {
+  const day = { timezone: 'Asia/Kolkata', day: '2026-10-06', today: '2026-10-06', shop: 'S', settings: { weight_warn_pct: 5, min_inch: 1 },
+    orders: [], weighed: [], waiting: [], cancelled: [], cash_close: null, last_week: null,
+    payments: [{ id: 'p1', amount: 25000, kind: 'pickup', rev: false, mode: 'Cash+UPI+Bank', customer: 'Gupta', at: '2026-10-06T06:00:00Z',
+      parts: [{ mode: 'Cash', amount: 10000, account_id: CASH }, { mode: 'Bank', amount: 12000, account_id: SBI }, { mode: 'UPI', amount: 3000, account_id: PTM }] },
+    { id: 'p2', amount: 700, kind: 'khata', rev: false, mode: 'UPI', customer: 'Rana', at: '2026-10-06T07:00:00Z', parts: null }] };
+  const acc = { day: '2026-10-06', checks: [SBI],
+    accounts: [{ id: CASH, name: 'Shop cash', kind: 'cash', owner: 'firm', is_drawer: true, hidden: false },
+      { id: SBI, name: 'SBI current', kind: 'bank', owner: 'firm', is_drawer: false, hidden: false },
+      { id: PTM, name: 'Paytm', kind: 'paytm', owner: 'personal', is_drawer: false, hidden: false }],
+    parts: [{ account_id: CASH, amount: 10000, payment_id: 'p1', customer: 'Gupta' }, { account_id: SBI, amount: 12000, payment_id: 'p1', customer: 'Gupta' },
+      { account_id: PTM, amount: 3000, payment_id: 'p1', customer: 'Gupta' }] };
+  const rpc = async (fn) => (fn === 'api_day_data' ? structuredClone(day) : fn === 'api_day_accounts' ? structuredClone(acc) : fn === 'api_day_stock' ? null : fn === 'api_khata_data' ? { customers: [], orders: [], payments: [], old_dues: [], timezone: 'Asia/Kolkata', settings: {} } : []);
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  const d = await ops.daySummary(owner, {});
+  assert.equal(d.summary.cash.expected, 10000);
+  assert.deepEqual(d.summary.money.byMode, { Cash: 10000, UPI: 3700, Bank: 12000, Cheque: 0 });
+  const t = d.summary.accounts;
+  assert.equal(t.firm, 22000);
+  assert.equal(t.personal, 3000);
+  assert.equal(t.notPlaced, 700);
+  assert.equal(t.rows.find((r) => r.id === SBI).checked, true);
+  assert.equal(d.account_parts.length, 3);
+  const s = await ops.daySummary(sales, {});
+  assert.equal(s.summary.accounts, null, 'the tally is for owners');
+  assert.equal(s.account_parts, undefined);
+});

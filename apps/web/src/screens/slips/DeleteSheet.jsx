@@ -6,7 +6,8 @@ import { t, tIn } from '../../lib/i18n.js';
 import { call } from '../../lib/api.js';
 import { useAction } from '../../lib/action.js';
 import { money } from '../../lib/format.js';
-import { PAY_METHODS } from '../../config/options.js';
+import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
+import { whereArgs } from '../../lib/accounts.js';
 import { Icon } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import './slips.css';
@@ -56,7 +57,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
   const [reason, setReason] = useState(null);
   const [other, setOther] = useState('');
   const [moneyChoice, setMoney] = useState(null);
-  const [mode, setMode] = useState('Cash');
+  const [where, setWhere, accs] = useWhere(open);
   const [sent, setSent] = useState(null);
   const [left, setLeft] = useState(0);
   const [code, setCode] = useState('');
@@ -66,7 +67,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
 
   useEffect(() => {
     if (!open) return;
-    setInfo(null); setStep('what'); setReason(null); setOther(''); setMoney(null); setMode('Cash'); setSent(null); setCode(''); setErr(null);
+    setInfo(null); setStep('what'); setReason(null); setOther(''); setMoney(null); setSent(null); setCode(''); setErr(null);
     call('deletePreview', { order_ids: ids }).then(setInfo).catch((e) => setErr(e.message));
   }, [open, ids.join(',')]);
   useEffect(() => {
@@ -85,7 +86,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
   // "never really received" only when no part was already given back / moved (the server says per slip)
   const canUndo = orders.every((o) => o.can_undo !== false || !(Number(o.paid) > 0));
   const why = reasonText(reason, other);
-  const moneyOk = paid <= 0 || (moneyChoice && (moneyChoice !== 'refund' || mode));
+  const moneyOk = paid <= 0 || (moneyChoice && (moneyChoice !== 'refund' || (where && (where.mode || where.ids?.length))));
   const ready = info && why && moneyOk;
   const slipNo = orders[0]?.slip_no || '';
   const title = one ? t('del_title_1', slipNo) : t('del_title_n', ids.length);
@@ -98,7 +99,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
       setSent(r); setLeft(r.wait || 60); setStep('code'); setCode('');
     } catch (e) { setErr(e.message); } finally { setSending(false); }
   };
-  const doDelete = () => del.run({ order_ids: ids, reason: why, money: paid > 0 ? moneyChoice : 'none', mode: moneyChoice === 'refund' ? mode : undefined, code })
+  const doDelete = () => del.run({ order_ids: ids, reason: why, money: paid > 0 ? moneyChoice : 'none', ...(moneyChoice === 'refund' ? whereArgs(where, paid) : {}), code })
     .then((r) => onDone?.(r, orders))
     .catch((e) => { if (e.code === 'wrong_code') { setCode(''); } });
   const delErr = del.error && (del.error.code === 'wrong_code' ? t('del_wrong_code') : del.error.message);
@@ -137,7 +138,7 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
                       </div>
                       {moneyChoice === 'refund' && <>
                         <div class="lbl" style="margin-top:10px">{t('del_how_back')}</div>
-                        <div class="pick">{PAY_METHODS.map((p) => <button class={mode === p.id ? 'on' : ''} onClick={() => setMode(p.id)}><Icon name={p.icon} size={18} />{t(p.word)}</button>)}</div>
+                        <MoneyTo amount={paid} value={where} onChange={setWhere} accounts={accs} single />
                       </>}
                     </div>
                   </div>

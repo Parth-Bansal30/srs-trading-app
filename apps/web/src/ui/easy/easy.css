@@ -1,0 +1,28 @@
+/* Easy mode (Papa mode): bigger everything on the screen (the tab bar stays as it is) */
+html.easy .main{zoom:1.16}
+.help-btn{color:var(--accent)}
+.help-text{font-size:17px;line-height:1.55;font-weight:600}
+.help-soon{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:600;margin-top:12px}
+/* money received */
+.praise{position:fixed;inset:0;z-index:90;background:#E2F3EA;color:#14161B;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 26px;text-align:center}
+.praise-tick{width:112px;height:112px;border-radius:56px;background:#1C8456;color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 14px rgba(28,132,86,.15),0 0 0 30px rgba(28,132,86,.07)}
+.praise-amt{font-size:52px;font-weight:800;letter-spacing:-.03em;margin-top:34px}
+.praise-got{font-size:30px;font-weight:700;margin-top:2px}
+.praise-who{font-size:20px;font-weight:600;color:#4B505A;margin-top:10px}
+.praise-chip{background:#fff;color:#1C8456;border-radius:999px;padding:5px 12px;font-size:13.5px;font-weight:700}
+.praise .btn-ghost{background:#fff;color:#14161B}
+.praise-note{font-size:12.5px;font-weight:600;color:#5A5F68;margin-top:16px;line-height:1.45;max-width:340px}
+/* easy Today */
+.etiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.etile{border-radius:22px;padding:16px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start;text-align:left;position:relative;color:#fff}
+.etile .w{font-size:23px;font-weight:700;line-height:1.15}
+.etile .s{font-size:13px;font-weight:600;opacity:.85;margin-top:2px}
+.etile .badge{position:absolute;top:14px;right:14px;height:26px;padding:0 10px;border-radius:13px;background:var(--accent);color:var(--accent-ink);font-size:12.5px;font-weight:800;display:flex;align-items:center}
+.etile:disabled{opacity:.4}
+.ehello{font-size:26px;font-weight:700}
+/* close the day */
+.cstep{padding:12px 14px;margin-top:10px}
+.cstep.now{border:1.5px solid var(--accent)}
+.cstep-n{width:32px;height:32px;border-radius:16px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--sunk);color:var(--ink-2)}
+.cstep-n.done{background:var(--ok);color:#fff}.cstep-n.now{background:var(--accent);color:var(--accent-ink)}
+.cstep-t{font-weight:700;font-size:17px}

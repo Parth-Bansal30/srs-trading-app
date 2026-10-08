@@ -18,7 +18,8 @@ import { DeleteSheet, AskDeleteSheet } from './DeleteSheet.jsx';
 import { loadStock, forgetStock } from '../../lib/stock.js';
 import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
-import { whereArgs, whereProblem, modeText, modeIcon, accName } from '../../lib/accounts.js';
+import { whereArgs, whereProblem, modeText, modeIcon, accName, whereLabel } from '../../lib/accounts.js';
+import { moneySaved } from '../../lib/easy.js';
 import '../docs/docs-screens.css';
 import './slips.css';
 
@@ -204,7 +205,8 @@ function AcceptSheet({ open, o, onClose, onDone }) {
   const [where, setWhere, accs] = useWhere(open && can('money'));
   const a = useAction('acceptOrder');
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
-  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null }).then(onDone).catch(() => {});
+  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null })
+    .then((r) => { if (can('money') && Number(amt) > 0) moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {});
   return (
     <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy || !!bad} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : t('accept')}</button>}>
       {can('money') && <><div class="muted" style="margin-bottom:12px">{t('adv_note')}</div><div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
@@ -222,7 +224,7 @@ function AdvanceSheet({ open, o, onClose, onDone }) {
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('adv_add')}
-      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }).then(onDone).catch(() => {})}>{bad ? t(bad) : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }).then((r) => { moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {})}>{bad ? t(bad) : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
       <div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />

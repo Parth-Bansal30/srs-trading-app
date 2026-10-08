@@ -15,7 +15,8 @@ import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
-import { whereArgs, whereProblem } from '../../lib/accounts.js';
+import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
+import { moneySaved } from '../../lib/easy.js';
 import { ItemCard } from './ItemCard.jsx';
 import { loadStock } from '../../lib/stock.js';
 import { choicesFor } from '../../ui/stock/StockPick.jsx';
@@ -123,7 +124,8 @@ export function NewOrder() {
     return bad >= 0 ? t('need_item', bad + 1) : null;
   };
 
-  const save = async (accept, advance) => {
+  const save = async (accept, advance, label) => {
+    const told = (slipNo) => { if (advance?.amount > 0) moneySaved({ amount: advance.amount, customer: customer?.name, slipNo, account: label }); };
     const p = check();
     setProblem(p);
     if (p) return;
@@ -133,11 +135,13 @@ export function NewOrder() {
         if (accept) {
           await call('acceptOrder', { order_id: editing.id, advance });
         }
+        if (accept) told(editing.slip_no);
         toast(accept ? t('accepted_msg', editing.slip_no) : t('saved_msg', editing.slip_no));
         go(`/slip/${editing.id}`);
       } else {
         const r = await create.run({ ...payload(), accept, advance });
         store.set(DRAFT, null);
+        if (accept) told(r.slip_no);
         toast(accept ? t('accepted_msg', r.slip_no) : t('saved_msg', r.slip_no));
         go(`/slip/${r.order_id}`);
       }
@@ -193,7 +197,7 @@ export function NewOrder() {
       <CustomerPicker open={pickCust} customers={cat.customers} onClose={() => setPickCust(false)}
         onPick={(c) => { setCustomer(c); setPickCust(false); }} />
       <AdvanceSheet open={advOpen} busy={busy} onClose={() => setAdvOpen(false)} total={totals.plain.total}
-        onAccept={(adv) => { setAdvOpen(false); save(true, adv); }} />
+        onAccept={(adv, label) => { setAdvOpen(false); save(true, adv, label); }} />
     </div>
   );
 }
@@ -206,7 +210,7 @@ function AdvanceSheet({ open, onClose, onAccept, busy }) {
   const bad = money_ && Number(amt) > 0 ? whereProblem(where, r2(Number(amt)), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('accept')}
-      footer={<button class="btn btn-accent btn-block" disabled={busy || !!bad} onClick={() => onAccept(money_ && Number(amt) > 0 ? { amount: r2(Number(amt)), note, ...whereArgs(where, r2(Number(amt))) } : null)}>
+      footer={<button class="btn btn-accent btn-block" disabled={busy || !!bad} onClick={() => onAccept(money_ && Number(amt) > 0 ? { amount: r2(Number(amt)), note, ...whereArgs(where, r2(Number(amt))) } : null, whereLabel(where, accs))}>
         <Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : Number(amt) > 0 ? `${t('accept')} · ${money(amt)}` : t('accept')}</button>}>
       {money_ ? (
         <>

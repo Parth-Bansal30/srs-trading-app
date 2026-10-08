@@ -9,6 +9,8 @@ import { NEEDS } from '../config/navigation.js';
 import { STAGES, BILLS } from '../config/options.js';
 import { Icon, Chip, LangPill, Skeleton } from '../ui/kit.jsx';
 import { startDone } from './start/Start.jsx';
+import { easy } from '../lib/easy.js';
+import { EasyToday } from './EasyToday.jsx';
 import './today.css';
 
 export function Today() {
@@ -22,6 +24,8 @@ export function Today() {
 
   const needs = d ? NEEDS.filter((n) => (!n.perm || can(n.perm)) && (d.counts[n.count] || 0) > 0) : [];
   const first = (me.value?.name || '').split(' ')[0];
+
+  if (easy.value.on) return <EasyToday d={d} />;
 
   return (
     <div class="page today">

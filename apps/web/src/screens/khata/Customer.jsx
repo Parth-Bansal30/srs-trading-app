@@ -10,10 +10,11 @@ import { loadCustomer, boughtSince, specialRates, sentSlips, avatarColour, first
 import { fmtDay } from '../../lib/docs.js';
 import { CustomerEdit } from './CustomerEdit.jsx';
 import { StatementSheet } from '../docs/StatementSheet.jsx';
-import { go } from '../../lib/router.js';
+import { go, route } from '../../lib/router.js';
+import { moneySaved } from '../../lib/easy.js';
 import { toast } from '../../ui/toast.js';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
-import { whereArgs, whereProblem, modeText, modeIcon } from '../../lib/accounts.js';
+import { whereArgs, whereProblem, modeText, modeIcon, whereLabel } from '../../lib/accounts.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { ReminderSheet } from './Reminders.jsx';
@@ -25,6 +26,7 @@ const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata
 export function Customer({ id }) {
   const [r, setR] = useState(undefined);
   const [sheet, setSheet] = useState(null); // pay | remind | old | edit | statement
+  useEffect(() => { if (route.value.query.pay && can('khata')) setSheet('pay'); }, []);
   const [info, setInfo] = useState(null);     // gstin, address, note…
   const [extra, setExtra] = useState({});     // bought this year, special rates, sent slips
   const tz = company.value?.timezone;
@@ -141,7 +143,7 @@ function PaySheet({ open, c, sides, onClose, onDone }) {
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('add_payment')}
-      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }).then(() => onDone(amt)).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }).then(() => { moneySaved({ amount: Number(amt), customer: c.name, account: whereLabel(where, accs) }); onDone(amt); }).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('amount')}</div>
       <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
       <SideSeg sides={sides} side={side} setSide={setSide} />

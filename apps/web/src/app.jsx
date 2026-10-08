@@ -32,6 +32,8 @@ import { Rates } from './screens/admin/Rates.jsx';
 import { People } from './screens/admin/People.jsx';
 import { Settings } from './screens/admin/Settings.jsx';
 import { Accounts } from './screens/admin/Accounts.jsx';
+import { CloseDay } from './screens/CloseDay.jsx';
+import { Praise } from './ui/easy/Praise.jsx';
 import { Summary } from './screens/admin/Summary.jsx';
 import { Guide } from './screens/Guide.jsx';
 import { PublicDoc } from './screens/docs/PublicDoc.jsx';
@@ -65,6 +67,7 @@ const SCREENS = {
   '/people': () => <People />,
   '/settings': () => <Settings />,
   '/settings/accounts': () => <Accounts />,
+  '/close-day': () => <CloseDay />,
   '/reports': () => <Summary />,
   '/guide': () => <Guide />,
   '/start': () => <Start />,
@@ -156,6 +159,7 @@ function Screens() {
       <main class="main">{screen}</main>
       {!full && <TabBar path={path} />}
       {toastMsg.value && <div class="toast">{toastMsg.value}</div>}
+      <Praise />
     </div>
   );
 }

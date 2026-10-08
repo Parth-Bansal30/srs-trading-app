@@ -57,3 +57,12 @@ export function whereProblem(w, amount, accounts) {
 }
 export const splitState = (w, amount, accounts) => checkSplit(amount, (w?.ids || []).map((id) => ({ accountId: id, amount: w.amounts?.[id], method: w.methods?.[id] })),
   (accounts || []).map((a) => ({ id: a.id, kind: a.kind })));
+
+/** Where the money went, in words: "SBI current · RTGS", "Shop cash + SBI current", or the mode ("UPI"). */
+export function whereLabel(w, accounts) {
+  if (!w) return '';
+  if (!w.ids) return modeText(w.mode);
+  const names = w.ids.map((id) => accName((accounts || []).find((a) => a.id === id))).filter(Boolean);
+  if (names.length === 1 && w.methods?.[w.ids[0]]) return `${names[0]} · ${w.methods[w.ids[0]]}`;
+  return names.join(' + ');
+}

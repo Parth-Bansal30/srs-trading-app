@@ -3,7 +3,7 @@
 // Each line goes into the stock item with the same grade + shape + HSN + rate (or a new one).
 // Address: #/purchases/new  (?kind=opening = stock already in the godown, no bill)
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { billLine, billTotals, landedCosts, matchStockItem, guessGrade, guessShape, descKey, cleanHsn, businessDate, r2 } from '@srs/core';
+import { billLine, billTotals, landedCosts, matchStockItem, guessGrade, guessShape, descKey, cleanHsn, businessDate, r2, purchaseChecks } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -16,10 +16,16 @@ import { forgetStock, kgTxt } from '../../lib/stock.js';
 import { SHAPE_LOOK } from '../../config/options.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { GradePicker } from '../order/GradePicker.jsx';
+import { Sheet } from '../../ui/Sheet.jsx';
+import { CheckNote, checkWords } from '../../ui/stock/BillCheck.jsx';
 import '../order/order.css';
 import './stock.css';
 
 const DRAFT = 'draft:purchase';
+// HSN codes the person said are correct for a grade are remembered on this phone (so the warning never nags again)
+const OK_HSN = 'pu:okHsn';
+const okHsn = () => { try { return JSON.parse(localStorage.getItem(OK_HSN) || '[]'); } catch { return []; } };
+const rememberOk = (k) => { try { localStorage.setItem(OK_HSN, JSON.stringify([...new Set([...okHsn(), k])].slice(-200))); } catch { /* private window */ } };
 const UNITS = [['kg', 'kg'], ['mt', 'MT'], ['qtl', 'Qtl']];
 const key = () => Math.random().toString(36).slice(2);
 const blankLine = () => ({ key: key(), description: '', hsn: '', qty: '', qtyUnit: 'kg', rate: '', rateUnit: 'kg', amount: '', material_id: null, shape: null, label: '', unsure: [], how: null });
@@ -54,6 +60,7 @@ export function PurchaseNew() {
   const [pick, setPick] = useState(null);       // line index choosing a grade
   const [diff, setDiff] = useState(null);       // totals_differ from the server
   const [result, setResult] = useState(null);
+  const [review, setReview] = useState(false); // the "before saving" list
   const save = useAction('savePurchase');
   const pdfIn = useRef(); const photoIn = useRef();
 
@@ -193,6 +200,20 @@ export function PurchaseNew() {
   const supMatches = !sup.id && sup.name.trim().length >= 2 ? ctx.suppliers.filter((s) => s.name.toLowerCase().includes(sup.name.trim().toLowerCase())).slice(0, 4) : [];
   const unsure = (name) => (f.unsure.includes(name) ? 'unsure' : '');
   const gstPct = Number(ctx.gst_pct ?? 18);
+  const tz = company.value?.timezone;
+  // ---------- smart checks (warn only) ----------
+  const hist = {
+    rates: (ctx.history?.rates || []).map((h) => ({ materialId: h.material_id, rate: Number(h.rate), date: h.date, supplier: h.supplier })),
+    bills: (ctx.history?.bills || []).map((b) => ({ supplierId: b.supplier_id, billNo: b.bill_no, date: b.date, kg: Number(b.kg), total: Number(b.total) })),
+  };
+  const checks = isBill || f.lines.length ? purchaseChecks({
+    billNo: isBill ? f.bill_no : '', supplierId: sup.id, supplierGstin: sup.gstin, isNewSupplier: isBill && !sup.id,
+    totalKg: calc.kg, total: calc.tot.total,
+    lines: f.lines.map((l, i) => { const m = matOf(l.material_id); return { hsn: l.hsn, rateKg: calc.lines[i].rateKg, family: m?.family, materialId: l.material_id, code: m?.code, shape: l.shape }; }),
+  }, hist, [...(f.okChecks || []), ...okHsn()]) : [];
+  const sayOk = (c) => { if (c.type.startsWith('hsn')) rememberOk(c.key); set({ okChecks: [...(f.okChecks || []), c.key] }); };
+  const lineChecks = (i) => checks.filter((c) => c.line === i);
+  const hsnActions = (c, i) => c.suggest.map((x, k) => [`${t('chk_use', x.hsn)} · ${x.words}`, () => setLine(i, { hsn: x.hsn }), k === 0]);
   const problems = () => {
     if (isBill && !sup.id && !sup.name.trim()) return t('pu_need_from');
     for (let i = 0; i < f.lines.length; i++) {
@@ -248,6 +269,11 @@ export function PurchaseNew() {
               <div class="grow"><div class="lbl">{t('pu_bill_no')}</div><div class={`field ${unsure('bill_no')}`}><input value={f.bill_no} onInput={(e) => set({ bill_no: e.currentTarget.value })} /></div></div>
               <div class="grow"><div class="lbl">{t('pu_date')}</div><div class={`field ${unsure('bill_date')}`}><input type="date" value={f.bill_date} onInput={(e) => set({ bill_date: e.currentTarget.value })} /></div></div>
             </div>
+            {checks.filter((c) => c.type === 'billno_gstin').map((c) => (
+              <CheckNote c={c} tz={tz} onOk={() => sayOk(c)} okWord={t('chk_not_billno')} actions={[sup.id
+                ? [t('chk_clear_billno'), () => set({ bill_no: '' }), true]
+                : [t('chk_move'), () => set({ bill_no: '', supplier: { ...sup, gstin: c.gstin } }), true]]} />))}
+            {checks.filter((c) => c.type === 'gstin_typo').map((c) => <CheckNote c={c} tz={tz} onOk={() => sayOk(c)} />)}
             {can('kacha') && <><div class="lbl" style="margin-top:12px">{t('pu_type_q')}</div>
               <div class="seg"><button class={f.bill_type === 'pakka' ? 'on' : ''} onClick={() => set({ bill_type: 'pakka' })}>{t('bill_gst_short')}</button>
                 <button class={f.bill_type === 'kacha' ? 'on' : ''} onClick={() => set({ bill_type: 'kacha', gst: '' })}>{t('bill_none_short')}</button></div></>}
@@ -273,12 +299,14 @@ export function PurchaseNew() {
                   <select class="unitsel" value={l.qtyUnit} onChange={(e) => setLine(i, { qtyUnit: e.currentTarget.value })}>{UNITS.map(([v, w]) => <option value={v}>{w}</option>)}</select></div></div>
               </div>
               <div class="row" style="gap:8px;margin-top:8px">
-                <div class="grow"><div class="lbl">{t('pu_rate')}</div><div class={`field num ${u('rate')}`}><span class="faint">₹</span><input inputmode="decimal" value={l.rate} onInput={(e) => setLine(i, { rate: e.currentTarget.value.replace(/[^\d.]/g, '') })} />
+                <div class="grow"><div class="lbl">{t('pu_rate')}</div><div class={`field num ${u('rate')}`}><span class="faint">₹</span><input id={`pu-rate-${i}`} inputmode="decimal" value={l.rate} onInput={(e) => setLine(i, { rate: e.currentTarget.value.replace(/[^\d.]/g, '') })} />
                   <select class="unitsel" value={l.rateUnit} onChange={(e) => setLine(i, { rateUnit: e.currentTarget.value })}>{UNITS.map(([v, w]) => <option value={v}>/{w}</option>)}</select></div></div>
                 <div class="grow"><div class="lbl">{t('pu_amount')}</div><div class={`field num ${u('amount')} ${l.amount !== '' && !c.ok ? 'unsure' : ''}`}><span class="faint">₹</span>
                   <input inputmode="decimal" value={l.amount} placeholder={c.expected != null ? String(c.expected) : ''} onInput={(e) => setLine(i, { amount: e.currentTarget.value.replace(/[^\d.]/g, '') })} /></div></div>
               </div>
               {l.amount !== '' && c.expected != null && !c.ok && <div class="pu-warn">{t('pu_amount_off', money(Number(l.amount), true), money(c.expected, true))}</div>}
+              {lineChecks(i).map((k) => <CheckNote c={k} tz={tz} onOk={() => sayOk(k)}
+                actions={k.type === 'rate_far' ? [[t('chk_fix_rate'), () => document.getElementById(`pu-rate-${i}`)?.focus(), true]] : hsnActions(k, i)} />)}
               {c.kg > 0 && c.rateKg != null && <div class="faint num" style="font-size:12.5px;font-weight:600;margin-top:6px">{kgTxt(c.kg)} × {money(c.rateKg)}/kg{calc.lc[i].share > 0 ? ` · ${t('st_cost')} ${money(calc.lc[i].cost)}/kg` : ''}</div>}
 
               <div class="pu-saveas">
@@ -319,6 +347,7 @@ export function PurchaseNew() {
               </div>
               <div class={`notice ${calc.tot.ok ? 'tone-ok' : 'tone-warn'}`} style="margin-top:12px">
                 {calc.tot.ok ? t('pu_adds_up') : t('pu_differs', money(calc.tot.computed, true), money(calc.tot.total, true), money(calc.tot.diff, true))}</div>
+              {checks.filter((c) => c.type === 'duplicate').map((c) => <CheckNote c={c} tz={tz} onOk={() => sayOk(c)} />)}
               <div class="lbl" style="margin-top:12px">{t('pu_paid_q')}</div>
               <div class="seg"><button class={f.pay_status === 'paid' ? 'on' : ''} onClick={() => set({ pay_status: 'paid' })}>{t('pu_paid')}</button>
                 <button class={f.pay_status === 'to_pay' ? 'on' : ''} onClick={() => set({ pay_status: 'to_pay' })}>{t('pu_to_pay')} {money(calc.tot.total, false)}</button></div>
@@ -334,8 +363,19 @@ export function PurchaseNew() {
         </div>}
       </div>
       <div class="quotebar">
-        <button class="btn btn-accent btn-block" disabled={save.busy} onClick={() => submit(false)}><Icon name="Boxes" size={19} stroke={2.3} />{save.busy ? '…' : t('pu_save', kgTxt(calc.kg))}</button>
+        <button class="btn btn-accent btn-block" disabled={save.busy} onClick={() => (checks.length && !problems() ? setReview(true) : submit(false))}><Icon name="Boxes" size={19} stroke={2.3} />{save.busy ? '…' : t('pu_save', kgTxt(calc.kg))}</button>
       </div>
+      <Sheet open={review} onClose={() => setReview(false)} title={checks.length === 1 ? t('chk_sheet_t1') : t('chk_sheet_t', checks.length)}
+        footer={<><button class="btn btn-ghost btn-block" onClick={() => setReview(false)}>{t('chk_back')}</button>
+          <button class="btn btn-accent btn-block" style="margin-top:8px" disabled={save.busy} onClick={() => {
+            checks.filter((c) => c.type.startsWith('hsn')).forEach((c) => rememberOk(c.key));
+            setForm({ ...f, okChecks: [...(f.okChecks || []), ...checks.map((c) => c.key)] }); setReview(false); submit(false);
+          }}>{t('chk_save_all')}</button></>}>
+        <div class="muted" style="font-size:14px;margin-bottom:10px">{t('chk_sheet_s')}</div>
+        <div class="card chk-list">{checks.map((c) => { const [a, b] = checkWords(c, tz); return (
+          <div class="li"><span style={`color:var(--${c.level});flex:none;margin-top:2px`}><Icon name={c.level === 'bad' ? 'CircleAlert' : 'TriangleAlert'} size={18} stroke={2.4} /></span>
+            <div class="grow"><div class="t" style="font-size:14px">{c.line != null ? `${t('chk_line', c.line + 1)} · ` : ''}{a}</div><div class="s">{b}</div></div></div>); })}</div>
+      </Sheet>
       <GradePicker open={pick != null} materials={cat.materials} onClose={() => setPick(null)}
         onPick={(mat) => { setLine(pick, { material_id: mat.id, how: null }); setPick(null); }} />
     </div>

@@ -3,6 +3,7 @@ import { ICONS } from './icons.js';
 import { t, lang, setLang } from '../lib/i18n.js';
 import { APP } from '../config/app.js';
 import { back } from '../lib/router.js';
+import { HelpButton } from './easy/Help.jsx';
 
 export function Icon({ name, size = 20, stroke = 1.9, ...rest }) {
   const C = ICONS[name];
@@ -18,6 +19,7 @@ export function TopBar({ title, sub, onBack = back, right }) {
       {onBack && <button class="round" onClick={onBack} aria-label={t('back')}><Icon name="ChevronLeft" size={20} stroke={2.2} /></button>}
       <div class="grow"><div class="title">{title}</div>{sub && <div class="sub num">{sub}</div>}</div>
       {right}
+      {!right && <HelpButton />}
     </div>
   );
 }

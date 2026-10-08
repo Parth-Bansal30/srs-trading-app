@@ -10,7 +10,8 @@ import { money, kg, shortDate } from '../../lib/format.js';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
-import { whereArgs, whereProblem } from '../../lib/accounts.js';
+import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
+import { moneySaved } from '../../lib/easy.js';
 import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
 import './pickup.css';
 
@@ -46,6 +47,7 @@ export function Pickup({ id }) {
   const submit = async (share) => {
     try {
       await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? pickupPay(whereArgs(where, f.paidNow)) : {}) });
+      if (f.paidNow > 0) moneySaved({ amount: f.paidNow, customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs), balance: f.due > 0 ? f.due : 0 });
       toast(t('completed_msg', o.slip_no));
       // the slip page shows "Pickup done" and the WhatsApp / Print / PDF buttons (share → the send sheet opens)
       go(`/slip/${o.id}?done=1${share ? '&send=1' : ''}`);

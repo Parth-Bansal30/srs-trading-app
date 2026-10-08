@@ -8,6 +8,7 @@ import { APP } from '../config/app.js';
 import { BUILD } from '../lib/update.js';
 import { longDay } from '../lib/format.js';
 import { Icon, TopBar } from '../ui/kit.jsx';
+import { easy, setEasy, say, moneyWords, canSpeak } from '../lib/easy.js';
 
 export function More() {
   const c = company.value;
@@ -31,6 +32,21 @@ export function More() {
               <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
             </button>
           ))}
+        </div>
+
+        <div class="card pad" style="margin-top:14px">
+          <label class="row" style="gap:12px">
+            <div class="iconbox tone-accent"><Icon name="Sun" /></div>
+            <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{t('easy_title')}</div><div class="muted" style="font-size:13px">{t('easy_sub')}</div></div>
+            <input type="checkbox" class="switch" checked={easy.value.on} onChange={(e) => setEasy({ on: e.currentTarget.checked })} />
+          </label>
+          <div class="lbl" style="margin-top:14px">{t('speak_title')}</div>
+          <div class="seg speak-seg">{[['hi', 'हिंदी'], ['hn', 'Hinglish'], ['en', 'English'], ['off', t('speak_off')]].map(([id, w]) =>
+            <button class={easy.value.speak === id ? 'on' : ''} onClick={() => setEasy({ speak: id })}>{w}</button>)}</div>
+          {easy.value.speak !== 'off' && (canSpeak()
+            ? <button class="link" style="margin-top:8px" onClick={() => say(moneyWords(easy.value.speak, 45000, 'Sharma ji'), easy.value.speak === 'en' ? 'en' : 'hi')}><Icon name="Volume2" size={16} />{t('speak_test')}</button>
+            : <div class="notice tone-warn" style="margin-top:8px;font-size:13px">{t('speak_none')}</div>)}
+          <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:10px">{t('easy_note')}</div>
         </div>
 
         <div class="sec"><h3>{t('language')}</h3></div>

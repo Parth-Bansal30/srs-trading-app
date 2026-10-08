@@ -23,6 +23,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
   { id: 'reports', route: '/reports', word: 'tile_today', icon: 'ChartColumn', perm: 'money' },
   { id: 'evening', route: '/evening', word: 'nav_evening', icon: 'Moon', perm: 'money' },
+  { id: 'close', route: '/close-day', word: 'close_title', icon: 'ClipboardCheck', perm: 'today' },
   { id: 'deleted', route: '/slips/deleted', word: 'nav_deleted', icon: 'Trash2', perm: 'delete' },
   { id: 'guide', route: '/guide', word: 'nav_guide', icon: 'Sparkles' },
   { id: 'settings', route: '/settings', word: 'nav_settings', icon: 'Settings', perm: 'settings' },

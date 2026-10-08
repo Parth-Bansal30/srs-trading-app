@@ -227,7 +227,7 @@ function AccountTally({ d }) {
             <div class="li"><div class="iconbox tone-warn" style="width:26px;height:26px;border-radius:8px"><Icon name="CircleDashed" size={15} /></div>
               <div class="grow"><div class="t" style="font-size:14.5px">{t('eve_not_placed')}</div><div class="s">{t('eve_not_placed_s')}</div></div><b class="num">{money(acc.notPlaced, false)}</b></div>
           )}
-          <div class="li" style="border-top:1.5px solid var(--line-2)"><div class="grow t">{d.day === d.today ? t('eve_money_in') : t('eve_money_on')}</div><b class="num" style="font-size:17px">{money(acc.total, false)}</b></div>
+          <div class="li" style="border-top:1.5px solid var(--line-2)"><div class="grow t">{d.day === d.today ? t('eve_money_today') : t('eve_money_on')}</div><b class="num" style="font-size:17px">{money(acc.total, false)}</b></div>
         </div>
         <div class="tally-tot">
           <div class="card"><div class="k" style="color:var(--pakka)">{t('acc_firm')}</div><div class="v num">{money(acc.firm, false)}</div></div>

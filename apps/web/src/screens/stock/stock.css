@@ -33,3 +33,15 @@
 .radio.on::after{content:'';position:absolute;inset:3.5px;border-radius:50%;background:var(--accent)}
 .li.picked{background:var(--accent-soft)}
 .shapes.sm{grid-template-columns:repeat(4,1fr)}
+/* smart checks on a purchase bill */
+.chk{display:flex;gap:8px;align-items:flex-start;border-radius:12px;padding:10px 12px;margin-top:8px}
+.chk>svg{flex:none;margin-top:1px}
+.chk-warn{background:var(--warn-soft);color:var(--warn)}
+.chk-bad{background:var(--bad-soft);color:var(--bad)}
+.chk-t{font-weight:800;font-size:13.5px;line-height:1.3}
+.chk-s{font-size:12.5px;line-height:1.4;margin-top:2px;color:var(--ink-2)}
+.chk-a{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.chk-a:empty{display:none}
+.chk-a button{min-height:32px;padding:0 11px;border-radius:9px;font-size:12.5px;font-weight:700;background:var(--surface);color:var(--ink);border:1px solid var(--line-2)}
+.chk-a button.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.chk-list .li{align-items:flex-start}

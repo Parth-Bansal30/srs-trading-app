@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { finishCalc, finishProblem } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
-import { loadOrder } from '../../lib/orders.js';
+import { loadOrderAny } from '../../lib/orders.js';
+import { usesOf, payPatch } from '../../lib/offline/local.js';
 import { loadCatalog } from '../../lib/catalog.js';
 import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate } from '../../lib/format.js';
@@ -28,7 +29,7 @@ export function Pickup({ id }) {
   const [note, setNote] = useState('');
   const fin = useAction('finalizeOrder');
   const tz = company.value?.timezone;
-  const load = () => Promise.all([loadOrder(id), loadCatalog(true)]).then(([x, c]) => { setO(x); setCat(c); });
+  const load = () => Promise.all([loadOrderAny(id), loadCatalog(true)]).then(([x, c]) => { setO(x); setCat(c); }).catch(() => setO(null));
   useEffect(() => { load(); }, [id]);
 
   const calc = useMemo(() => {
@@ -46,9 +47,16 @@ export function Pickup({ id }) {
   const placeBad = !problem && f.paidNow > 0 ? whereProblem(where, f.paidNow, accs) : null;
   const submit = async (share) => {
     try {
-      await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? pickupPay(whereArgs(where, f.paidNow)) : {}) });
+      const r = await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? pickupPay(whereArgs(where, f.paidNow)) : {}) }, {
+        // without internet: kept on this phone; the slip shows as finished (the server works the bill out again when it arrives)
+        local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: {
+          bill_type: bill, in_khata: f.due > 0, payment: payPatch(f.paidNow, whereArgs(where, f.paidNow), accs),
+          totals: { total_amount: f.T.total, material_amount: f.T.matK, cutting_amount: f.T.cutK, gst_amount: f.T.gst, gst_pct: f.T.pct, total_weight: f.T.wt },
+        } } },
+      });
       if (f.paidNow > 0) moneySaved({ amount: f.paidNow, customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs), balance: f.due > 0 ? f.due : 0 });
-      toast(t('completed_msg', o.slip_no));
+      toast(r?.pending ? t('off_saved_phone') : t('completed_msg', o.slip_no));
+      if (r?.pending) share = false;   // the slip link needs the internet
       // the slip page shows "Pickup done" and the WhatsApp / Print / PDF buttons (share → the send sheet opens)
       go(`/slip/${o.id}?done=1${share ? '&send=1' : ''}`);
     } catch (e) { if (e.code === 'changed') { toast(t('changed_retry')); load(); } }

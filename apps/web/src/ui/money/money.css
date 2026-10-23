@@ -34,3 +34,14 @@
 .tally-tot .card{padding:12px 14px}
 .tally-tot .k{font-size:11.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .tally-tot .v{font-size:21px;font-weight:800;margin-top:2px}
+/* shop expenses (23 Oct 2026): big category tiles, the amount box */
+.exp-cats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media (min-width:520px){.exp-cats{grid-template-columns:repeat(5,1fr)}}
+.exp-cat{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px 9px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface-2);min-height:84px;text-align:center}
+.exp-cat.on{border-color:var(--ink);background:var(--surface);box-shadow:0 0 0 2px var(--accent-soft)}
+.exp-cat-ic{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff}
+.exp-cat-w{font-size:12.5px;font-weight:700;line-height:1.2;color:var(--ink)}
+.exp-amount{font-size:26px;min-height:62px}
+.exp-amount input{font-size:26px;font-weight:800;height:58px}
+.exp-kinds>button{font-size:13px}
+.exp-kinds>button:disabled{opacity:.5}

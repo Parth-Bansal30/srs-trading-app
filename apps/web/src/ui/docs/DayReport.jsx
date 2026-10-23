@@ -7,6 +7,7 @@ import { lang } from '../../lib/i18n.js';
 import { ShopBadge } from './Paper.jsx';
 import './docs.css';
 import { accName } from '../../lib/accounts.js';
+import { catWord, moveWord } from '../../lib/expenses.js';
 
 const n2 = (v) => money(v, true).replace('₹', '');
 const KIND = { pickup: 'kind_pick', advance: 'kind_adv', khata: 'kind_old_dues', refund: 'kind_refund', transfer: 'kind_transfer' };
@@ -62,6 +63,22 @@ export function DayReport({ d, madeAt = new Date().toISOString() }) {
         </tbody>
       </table>
 
+      {(s.out?.n > 0 || s.moved?.length > 0) && <>
+        <div class="rep-h">{t('eve_out_title')}</div>
+        <table class="pp-table pp-stmt">
+          <thead><tr><th>{t('rep_h_time')}</th><th>{t('rep_h_what')}</th><th>{t('exp_to')}</th><th>{t('rep_h_how')}</th><th class="r">{t('amount')}</th></tr></thead>
+          <tbody>
+            {(s.out?.list || []).map((e) => (
+              <tr><td class="pp-num">{e.at ? time(e.at, tz) : ''}</td><td>{catWord(e)}</td><td>{e.paidTo || ''}</td><td>{String(e.mode || '').split('+').join(' + ')}</td><td class="pp-num r">{n2(e.amount)}</td></tr>
+            ))}
+            {(s.moved || []).map((x) => (
+              <tr><td class="pp-num">{x.at ? time(x.at, tz) : ''}</td><td>{moveWord(x.reason)}</td><td>{accName({ name: x.from, is_drawer: x.fromDrawer })} → {accName({ name: x.to, is_drawer: x.toDrawer })}</td><td /><td class="pp-num r pp-mute">{n2(x.amount)}</td></tr>
+            ))}
+            {s.out?.n > 0 && <tr class="rep-tot"><td colSpan={4}>{s.out.byCategory.slice(0, 5).map((c) => `${catWord(c.category)} ${n2(c.amount)}`).join(' · ')}</td><td class="pp-num r">{n2(s.out.total)}</td></tr>}
+          </tbody>
+        </table>
+      </>}
+
       {s.accounts && s.accounts.rows.some((r) => r.n > 0) && <>
         <div class="rep-h">{t('eve_tally')}</div>
         <table class="pp-table pp-stmt">
@@ -79,9 +96,15 @@ export function DayReport({ d, madeAt = new Date().toISOString() }) {
       <div class="rep-cols">
         <div>
           <div class="rep-h">{t('eve_cash')}</div>
+          {s.cash.book && <>
+            <div class="pp-lr"><span class="pp-mute">{t('cb_opening')}</span><span class="pp-num">{money(s.cash.opening, true)}</span></div>
+            <div class="pp-lr"><span class="pp-mute">{t('cb_in')}</span><span class="pp-num">{money(s.cash.in, true)}</span></div>
+            <div class="pp-lr"><span class="pp-mute">{t('cb_out')}</span><span class="pp-num">{money(s.cash.out, true)}</span></div>
+          </>}
           <div class="pp-lr"><span class="pp-mute">{t('eve_expected', '')}</span><span class="pp-num">{money(s.cash.expected, true)}</span></div>
           <div class="pp-lr"><span class="pp-mute">{t('eve_counted', '')}</span><span class="pp-num">{s.cash.counted == null ? '—' : money(s.cash.counted, true)}</span></div>
           <div class="pp-lr" style="font-weight:800"><span>{cashTxt}</span><span class="pp-small pp-mute">{s.cash.by || ''}</span></div>
+          {s.cash.book && s.cash.counted != null && <div class="pp-lr"><span class="pp-mute">{t('cb_keep')}</span><span class="pp-num">{money(s.cash.left ?? s.cash.counted, true)}</span></div>}
         </div>
         {d.khata && <div>
           <div class="rep-h">{t('nav_khata')}</div>

@@ -9,7 +9,8 @@
 // The steel maths is done with @srs/core (copied into ../_shared/core by scripts/sync-core.mjs).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as core from '../_shared/core/index.js';
-import { ApiError, API_VERSION, SUPPORTED_VERSIONS, READ_OPS, BILL_PROMPT, isUuid, makeOps, mapDbError, stableStringify } from './ops.js';
+import { ApiError, API_VERSION, SUPPORTED_VERSIONS, READ_OPS, BILL_PROMPT, isUuid, makeOps, mapDbError, stableStringify,
+  makeGstLookup, makePasskeyOps, PASSKEY_OPS, PASSKEY_ORIGINS } from './ops.js';
 import { sendPush } from './webpush.js';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
@@ -24,6 +25,13 @@ const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') ?? '';
 const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') ?? '';
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:owner@example.com';
 const CRON_SECRET = Deno.env.get('EVENING_CRON_SECRET') ?? '';
+// The GST data service for "is this supplier's GST number active?" (the owner adds the key; without it the check is off).
+const gstLookup = makeGstLookup({
+  provider: Deno.env.get('GST_API_PROVIDER') ?? '', key: Deno.env.get('GST_API_KEY') ?? '', secret: Deno.env.get('GST_API_SECRET') ?? '',
+  url: Deno.env.get('GST_API_URL') ?? '', method: Deno.env.get('GST_API_METHOD') ?? '', headers: Deno.env.get('GST_API_HEADERS') ?? '',
+});
+// Where the app runs (fingerprint unlock only works from these addresses). Add the real domain here when there is one.
+const PASSKEY_ALLOWED = (Deno.env.get('PASSKEY_ORIGINS') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -131,8 +139,17 @@ async function readBill(base64: string, mime: string): Promise<string> {
   return (body.content || []).filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text).join('');
 }
 
-const { ops, runEvening } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push, otp,
-  files, readBill: ANTHROPIC_KEY ? readBill : null });
+const { ops, runEvening, runGstChecks } = makeOps({ core, rpc, companySettings, askModel: ANTHROPIC_KEY ? askModel : null, push, otp,
+  files, readBill: ANTHROPIC_KEY ? readBill : null, gstLookup });
+const passkeyOps = makePasskeyOps({ core, rpc, origins: PASSKEY_ALLOWED.length ? PASSKEY_ALLOWED : PASSKEY_ORIGINS });
+
+/** The login token's own details (already checked by the database in login_status). */
+function tokenClaims(token: string) {
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part + '==='.slice((part.length + 3) % 4)));
+  } catch { return {}; }
+}
 
 /** Same length + same bytes, without leaking where they differ. */
 function sameSecret(a: string, b: string) {
@@ -158,7 +175,7 @@ Deno.serve(async (req: Request) => {
     if (cron !== null) {
       if (!sameSecret(cron, CRON_SECRET)) throw new ApiError(401, 'not_signed_in', 'Please sign in.');
       op = 'eveningJob';
-      const data = await runEvening();
+      const data = { ...(await runEvening()), gst: await runGstChecks().catch((e: Error) => ({ error: e.message })) };
       console.log(JSON.stringify({ op, ok: true, ms: Date.now() - started, ...data }));
       return json(200, { ok: true, v: API_VERSION, data });
     }
@@ -173,8 +190,6 @@ Deno.serve(async (req: Request) => {
     const { data: status, error: statusError } = await asCaller.rpc('login_status');
     if (statusError || !status?.signed_in) throw new ApiError(401, 'not_signed_in', 'Please sign in.');
     if (!status.staff) throw new ApiError(403, 'not_staff', 'This number is not added as staff.');
-    if (!status.unlocked) throw new ApiError(401, 'pin_required', 'Enter your PIN.');
-    const caller = { id: status.person.id, company_id: status.company.id, perms: status.person.perms || {}, token: authz.slice(7) };
 
     // 2. What do they want?
     let body: { v?: number; op?: string; key?: string; args?: Record<string, unknown> };
@@ -183,6 +198,18 @@ Deno.serve(async (req: Request) => {
       throw new ApiError(426, 'update_app', 'Please update the app.', { supported: SUPPORTED_VERSIONS });
     }
     op = String(body.op ?? '');
+    // Fingerprint unlock works BEFORE the PIN unlock (it is the unlock).
+    if (PASSKEY_OPS.has(op)) {
+      const claims = tokenClaims(authz.slice(7));
+      if (!isUuid(claims.sub) || !isUuid(claims.session_id)) throw new ApiError(401, 'not_signed_in', 'Please sign in.');
+      const who = { user: claims.sub, session: claims.session_id, unlocked: !!status.unlocked, phone: claims.phone ? `+${claims.phone}` : null };
+      const fnp = (passkeyOps as Record<string, (w: unknown, a: unknown) => Promise<unknown>>)[op];
+      const data = await fnp(who, body.args && typeof body.args === 'object' ? body.args : {});
+      console.log(JSON.stringify({ op, ok: true, ms: Date.now() - started }));
+      return json(200, { ok: true, v: API_VERSION, data });
+    }
+    if (!status.unlocked) throw new ApiError(401, 'pin_required', 'Enter your PIN.');
+    const caller = { id: status.person.id, company_id: status.company.id, perms: status.person.perms || {}, token: authz.slice(7) };
     const fn = (ops as Record<string, (c: unknown, a: unknown, k?: string, h?: string) => Promise<unknown>>)[op];
     if (!Object.hasOwn(ops, op) || typeof fn !== 'function') throw new ApiError(400, 'unknown_op', `Unknown operation: ${op}`);
     const args = body.args && typeof body.args === 'object' ? body.args : {};

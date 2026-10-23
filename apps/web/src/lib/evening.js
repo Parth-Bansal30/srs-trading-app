@@ -4,6 +4,10 @@ import { call } from './api.js';
 import { tIn } from './i18n.js';
 import { money, kg } from './format.js';
 import { fmtDay } from './docs.js';
+import { EXPENSE_CATEGORIES, EXPENSE_SPECIAL } from '../config/options.js';
+
+/** An expense category's name in a language (for the WhatsApp text). */
+const catName = (key, l) => tIn(l, (key === 'supplier' ? EXPENSE_SPECIAL.supplier : key === 'home' ? EXPENSE_SPECIAL.home : EXPENSE_CATEGORIES.find((c) => c.id === key) || EXPENSE_CATEGORIES.at(-1)).word);
 
 export const loadDay = (day) => call('daySummary', day ? { day } : {});
 
@@ -34,6 +38,7 @@ export function lookLine(x, l) {
     case 'money_out': return [tIn(l, 'look_out', m0(x.amount), x.customer), String(x.mode || '').split('+').join(' + '), 'RefreshCw', 'neutral', null];
     case 'overdue': return [tIn(l, 'look_overdue', x.customer, m0(x.amount)), tIn(l, 'look_overdue_s', x.days), 'Clock', 'bad', '/reminders'];
     case 'waiting': return [tIn(l, 'look_waiting', x.n), tIn(l, 'look_waiting_s', x.customers.join(', ')), 'PackageCheck', 'neutral', '/slips?stage=weighed'];
+    case 'supplier_gst': return [tIn(l, 'look_supplier_gst', x.name, tIn(l, `gst_st_${x.status}`)), `${x.gstin}${x.cancelDate ? ` · ${tIn(l, 'gst_since', fmtDay(x.cancelDate))}` : ''} · ${tIn(l, 'look_supplier_gst_s')}`, 'ShieldAlert', 'bad', '/suppliers'];
     default: return [x.type, '', 'Info', 'neutral', null];
   }
 }
@@ -53,9 +58,11 @@ export function eveningText(d, l, url) {
     ['Cash', 'UPI', 'Bank', 'Cheque'].filter((k) => s.money.byMode[k]).map((k) => `${tIn(l, `pm_${k.toLowerCase()}`)} ${m0(s.money.byMode[k])}`).join(' · ') || null,
     '',
     s.cash.counted != null
-      ? `*${tIn(l, 'eve_cash')}* ${tIn(l, 'eve_expected', m0(s.cash.expected))} · ${tIn(l, 'eve_counted', m0(s.cash.counted))}${s.cash.diff ? `\n⚠️ *${tIn(l, s.cash.diff < 0 ? 'eve_short' : 'eve_over', m0(Math.abs(s.cash.diff)))}*` : ' ✓'}`
+      ? `*${tIn(l, 'eve_cash')}* ${s.cash.book ? `${tIn(l, 'eve_opening', m0(s.cash.opening))} · ` : ''}${tIn(l, 'eve_expected', m0(s.cash.expected))} · ${tIn(l, 'eve_counted', m0(s.cash.counted))}${s.cash.diff ? `\n⚠️ *${tIn(l, s.cash.diff < 0 ? 'eve_short' : 'eve_over', m0(Math.abs(s.cash.diff)))}*` : ' ✓'}`
       : `*${tIn(l, 'eve_cash')}* ${tIn(l, 'eve_expected', m0(s.cash.expected))} · ${tIn(l, 'eve_not_counted')}`,
     '',
+    s.out?.total ? `*${tIn(l, 'eve_out_title')} ${m0(s.out.total)}* · ${s.out.byCategory.slice(0, 4).map((c) => `${catName(c.category, l)} ${m0(c.amount)}`).join(' · ')}` : null,
+    s.out?.total ? '' : null,
     s.stock && s.stock.groups.length ? `*${tIn(l, 'eve_stock_now')}* ${kg(s.stock.onHandKg, 0)}${s.stock.bought.n ? ` · ${tIn(l, 'eve_bought')} ${kg(s.stock.bought.kg, 0)}` : ''} · ${tIn(l, 'eve_sold_kg')} ${kg(s.stock.soldKg, 0)}` : null,
     s.stock && s.stock.groups.length ? '' : null,
     d.khata ? `*${tIn(l, 'nav_khata')}* +${m0(s.khata.newDues)} · ${tIn(l, 'eve_old_dues')} ${m0(s.khata.collected)}\n${tIn(l, 'eve_to_receive')}: ${m0(s.khata.toReceive)}` : null,

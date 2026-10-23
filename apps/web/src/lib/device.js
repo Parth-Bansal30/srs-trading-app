@@ -17,8 +17,10 @@ function save(list) {
 export function remember(session, status) {
   if (!session?.user?.id || !status?.person) return;
   const uid = session.user.id;
+  const was = devicePeople.value.find((p) => p.uid === uid) || {};
   const rest = devicePeople.value.filter((p) => p.uid !== uid);
   save([...rest, {
+    ...was,   // keeps the offline PIN check, fingerprint key and last unlock (23 Oct 2026)
     uid,
     name: status.person.name,
     role: status.person.role,
@@ -53,4 +55,21 @@ export function setPersonLang(uid, lang) {
 
 export function forget(uid) {
   save(devicePeople.value.filter((p) => p.uid !== uid));
+}
+
+/** One person on this phone (by login id). */
+export const personOf = (uid) => (uid ? devicePeople.value.find((p) => p.uid === uid) || null : null);
+
+/**
+ * Keep extra things for a person on this phone (23 Oct 2026): status (who they are, for opening offline),
+ * unlockedAt, pinCheck (scrambled PIN copy for offline), offFails / offLockUntil, passkey ({ credId, jwk, alg }).
+ */
+export function setPersonExtra(uid, patch) {
+  const list = devicePeople.value;
+  const i = list.findIndex((p) => p.uid === uid);
+  if (i < 0) return;
+  const next = [...list];
+  next[i] = { ...next[i], ...patch };
+  devicePeople.value = next;
+  store.setJson(KEY, next);
 }

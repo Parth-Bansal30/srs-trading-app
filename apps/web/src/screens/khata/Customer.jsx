@@ -5,6 +5,9 @@ import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
 import { useAction } from '../../lib/action.js';
+import { usesOf, payPatch } from '../../lib/offline/local.js';
+import { outbox, outboxVersion } from '../../lib/offline/outbox.js';
+import { pendingPayments } from '../../lib/offline/overlay.js';
 import { money, shortDate, kg, dayStartISO } from '../../lib/format.js';
 import { loadCustomer, boughtSince, specialRates, sentSlips, avatarColour, firstLetter } from '../../lib/customers.js';
 import { fmtDay } from '../../lib/docs.js';
@@ -33,6 +36,7 @@ export function Customer({ id }) {
   const fy = periodDates('this_fy', new Date().toISOString(), tz);
   const load = () => call('khata', { customer_id: id }).then(([x]) => setR(x || null)).catch(() => setR(null));
   const loadInfo = () => loadCustomer(id).then(setInfo).catch(() => {});
+  useEffect(() => { if (r !== undefined) load(); }, [outboxVersion.value]);
   useEffect(() => {
     load(); loadInfo();
     Promise.all([boughtSince(id, dayStartISO(tz, new Date(`${fy.from}T12:00:00Z`))), specialRates(id), sentSlips(id)])
@@ -46,6 +50,7 @@ export function Customer({ id }) {
   const days = r.oldest ? daysSince(r.oldest, tz) : 0;
   const pak = r.by_side?.pakka?.due || 0; const kac = r.by_side?.kacha?.due || 0;
   const entries = [...(r.entries || [])].reverse();
+  const waiting = pendingPayments(outbox.value, id);
 
   return (
     <>
@@ -75,6 +80,8 @@ export function Customer({ id }) {
               </div>
             </>
           )}
+          {waiting.length > 0 && <div class="notice tone-accent row" style="gap:8px;font-size:13.5px"><Icon name="CloudUpload" size={16} />
+            {t('off_pay_waiting', money(waiting.reduce((x, p) => x + p.amount, 0), false))}</div>}
           <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:12px">
             {r.due > 0 && <Chip tone={days >= 30 ? 'bad' : days >= 10 ? 'warn' : 'ok'}>{t('oldest_days_chip', days)}</Chip>}
             {r.credit > 0 && r.due > 0 && <Chip tone="ok">{t('credit_chip', money(r.credit, false))}</Chip>}
@@ -143,7 +150,9 @@ function PaySheet({ open, c, sides, onClose, onDone }) {
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('add_payment')}
-      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }).then(() => { moneySaved({ amount: Number(amt), customer: c.name, account: whereLabel(where, accs) }); onDone(amt); }).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }, {
+        local: { meta: { uses: usesOf(c.id), customer: c.name, payment: { customer: c.name, ...payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
+      }).then(() => { moneySaved({ amount: Number(amt), customer: c.name, account: whereLabel(where, accs) }); onDone(amt); }).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('amount')}</div>
       <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
       <SideSeg sides={sides} side={side} setSide={setSide} />

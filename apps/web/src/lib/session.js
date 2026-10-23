@@ -2,12 +2,19 @@
 // → PIN. Every day: who is using? → PIN. The SERVER decides every step (login_status); this
 // file only follows it and remembers who has used this phone (device.js).
 import { signal, computed } from '@preact/signals';
-import { db } from './backend.js';
+import { db, storedSession } from './backend.js';
 import { normalizeIndianMobile } from '@srs/core';
 import { setLang } from './i18n.js';
 import { store } from './store.js';
 import { replace } from './router.js';
-import { devicePeople, remember, keepTokens, touch, forget } from './device.js';
+import { devicePeople, remember, keepTokens, touch, forget, setPersonExtra, personOf } from './device.js';
+import { online, whenOnline, markOffline } from './net.js';
+import { setCacheOwner, forgetPerson } from './offline/cache.js';
+import { loadOutbox, flush, needUnlock, outbox, forgetOutbox } from './offline/outbox.js';
+import { pinCopy, pinMatches } from './offline/pin.js';
+import { unlockOnline, unlockOffline, registerPasskey } from './passkey.js';
+import { call } from './api.js';
+import { warmUp } from './offline/warm.js';
 
 /**
  * step: loading | welcome | tour | who | phone | code | not_staff | register | joining | set_pin | unlock | ready | error
@@ -27,19 +34,51 @@ db.auth.onAuthStateChange((event, session) => {
   if (session && (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN')) keepTokens(session);
 });
 
+/** When the PIN was last accepted by the server on this visit (fingerprint can be switched on for 10 minutes after). */
+export const pinJustNow = signal(0);
+
+// ---------- working without internet (23 Oct 2026) ----------
+const UNLOCK_MS = 12 * 3600 * 1000;           // a PIN unlock lasts a working day (same as the server's default)
+let offlinePin = null;                         // the PIN typed while offline — in memory only, to unlock with the server later
+let offlineSwitch = null;                      // a person chosen on "Who is using?" while offline (their login is set when online)
+const isNetErr = (e) => !online.value || /fetch|network|offline|Failed|Load failed|abort/i.test(String(e?.message || e || ''));
+
+/** No internet: carry on with what this phone knows about the person (only if they were fully in before). */
+function offlineStep(uid, extra = {}) {
+  const p = personOf(uid);
+  if (!p?.status) return set({ step: 'error', error: 'offline_first', offline: true });
+  setCacheOwner(uid); loadOutbox(uid);
+  const fresh = p.unlockedAt && Date.now() - p.unlockedAt < UNLOCK_MS && !extra.locked;
+  if (fresh) return set({ step: 'ready', status: p.status, offline: true });
+  return set({ step: 'unlock', status: p.status, offline: true, offlineUid: uid });
+}
+
 export async function boot() {
-  const { data: { session } } = await db.auth.getSession();
   const joining = /^#\/join/.test(location.hash);
   if (joining) replace('/'); // the invite link only picks the door; after login the app starts on Today
-  if (!session) return set({ step: joining ? 'phone' : start(), mode: joining ? 'join' : 'login', phone: '' });
+  if (!online.value) { const st = storedSession(); return st ? offlineStep(st.user.id) : set({ step: start(), mode: 'login', phone: '' }); }
+  let session = null;
+  try { ({ data: { session } } = await db.auth.getSession()); } catch { /* checked below */ }
+  if (!session) {
+    const st = storedSession();
+    if (st && !online.value) return offlineStep(st.user.id);
+    return set({ step: joining ? 'phone' : start(), mode: joining ? 'join' : 'login', phone: '' });
+  }
   return refresh({ boot: true });
 }
 
 /** Ask the server where we are. */
 export async function refresh(extra = {}) {
-  const { data, error } = await db.rpc('login_status');
+  let data, error;
+  try { ({ data, error } = await db.rpc('login_status')); } catch (e) { error = e; }
   if (error) {
-    if (/JWT|token|expired|invalid/i.test(error.message || '')) { await db.auth.signOut({ scope: 'local' }); return set({ step: start() }); }
+    if (/JWT|token|expired|invalid/i.test(error.message || '') && online.value) { await db.auth.signOut({ scope: 'local' }); return set({ step: start() }); }
+    if (isNetErr(error)) {
+      markOffline();
+      if (auth.value.step === 'ready') return set({ offline: true });   // keep working
+      const st = storedSession();
+      if (st) return offlineStep(st.user.id);
+    }
     return set({ step: 'error', error: error.message });
   }
   if (!data?.signed_in) return set({ step: start(), status: null });
@@ -55,7 +94,10 @@ export async function refresh(extra = {}) {
   }
 
   if (!auth.value.status && data.person?.lang && !store.get('lang')) setLang(data.person.lang);
-  if (data.unlocked && !extra.resetting && !auth.value.resetting) return ready(data);
+  if (data.unlocked && !extra.resetting && !auth.value.resetting) {
+    const p = personOf(data && (await db.auth.getSession()).data.session?.user?.id);
+    return ready(data, { unlockedNow: !p?.unlockedAt || extra.unlockedNow });
+  }
   if (data.can_set_pin && (!data.has_pin || data.blocked || extra.resetting || auth.value.resetting)) {
     return set({ step: !data.has_pin && !auth.value.resetting ? 'joining' : 'set_pin', status: data });
   }
@@ -72,6 +114,16 @@ export async function refresh(extra = {}) {
 async function ready(status, patch = {}) {
   const { data: { session } } = await db.auth.getSession();
   remember(session, status);
+  if (session?.user?.id) {
+    setCacheOwner(session.user.id);
+    setPersonExtra(session.user.id, { status, ...(patch.unlockedNow ? { unlockedAt: Date.now() } : {}) });
+    await loadOutbox(session.user.id);
+    offlinePin = null; offlineSwitch = null; needUnlock.value = false;
+    if (outbox.value.length) flush();
+    warmUp(status?.person?.perms || {});
+  }
+  delete patch.unlockedNow;
+  patch.offline = false;
   // A different person on this phone starts on Today, not on the last person's screen.
   if (status?.person?.id && store.get('last_person') !== status.person.id) { store.set('last_person', status.person.id); replace('/'); }
   set({ step: 'ready', status, resetting: false, ...patch });
@@ -133,15 +185,48 @@ export async function reconfirmNumber() {
 export async function setPin(pin) {
   const { data, error } = await db.rpc('set_pin', { p_pin: pin });
   if (error) return error.message;
-  await ready(data);
+  await keepPinCopy(pin);
+  pinJustNow.value = Date.now();
+  await ready(data, { unlockedNow: true });
   return null;
+}
+
+/** The server said this PIN is right: keep a scrambled copy so the phone can check it when offline. */
+async function keepPinCopy(pin) {
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (session?.user?.id) setPersonExtra(session.user.id, { pinCheck: await pinCopy(pin), offFails: 0, offLockUntil: 0 });
+  } catch { /* offline checking just won't be there */ }
+}
+
+/** Without internet: the phone checks the PIN against its scrambled copy. */
+async function unlockOfflinePin(pin) {
+  const uid = auth.value.offlineUid || storedSession()?.user?.id;
+  const p = personOf(uid);
+  if (!p?.pinCheck) return { reason: 'error', message: 'offline_no_pin' };
+  if (p.offLockUntil > Date.now()) return { reason: 'locked', locked_until: new Date(p.offLockUntil).toISOString() };
+  if (await pinMatches(p.pinCheck, pin)) {
+    offlinePin = pin;
+    setPersonExtra(uid, { offFails: 0, offLockUntil: 0, unlockedAt: Date.now() });
+    setCacheOwner(uid); await loadOutbox(uid);
+    set({ step: 'ready', status: p.status, offline: true });
+    return { ok: true };
+  }
+  const fails = (p.offFails || 0) + 1;
+  const lockUntil = fails % 5 === 0 ? Date.now() + 15 * 60000 : 0;
+  setPersonExtra(uid, { offFails: fails, offLockUntil: lockUntil });
+  if (lockUntil) return { reason: 'locked', locked_until: new Date(lockUntil).toISOString() };
+  return { reason: 'wrong_pin', attempts_left: 5 - (fails % 5) };
 }
 
 /** Returns { ok } or { reason, attempts_left, locked_until }. */
 export async function unlock(pin) {
-  const { data, error } = await db.rpc('unlock', { p_pin: pin });
+  if (!online.value || auth.value.offline && offlineSwitch) return unlockOfflinePin(pin);
+  let data, error;
+  try { ({ data, error } = await db.rpc('unlock', { p_pin: pin })); } catch (e) { error = e; }
+  if (error && isNetErr(error)) { markOffline(); return unlockOfflinePin(pin); }
   if (error) return { reason: 'error', message: error.message };
-  if (data.ok) { await ready(data); return { ok: true }; }
+  if (data.ok) { await keepPinCopy(pin); pinJustNow.value = Date.now(); await ready(data, { unlockedNow: true }); return { ok: true }; }
   if (data.reason === 'blocked' || data.reason === 'no_pin') {
     const { data: { session } } = await db.auth.getSession();
     await db.auth.signOut({ scope: 'local' });
@@ -151,9 +236,84 @@ export async function unlock(pin) {
   return data;
 }
 
+/**
+ * Unlock with the finger / face (when switched on for this person on this phone). Online: the server checks it
+ * and unlocks. Offline: the phone checks it with the kept public key. Throws when cancelled or it fails (→ PIN).
+ */
+export async function unlockFinger() {
+  const uid = auth.value.offlineUid || storedSession()?.user?.id;
+  const p = personOf(uid);
+  if (!p?.passkey) throw Object.assign(new Error('not on this phone'), { code: 'no_key' });
+  if (!online.value || offlineSwitch) {
+    await unlockOffline(p.passkey);
+    setPersonExtra(uid, { unlockedAt: Date.now() });
+    setCacheOwner(uid); await loadOutbox(uid);
+    set({ step: 'ready', status: p.status, offline: true });
+    return { ok: true };
+  }
+  await unlockOnline(p.passkey);
+  await refresh({ unlockedNow: true });
+  return { ok: true };
+}
+
+/** Is fingerprint unlock switched on for this person on this phone? */
+export const fingerOn = (uid) => !!personOf(uid || storedSession()?.user?.id)?.passkey;
+
+/** Switch fingerprint unlock on for the person using the phone (needs a PIN in the last 10 minutes; the server checks). */
+export async function switchOnFinger(label) {
+  const uid = storedSession()?.user?.id;
+  const keep = await registerPasskey(label);
+  if (uid) setPersonExtra(uid, { passkey: keep, fingerAsked: true });
+  return keep;
+}
+/** Switch it off on this phone (the server forgets this phone's key too). */
+export async function switchOffFinger() {
+  const uid = storedSession()?.user?.id;
+  const p = personOf(uid);
+  if (p?.passkey?.credId) {
+    try {
+      const list = await call('passkeys', {});
+      const k = (list || []).find((x) => x.credential_id === p.passkey.credId);
+      if (k) await call('passkeyRemove', { id: k.id });
+    } catch { /* offline: switched off on the phone now, the server key goes the next time */ }
+  }
+  if (uid) setPersonExtra(uid, { passkey: null });
+}
+/** "Not now" to the fingerprint offer (asked once per person per phone). */
+export const fingerNotNow = () => { const uid = storedSession()?.user?.id; if (uid) setPersonExtra(uid, { fingerAsked: true }); };
+export const fingerAsked = () => !!personOf(storedSession()?.user?.id)?.fingerAsked;
+
+// Internet back: make sure the server knows this person is unlocked, then send what is waiting.
+whenOnline(async () => {
+  if (auth.value.step !== 'ready') return;
+  try {
+    if (offlineSwitch) {
+      const person = offlineSwitch; offlineSwitch = null;
+      const { error } = await db.auth.setSession({ access_token: person.access_token, refresh_token: person.refresh_token });
+      if (error) { forget(person.uid); return set({ step: 'phone', mode: 'login', status: null, phone: person.phone }); }
+    }
+    const { data } = await db.rpc('login_status');
+    if (!data?.signed_in) return;
+    if (data.unlocked) { set({ offline: false }); return void flush(); }
+    if (offlinePin) {
+      const pin = offlinePin;
+      const { data: r } = await db.rpc('unlock', { p_pin: pin });
+      if (r?.ok) { set({ offline: false }); return void flush(); }
+    }
+    needUnlock.value = true;   // the waiting entries need the PIN (or finger) again
+    set({ offline: false });
+  } catch { /* still not really online */ }
+});
+
+/** "Unlock to send": the server wants the PIN again before it takes the waiting entries. */
+export function unlockToSend() { set({ step: 'unlock', offline: false }); }
+
 export async function lock() {
-  await db.rpc('lock_session');
-  set({ step: devicePeople.value.length > 1 ? 'who' : 'unlock' });
+  try { await db.rpc('lock_session'); } catch { /* offline: the phone locks itself */ }
+  const uid = storedSession()?.user?.id;
+  if (uid) setPersonExtra(uid, { unlockedAt: 0 });
+  offlinePin = null;
+  set({ step: devicePeople.value.length > 1 ? 'who' : 'unlock', offlineUid: uid });
 }
 
 export async function forgotPin() {
@@ -166,6 +326,14 @@ export async function forgotPin() {
 // ---------- shared phone: switch between people ----------
 /** "Who is using?" → tap a person → their PIN. */
 export async function switchTo(person) {
+  if (!online.value) {   // offline: the PIN (or finger) is checked on the phone; their login is set when the internet is back
+    touch(person.uid);
+    if (person.lang) setLang(person.lang);
+    const cur = storedSession()?.user?.id;
+    offlineSwitch = cur === person.uid ? null : person;
+    if (!person.status) return set({ step: 'error', error: 'offline_first', offline: true });
+    return set({ step: 'unlock', status: person.status, offline: true, offlineUid: person.uid });
+  }
   const { data: { session } } = await db.auth.getSession();
   if (session?.user?.id === person.uid) { touch(person.uid); if (person.lang) setLang(person.lang); return refresh(); }
   if (session) { try { await db.rpc('lock_session'); } catch { /* offline is fine */ } keepTokens(session); }
@@ -182,6 +350,9 @@ export async function switchTo(person) {
 /** Lock the current person and show "Who is using?". */
 export async function switchPerson() {
   try { await db.rpc('lock_session'); } catch { /* offline is fine */ }
+  const uid = storedSession()?.user?.id;
+  if (uid) setPersonExtra(uid, { unlockedAt: 0 });
+  offlinePin = null;
   set({ step: 'who', status: null });
 }
 
@@ -195,12 +366,17 @@ export async function addPerson() {
 export async function logOut() {
   const { data: { session } } = await db.auth.getSession();
   try { await db.rpc('lock_session'); } catch { /* offline is fine */ }
-  await db.auth.signOut({ scope: 'local' });
-  if (session) forget(session.user.id);
+  await db.auth.signOut({ scope: 'local' }).catch(() => {});
+  const uid = session?.user?.id || storedSession()?.user?.id;
+  if (uid) { forget(uid); await forgetPerson(uid); await forgetOutbox(uid); }
   set({ step: start(), mode: 'login', status: null });
   // start fresh: this also loads the newest version of the app (see lib/update.js)
   setTimeout(() => location.reload(), 50);
 }
 
 // The PIN unlock lasts a working day; re-check when the app comes back to the screen.
-addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && auth.value.step === 'ready') refresh(); });
+addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || auth.value.step !== 'ready') return;
+  if (!online.value) { const uid = storedSession()?.user?.id; const p = personOf(uid); if (p && (!p.unlockedAt || Date.now() - p.unlockedAt > UNLOCK_MS)) offlineStep(uid, { locked: true }); return; }
+  refresh();
+});

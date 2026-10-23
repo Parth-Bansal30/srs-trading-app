@@ -40,6 +40,12 @@ import { PublicDoc } from './screens/docs/PublicDoc.jsx';
 import { Compare } from './screens/grades/Compare.jsx';
 import { Evening } from './screens/evening/Evening.jsx';
 import { EveningSettings } from './screens/evening/EveningSettings.jsx';
+import { Expenses } from './screens/money/Expenses.jsx';
+import { Balances, AccountBook } from './screens/money/Balances.jsx';
+import { Suppliers } from './screens/stock/Suppliers.jsx';
+import { Waiting } from './screens/Waiting.jsx';
+import { OfflineBar } from './ui/OfflineBar.jsx';
+import { FingerOffer } from './ui/FingerOffer.jsx';
 import { toastMsg } from './ui/toast.js';
 import { FULL_SCREEN } from './config/navigation.js';
 
@@ -74,6 +80,11 @@ const SCREENS = {
   '/compare': () => <Compare />,
   '/evening': () => <Evening />,
   '/evening/settings': () => <EveningSettings />,
+  '/expenses': () => <Expenses />,
+  '/money': () => <Balances />,
+  '/money/:id': ({ id }) => <AccountBook id={id} key={id} />,
+  '/suppliers': () => <Suppliers />,
+  '/waiting': () => <Waiting />,
 };
 function match(path) {
   for (const [pattern, render] of Object.entries(SCREENS)) {
@@ -156,10 +167,11 @@ function Screens() {
   return (
     <div class="app">
       <Sidebar path={path} />
-      <main class="main">{screen}</main>
+      <main class="main"><OfflineBar path={path} />{screen}</main>
       {!full && <TabBar path={path} />}
       {toastMsg.value && <div class="toast">{toastMsg.value}</div>}
       <Praise />
+      <FingerOffer />
     </div>
   );
 }

@@ -1,13 +1,16 @@
 // New order (and editing an estimate): customer → items → live quote → Save estimate / Accept (+ advance).
 // All maths comes from @srs/core (same as the approved prototype); the backend checks it again on save.
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { calcItem, orderTotals, SHAPES, DEFAULT_FAMILY_DENSITY, convLen, r2 } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { loadCatalog, customerRates } from '../../lib/catalog.js';
 import { db } from '../../lib/backend.js';
 import { useAction } from '../../lib/action.js';
-import { call } from '../../lib/api.js';
+import { call, newKey } from '../../lib/api.js';
+import { nextLocalNo } from '../../lib/offline/outbox.js';
+import { localOrderShape, usesOf, modeOfArgs } from '../../lib/offline/local.js';
+import { accountsCache } from '../../lib/accounts.js';
 import { store } from '../../lib/store.js';
 import { money, kg } from '../../lib/format.js';
 import { go, route } from '../../lib/router.js';
@@ -39,6 +42,9 @@ export function NewOrder() {
   const [stock, setStock] = useState(null); // for "take from which stock?"
   const create = useAction('createOrder');
   const update = useAction('updateOrder');
+  // the slip's own ids are chosen here, so a slip made without internet can be weighed and finished on this phone too
+  const ids = useRef({ order: newKey(), items: {} });
+  const itemId = (k) => (ids.current.items[k] ||= newKey());
 
   // load grades/rates/settings, then either the estimate being edited or the saved draft
   useEffect(() => {
@@ -110,7 +116,9 @@ export function NewOrder() {
 
   const payload = () => ({
     customer_id: customer?.id,
+    ...(editing ? {} : { order_id: ids.current.order }),
     items: items.map((it, i) => ({
+      ...(editing ? {} : { id: itemId(it.key) }),
       material_id: it.material_id, shape: it.shape, unit: it.unit, d: it.d.slice(0, SHAPES[it.shape].dims.length),
       stock_item_id: resolved[i]?.stockId ?? null,
       rows: it.rows.filter((r) => r.len !== '' || r.pcs !== '').map((r) => ({ len: r.len, pcs: Number(r.pcs), cuts: r.cuts === '' ? '' : Number(r.cuts) })),
@@ -139,10 +147,22 @@ export function NewOrder() {
         toast(accept ? t('accepted_msg', editing.slip_no) : t('saved_msg', editing.slip_no));
         go(`/slip/${editing.id}`);
       } else {
-        const r = await create.run({ ...payload(), accept, advance });
+        const args = { ...payload(), accept, advance };
+        const r = await create.run(args, { local: () => {
+          // no internet: the slip is kept on this phone with a phone number (P1, P2 …); the real number comes when it is sent
+          const localNo = nextLocalNo();
+          const shown = items.map((it, i) => ({ id: args.items[i].id, material: it.material_id, code: resolved[i].m?.code, shape: it.shape, unit: it.unit,
+            d: args.items[i].d, rows: args.items[i].rows, rate: resolved[i].rate, cutRate: resolved[i].cutRate, density: resolved[i].core.density,
+            special: resolved[i].isSpecial, stockItemId: resolved[i].stockId }));
+          const order = localOrderShape({ id: args.order_id, localNo, customer, items: shown, accepted: accept, settings,
+            advance: advance ? { amount: advance.amount, note: advance.note, mode: modeOfArgs(advance, accountsCache.value || []) } : null });
+          return { meta: { order, localNo, creates: [args.order_id], uses: usesOf(customer?.id), customer: customer?.name },
+            result: { order_id: args.order_id, slip_no: localNo, status: order.status } };
+        } });
         store.set(DRAFT, null);
+        ids.current = { order: newKey(), items: {} };
         if (accept) told(r.slip_no);
-        toast(accept ? t('accepted_msg', r.slip_no) : t('saved_msg', r.slip_no));
+        toast(r.pending ? t('off_saved_slip', r.slip_no) : accept ? t('accepted_msg', r.slip_no) : t('saved_msg', r.slip_no));
         go(`/slip/${r.order_id}`);
       }
     } catch (e) { setProblem(e.message); }

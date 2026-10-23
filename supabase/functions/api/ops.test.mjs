@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as core from '../../../packages/core/src/index.js';
-import { makeOps, stableStringify, mapDbError, ApiError, coreItemFromDb } from './ops.js';
+import { makeOps, stableStringify, mapDbError, ApiError, coreItemFromDb, makeGstLookup, makePasskeyOps, offlineAt } from './ops.js';
+import { phone } from '../../../packages/core/test/helpers/phone.js';
 
 const EN8 = '10000000-0000-4000-8000-000000000001';
 const EN24 = '10000000-0000-4000-8000-000000000002';
@@ -425,7 +426,8 @@ function eveDb() {
     weighed: [{ slip_no: '1061', grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], density: 7850, actual: 30, min_inch: 1, lengths: [{ len: '300', pcs: 12, cuts: null }] }],
     waiting: [], cancelled: [], last_week: { total: 3000, n: 1 },
   };
-  const khata = { timezone: 'Asia/Kolkata', shop: 'SRS Trading', settings: { reminder_after_days: 25, reminder_repeat_days: 7 },
+  // (reminders after 10 years, so the test doesn't change as the real calendar moves on)
+  const khata = { timezone: 'Asia/Kolkata', shop: 'SRS Trading', settings: { reminder_after_days: 3650, reminder_repeat_days: 7 },
     customers: [{ id: 'cu1', name: 'Rana Tools', phone: '9814022113', active: true }],
     orders: [{ id: 'o1', slip_no: '1061', customer_id: 'cu1', status: 'done', bill: 'pakka', in_khata: true, total: 3719.01, done_at: '2026-09-28T06:00:00Z' }],
     payments: [{ id: 'p1', customer_id: 'cu1', order_id: 'o1', amount: 2000, mode: 'UPI', kind: 'advance', side: null, at: '2026-09-26T06:00:00Z' }],
@@ -736,4 +738,239 @@ test('money accounts: the evening tally comes from the parts; the drawer expects
   const s = await ops.daySummary(sales, {});
   assert.equal(s.summary.accounts, null, 'the tally is for owners');
   assert.equal(s.account_parts, undefined);
+});
+
+// ---------- money out: expenses, money moved, the cash book (23 Oct 2026) ----------
+const ACC = '50000000-0000-4000-8000-000000000001', ACC2 = '50000000-0000-4000-8000-000000000002', SUP = '60000000-0000-4000-8000-000000000001';
+const BILL1 = '70000000-0000-4000-8000-000000000001';
+const accountsPerson = { id: 'p-acc', company_id: 'c1', perms: core.ROLE_PRESETS.accounts() };
+function moneyDb(extra = {}) {
+  const calls = [];
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_expenses') return { items: [{ kind: 'expense', category: 'tea', amount: '120', account_id: ACC, is_drawer: true, status: 'ok' },
+      { kind: 'expense', category: 'tea', amount: '50', account_id: ACC, is_drawer: true, status: 'cancelled' }], transfers: [], suppliers: [] };
+    if (fn === 'api_account_book') return extra.book;
+    if (fn === 'api_expense_file') return extra.fileKey ?? null;
+    return { ok: true };
+  };
+  const files = { save: async () => 'c1/2026-10/x.jpg', url: async (k) => `https://signed/${k}` };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, files });
+  return { ops, calls, last: (fn) => calls.filter((c) => c.fn === fn).at(-1)?.args };
+}
+
+test('saveExpense: who may save which kind; the amount, GST and the seller\'s GST number are checked', async () => {
+  const { ops, last } = moneyDb();
+  await ops.saveExpense(accountsPerson, { category: 'tea', amount: '120.456', account_id: ACC }, 'k', 'h');
+  let p = last('api_save_expense').p;
+  assert.equal(p.kind, 'expense'); assert.equal(p.category, 'tea'); assert.equal(p.amount, 120.46); assert.equal(p.at, null); assert.equal(p.offline, false);
+  await ops.saveExpense(accountsPerson, { category: 'Not A Key', amount: 10, account_id: ACC, file_key: 'other-company/x.jpg' }, 'k', 'h');
+  p = last('api_save_expense').p;
+  assert.equal(p.category, 'other', 'unknown category = other');
+  assert.equal(p.file_key, null, 'a file of another company is never linked');
+  await rejects(ops.saveExpense(sales, { category: 'tea', amount: 10, account_id: ACC }, 'k', 'h'), 403);
+  await rejects(ops.saveExpense(accountsPerson, { kind: 'owner', amount: 10, account_id: ACC }, 'k', 'h'), 403, 'not_allowed');
+  await rejects(ops.saveExpense(accountsPerson, { kind: 'supplier', supplier_id: SUP, amount: 10, account_id: ACC }, 'k', 'h'), 403);
+  await rejects(ops.saveExpense(accountsPerson, { category: 'tea', amount: 0, account_id: ACC }, 'k', 'h'), 400);
+  await rejects(ops.saveExpense(accountsPerson, { category: 'tea', amount: 10 }, 'k', 'h'), 400);
+  await rejects(ops.saveExpense(accountsPerson, { category: 'blade', amount: 1180, account_id: ACC, gst_bill: true, gst_amount: 1180 }, 'k', 'h'), 400);
+  await rejects(ops.saveExpense(accountsPerson, { category: 'blade', amount: 1180, account_id: ACC, gst_bill: true, seller_gstin: '07AAACR5055K1Z4' }, 'k', 'h'), 400);
+  await ops.saveExpense(accountsPerson, { category: 'blade', amount: 1180, account_id: ACC2, method: 'NEFT', gst_bill: true, gst_amount: '180', bill_no: ' B-77 ',
+    seller_gstin: '07aaacr5055k1z9', day: '2026-10-20' }, 'k', 'h');
+  p = last('api_save_expense').p;
+  assert.deepEqual([p.gst_bill, p.gst_amount, p.bill_no, p.seller_gstin, p.method, p.at], [true, 180, 'B-77', '07AAACR5055K1Z9', 'NEFT', '2026-10-20T12:00:00+05:30']);
+  // no GST bill: GST details are dropped
+  await ops.saveExpense(accountsPerson, { category: 'tea', amount: 100, account_id: ACC, gst_amount: 18, seller_gstin: 'x' }, 'k', 'h');
+  p = last('api_save_expense').p;
+  assert.deepEqual([p.gst_bill, p.gst_amount, p.seller_gstin], [false, null, null]);
+  // the owner: paid a supplier (and his bills), or took money for home
+  await ops.saveExpense(owner, { kind: 'supplier', supplier_id: SUP, purchase_ids: [BILL1, BILL1], amount: 150000, account_id: ACC2, method: 'RTGS' }, 'k', 'h');
+  p = last('api_save_expense').p;
+  assert.deepEqual([p.kind, p.category, p.supplier_id, p.purchase_ids], ['supplier', 'supplier', SUP, [BILL1]]);
+  await ops.saveExpense(owner, { kind: 'owner', amount: 5000, account_id: ACC, offline_at: '2026-10-23T08:15:00.000Z' }, 'k', 'h');
+  p = last('api_save_expense').p;
+  assert.deepEqual([p.kind, p.category, p.at, p.offline], ['owner', 'home', '2026-10-23T08:15:00.000Z', true]);
+  await rejects(ops.saveExpense(owner, { kind: 'owner', amount: 5000, account_id: ACC, offline_at: 'yesterday' }, 'k', 'h'), 400);
+  await rejects(ops.saveExpense(owner, { kind: 'gift', amount: 5000, account_id: ACC }, 'k', 'h'), 400);
+});
+
+test('expenses list: totals leave out cancelled ones; cancelling needs a reason', async () => {
+  const { ops } = moneyDb();
+  const r = await ops.expenses(accountsPerson, { from: '2026-10-01', to: '2026-10-31' });
+  assert.equal(r.totals.total, 120); assert.equal(r.totals.n, 1);
+  await rejects(ops.expenses(accountsPerson, { from: 'x', to: '2026-10-31' }), 400);
+  await rejects(ops.expenses(weigher, { from: '2026-10-01', to: '2026-10-31' }), 403);
+  await rejects(ops.cancelExpense(accountsPerson, { id: ACC, reason: ' ' }, 'k', 'h'), 400);
+});
+
+test('receipts: photo saved with the company, link only for that company', async () => {
+  const { ops } = moneyDb({ fileKey: 'c1/2026-10/x.jpg' });
+  assert.deepEqual(await ops.uploadReceipt(accountsPerson, { mime: 'image/jpeg', data: 'aGVsbG8=' }), { file_key: 'c1/2026-10/x.jpg' });
+  await rejects(ops.uploadReceipt(accountsPerson, { mime: 'text/plain', data: 'aGVsbG8=' }), 400);
+  assert.deepEqual(await ops.expenseFile(accountsPerson, { id: ACC }), { url: 'https://signed/c1/2026-10/x.jpg' });
+  const other = moneyDb({ fileKey: 'c2/2026-10/y.jpg' });
+  assert.deepEqual(await other.ops.expenseFile(accountsPerson, { id: ACC }), { url: null });
+});
+
+test('moving money: two different accounts, an amount; kind of move kept', async () => {
+  const { ops, last } = moneyDb();
+  await ops.saveTransfer(accountsPerson, { from_account: ACC, to_account: ACC2, amount: '50000', reason: 'deposit', method: 'Cheque' }, 'k', 'h');
+  assert.deepEqual(last('api_save_transfer').p, { from_account: ACC, to_account: ACC2, amount: 50000, reason: 'deposit', method: 'Cheque', note: null, at: null, offline: false });
+  await ops.saveTransfer(accountsPerson, { from_account: ACC, to_account: ACC2, amount: 1, reason: 'close' }, 'k', 'h');
+  assert.equal(last('api_save_transfer').p.reason, 'move', 'closing moves are made by the cash count only');
+  await rejects(ops.saveTransfer(accountsPerson, { from_account: ACC, to_account: ACC, amount: 1 }, 'k', 'h'), 400);
+  await rejects(ops.saveTransfer(sales, { from_account: ACC, to_account: ACC2, amount: 1 }, 'k', 'h'), 403);
+});
+
+test('cash count: what is taken home is checked and goes with the count', async () => {
+  const { ops, last } = moneyDb();
+  await ops.saveCashCount(accountsPerson, { counted: '45979.5', take: '43979.5', take_to: ACC2, note: ' ok ' }, 'k', 'h');
+  assert.deepEqual(last('api_close_cash'), { p_caller: 'p-acc', p_key: 'k', p_hash: 'h', p_counted: 45979.5, p_note: 'ok', p_take: 43979.5, p_take_to: ACC2, p_at: null });
+  await ops.saveCashCount(accountsPerson, { counted: 1000 }, 'k', 'h');
+  assert.deepEqual([last('api_close_cash').p_take, last('api_close_cash').p_take_to], [0, null]);
+  await rejects(ops.saveCashCount(accountsPerson, { counted: 1000, take: 1000.01 }, 'k', 'h'), 400);
+  await rejects(ops.saveCashCount(sales, { counted: 1000 }, 'k', 'h'), 403);
+});
+
+test('account book: running balance from the opening, reset at each balance point', async () => {
+  const book = { account: { id: ACC2, is_drawer: false }, opening: { known: true, balance: 10000 },
+    moves: [{ at: '2026-10-21T05:00:00Z', amount: '5000' }, { at: '2026-10-22T05:00:00Z', amount: '-1200' }, { at: '2026-10-23T05:00:00Z', amount: '300' }],
+    points: [{ at: '2026-10-22T12:00:00Z', balance: '13500', expected: '13800', source: 'passbook' }] };
+  const { ops } = moneyDb({ book });
+  const r = await ops.accountBook(owner, { id: ACC2, from: '2026-10-21', to: '2026-10-23' });
+  assert.deepEqual(r.rows.map((x) => x.balance), [15000, 13800, 13500, 13800]);
+  assert.equal(r.rows[2].before, 13800);
+  const unknown = moneyDb({ book: { ...book, opening: { known: false, balance: 999 }, points: [] } });
+  assert.deepEqual((await unknown.ops.accountBook(owner, { id: ACC2, from: '2026-10-21', to: '2026-10-23' })).rows.map((x) => x.balance), [null, null, null]);
+  await rejects(ops.accountBook(accountsPerson, { id: ACC2, from: '2026-10-21', to: '2026-10-23' }), 403);
+});
+
+test('daySummary: money out and the drawer\'s cash book come in', async () => {
+  const calls = [];
+  const rpc = async (fn, args) => {
+    calls.push(fn);
+    if (fn === 'api_day_data') return { timezone: 'Asia/Kolkata', day: '2026-10-23', today: '2026-10-23', shop: 'S', settings: { weight_warn_pct: 5, min_inch: 1 },
+      orders: [], payments: [{ amount: 45000, kind: 'pickup', mode: 'Cash', customer: 'Gupta', parts: [{ mode: 'Cash', amount: 45000, account_id: ACC }] }], weighed: [], waiting: [], cancelled: [] };
+    if (fn === 'api_day_money') return { expenses: [{ kind: 'expense', category: 'tea', amount: '120', account_id: ACC, is_drawer: true, mode: 'Cash' }],
+      transfers: [{ amount: '40000', from: 'Shop cash', to: 'Cash at home', from_account: ACC, to_account: ACC2, reason: 'close' }],
+      cash_book: { opening: 2000, in: 45000, out: 40120, expected: 6880, counts: [{ expected: 46880, counted: 46880, taken_out: 40000 }] } };
+    if (fn === 'api_day_accounts') return { accounts: [{ id: ACC, name: 'Shop cash', is_drawer: true }, { id: ACC2, name: 'Cash at home', kind: 'safe' }],
+      parts: [{ account_id: ACC, amount: 45000, mode: 'Cash' }], checks: [] };
+    if (fn === 'api_khata_data') return { timezone: 'Asia/Kolkata', customers: [], orders: [], payments: [], old_dues: [], settings: { reminder_after_days: 25 }, last_reminders: [] };
+    return [];
+  };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  const s = (await ops.daySummary(owner, { day: '2026-10-23' })).summary;
+  assert.deepEqual([s.cash.book, s.cash.opening, s.cash.expected, s.cash.diff, s.cash.left], [true, 2000, 46880, 0, 6880]);
+  assert.equal(s.out.total, 120);
+  assert.equal(s.moved.length, 1);
+  assert.deepEqual(s.accounts.rows.map((r) => [r.name, r.in, r.out]), [['Shop cash', 45000, 40120], ['Cash at home', 40000, 0]]);
+});
+
+
+// ---------- offline entries, GST check, fingerprint (23 Oct 2026) ----------
+test('offline: the real time goes with the entry (api_run), ids chosen on the phone are kept', async () => {
+  const { ops, calls } = fakeDb();
+  const OID = '80000000-0000-4000-8000-000000000001', IID = '80000000-0000-4000-8000-000000000002';
+  await ops.createOrder(owner, { customer_id: CUST, order_id: OID, items: [{ ...newItems[0], id: IID }, newItems[1]], accept: true,
+    offline_at: '2026-10-23T05:30:00+05:30' }, 'k', 'h');
+  const run = calls.filter((c) => c.fn === 'api_run').at(-1).args;
+  assert.equal(run.p_op, 'api_create_order');
+  assert.equal(run.p_at, '2026-10-23T00:00:00.000Z');
+  assert.equal(run.p_args.p_order_id, OID);
+  assert.equal(run.p_args.p_items[0].id, IID);
+  assert.equal(run.p_args.p_items[1].id, undefined, 'only ids the phone chose');
+  await ops.recordPayment(owner, { customer_id: CUST, side: 'pakka', amount: 500, mode: 'Cash', offline_at: '2026-10-23T06:00:00Z' }, 'k', 'h');
+  assert.equal(calls.filter((c) => c.fn === 'api_run').at(-1).args.p_op, 'api_record_payment');
+  await ops.recordPayment(owner, { customer_id: CUST, side: 'pakka', amount: 500, mode: 'Cash' }, 'k', 'h');
+  assert.equal(calls.at(-1).fn, 'api_record_payment', 'online: straight to the database as before');
+  await ops.createCustomer(owner, { name: 'Walk-in Ram', id: OID, offline_at: '2026-10-23T06:00:00Z' }, 'k', 'h');
+  const cc = calls.filter((c) => c.fn === 'api_run').at(-1).args;
+  assert.deepEqual([cc.p_op, cc.p_args.p_id], ['api_create_customer', OID]);
+  assert.throws(() => offlineAt('23/10/2026'), (e) => e.status === 400);
+  assert.equal(offlineAt(null), null);
+});
+
+test('GST check: a recent check is used again; without the service it says so; a portal check is saved', async () => {
+  const calls = [];
+  let last = null;
+  const rpc = async (fn, args) => { calls.push({ fn, args }); if (fn === 'api_gst_last') return last; if (fn === 'api_gst_save') return { ...args.p, id: 'g1' }; if (fn === 'api_suppliers') return []; return null; };
+  const answers = { '07AAACR5055K1Z9': { data: { data: { sts: 'Cancelled', lgnm: 'RAJ STEELS', cxdt: '12/08/2026' } } } };
+  const lookups = [];
+  const gstLookup = async (g) => { lookups.push(g); return answers[g] || { message: 'GSTIN not found' }; };
+  const on = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, gstLookup }).ops;
+  const off = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null }).ops;
+  assert.deepEqual(await off.gstCheck(owner, { gstin: '07aaacr5055k1z9' }, 'k', 'h'), { service: false, check: null });
+  let r = await on.gstCheck(owner, { gstin: '07AAACR5055K1Z9' }, 'k', 'h');
+  assert.deepEqual([r.service, r.check.status, r.check.cancel_date, r.check.legal_name, r.check.source], [true, 'cancelled', '2026-08-12', 'RAJ STEELS', 'service']);
+  last = { status: 'active', checked_at: '2026-10-22T00:00:00Z' };
+  r = await on.gstCheck(owner, { gstin: '07AAACR5055K1Z9' }, 'k', 'h');
+  assert.equal(r.cached, true); assert.equal(lookups.length, 1, 'no second paid lookup within 7 days');
+  r = await on.gstCheck(owner, { gstin: '07AAACR5055K1Z9', refresh: true }, 'k', 'h');
+  assert.equal(lookups.length, 2, 'unless asked again');
+  await rejects(on.gstCheck(owner, { gstin: '07AAACR5055K1Z4' }, 'k', 'h'), 400);
+  await rejects(on.gstCheck(accountsPerson, { gstin: '07AAACR5055K1Z9' }, 'k', 'h'), 403);
+  await on.gstMark(owner, { gstin: '07AAACR5055K1Z9', status: 'active', cancel_date: '2026-08-12', note: 'portal' }, 'k', 'h');
+  assert.deepEqual(calls.filter((c) => c.fn === 'api_gst_save').at(-1).args.p, { gstin: '07AAACR5055K1Z9', status: 'active', legal_name: null, cancel_date: null, source: 'portal', note: 'portal' });
+  await rejects(on.gstMark(owner, { gstin: '07AAACR5055K1Z9', status: 'fine' }, 'k', 'h'), 400);
+  assert.equal((await on.suppliers(owner)).service, true);
+});
+
+test('GST service: sandbox signs in once, then searches; a custom service gets the number in its address', async () => {
+  const seen = [];
+  const fetchFn = async (url, init) => { seen.push([url, init.method, init.headers]); return { status: 200, text: async () => (url.endsWith('/authenticate') ? '{"access_token":"T"}' : '{"data":{"data":{"sts":"Active"}}}') }; };
+  const sb = makeGstLookup({ provider: 'sandbox', key: 'K', secret: 'S', fetchFn });
+  assert.equal(core.readGstAnswer(await sb('07AAACR5055K1Z9')).status, 'active');
+  await sb('07AAACR5055K1Z9');
+  assert.deepEqual(seen.map((x) => x[0].split('/').slice(3).join('/')), ['authenticate', 'gst/compliance/public/gstin/search', 'gst/compliance/public/gstin/search']);
+  assert.equal(seen[1][2].Authorization, 'T');
+  const cu = makeGstLookup({ provider: 'custom', key: 'K', url: 'https://gst.example/{gstin}', headers: '{"apikey":"K"}', fetchFn });
+  await cu('07AAACR5055K1Z9');
+  assert.deepEqual(seen.at(-1).slice(0, 2), ['https://gst.example/07AAACR5055K1Z9', 'GET']);
+  assert.equal(makeGstLookup({ provider: 'sandbox', key: '' }), null, 'no key = switched off');
+});
+
+test('GST recheck job: due numbers checked, answers saved for their shop', async () => {
+  const calls = [];
+  const rpc = async (fn, args) => { calls.push({ fn, args }); if (fn === 'api_gst_due') return [{ company_id: 'c1', gstin: '07AAACR5055K1Z9' }, { company_id: 'c2', gstin: '03AAKFR5521L1Z4' }]; return {}; };
+  const { runGstChecks } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null, gstLookup: async (g) => (g.startsWith('07') ? { sts: 'Suspended' } : { nothing: true }) });
+  assert.deepEqual(await runGstChecks(), { due: 2, checked: 1 });
+  assert.deepEqual(calls.find((c) => c.fn === 'api_gst_save_job').args.p.status, 'suspended');
+  const none = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  assert.deepEqual(await none.runGstChecks(), { skipped: 'no_gst_service' });
+});
+
+test('fingerprint: switch on (fresh PIN), unlock with the finger, refused when the answer is wrong', async () => {
+  const store = { challenge: null, key: null, unlocked: 0 };
+  const calls = [];
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_passkey_begin') { store.challenge = core.newChallenge(); return { challenge: store.challenge, person_id: 'p-owner', name: 'Papa', credentials: store.key ? [{ id: store.key.id }] : [] }; }
+    if (fn === 'api_passkey_save') { store.key = { id: args.p_credential_id, public_key: args.p_public_key, alg: args.p_alg }; return { id: 'k1' }; }
+    if (fn === 'api_passkey_key') return store.key && args.p_credential_id === store.key.id ? { public_key: store.key.public_key, alg: store.key.alg, sign_count: 0 } : null;
+    if (fn === 'api_passkey_unlock') { store.unlocked++; return { ok: args.p_challenge === store.challenge }; }
+    return null;
+  };
+  const px = makePasskeyOps({ core, rpc, origins: ['http://localhost:8173'] });
+  const who = { user: 'u1', session: 's1', unlocked: true, phone: '+919000000001' };
+  const p = await phone();
+  const reg = await px.passkeyBegin(who, { purpose: 'register' });
+  assert.equal(reg.user.displayName, 'Papa'); assert.equal(reg.user.name, '+919000000001');
+  await px.passkeyRegister(who, { challenge: reg.challenge, ...p.create(reg.challenge), label: 'Papa phone' });
+  assert.equal(store.key.id, p.credId);
+  await rejects(px.passkeyBegin({ ...who, unlocked: false }, { purpose: 'register' }), 401, 'pin_required');
+  const locked = { ...who, unlocked: false };
+  const b = await px.passkeyBegin(locked, { purpose: 'unlock' });
+  assert.deepEqual(b.credentials, [p.credId]);
+  const ans = await p.get(b.challenge);
+  assert.deepEqual(await px.passkeyUnlock(locked, { challenge: b.challenge, credential_id: p.credId, ...ans }), { ok: true });
+  assert.equal(calls.filter((c) => c.fn === 'api_passkey_unlock').at(-1).args.p_sign_count, 1);
+  // someone else's phone answering, an unknown key, a wrong challenge
+  const other = await phone();
+  const b2 = await px.passkeyBegin(locked, { purpose: 'unlock' });
+  await rejects(px.passkeyUnlock(locked, { challenge: b2.challenge, credential_id: p.credId, ...(await other.get(b2.challenge)) }), 401, 'passkey_failed');
+  await rejects(px.passkeyUnlock(locked, { challenge: b2.challenge, credential_id: other.credId, ...(await other.get(b2.challenge)) }), 401, 'passkey_failed');
+  await rejects(px.passkeyUnlock(locked, { challenge: 'x', credential_id: p.credId, ...ans }), 401, 'passkey_failed');
+  await rejects(px.passkeyUnlock(locked, { challenge: 'not base64!', credential_id: p.credId, ...ans }), 400);
+  assert.equal(store.unlocked, 1, 'only the good answer unlocked');
 });

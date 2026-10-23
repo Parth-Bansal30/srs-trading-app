@@ -4,8 +4,9 @@
  * 'price' may type a different one. Owners have it; the owner can give it to anyone.
  * 'delete' (30 Sept 2026): delete a slip, confirmed with a one-time SMS code. Owners only by default.
  * 'stock' (30 Sept 2026): enter purchase bills, correct stock, see buying rates and stock value. Owners only by default.
+ * 'expenses' (23 Oct 2026): record shop expenses (kharcha) and money moved between accounts. Owners and the accounts person.
  */
-export const PERMS = Object.freeze(['new', 'orders', 'weigh', 'khata', 'today', 'rates', 'people', 'settings', 'money', 'kacha', 'price', 'delete', 'stock']);
+export const PERMS = Object.freeze(['new', 'orders', 'weigh', 'khata', 'today', 'rates', 'people', 'settings', 'money', 'kacha', 'price', 'delete', 'stock', 'expenses']);
 
 const allOn = () => Object.fromEntries(PERMS.map((p) => [p, true]));
 
@@ -13,7 +14,7 @@ export const ROLE_PRESETS = Object.freeze({
   owner: allOn,
   sales: () => ({ new: 1, orders: 1, money: 1, kacha: 1 }),
   weigher: () => ({ weigh: 1, orders: 1 }),
-  accounts: () => ({ orders: 1, khata: 1, today: 1, money: 1 }),
+  accounts: () => ({ orders: 1, khata: 1, today: 1, money: 1, expenses: 1 }),
 });
 
 export const can = (perms, p) => !!(perms && perms[p]);

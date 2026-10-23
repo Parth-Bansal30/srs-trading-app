@@ -99,3 +99,11 @@ select.field{font-weight:600;font-size:16px;appearance:auto}
 /* "New version ready · Update" bar (lib/update.js) */
 .update-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--tabbar-h, 88px) + 14px + env(safe-area-inset-bottom));z-index:60;display:flex;align-items:center;gap:10px;width:min(92vw,440px);padding:12px 16px;border-radius:16px;background:var(--brand);color:var(--on-brand);box-shadow:var(--sh-lg);font-weight:600;font-size:14.5px;text-align:left}
 .update-bar b{color:var(--accent);font-weight:800}
+/* no internet / waiting to send (23 Oct 2026) */
+.offbar{display:flex;align-items:center;gap:8px;width:calc(100% - 24px);margin:8px 12px 0;padding:9px 12px;border-radius:12px;font-size:13.5px;text-align:left;position:sticky;top:calc(6px + env(safe-area-inset-top));z-index:12}
+.offbar.tone-off{background:#2A2F3A;color:#fff}
+.offbar-s{opacity:.75;font-weight:500}
+.offbar-n{background:rgba(255,255,255,.16);border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px;white-space:nowrap}
+.spin{animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (min-width:1024px){.offbar{max-width:640px;margin:10px auto 0}}

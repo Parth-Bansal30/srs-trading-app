@@ -1,5 +1,6 @@
 // Choose a customer (search by name or number) or add a new one.
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
+import { newKey } from '../../lib/api.js';
 import { t } from '../../lib/i18n.js';
 import { can } from '../../lib/session.js';
 import { useAction } from '../../lib/action.js';
@@ -13,12 +14,15 @@ export function CustomerPicker({ open, customers, onClose, onPick }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const add = useAction('createCustomer');
+  const newId = useRef(newKey());   // the new customer's id is chosen here (works without internet too)
   const s = q.trim().toLowerCase();
   const list = customers.filter((c) => c.active && (c.name.toLowerCase().includes(s) || (c.phone || '').replace(/\D/g, '').includes(s.replace(/\D/g, '') || '§')));
   const save = async () => {
     if (!name.trim()) return;
-    const c = await add.run({ name, phone }).catch(() => null);
-    if (c) { forgetCatalog(); customers.push(c); setAdding(false); setName(''); setPhone(''); onPick(c); }
+    const id = newId.current;
+    const c = await add.run({ id, name, phone }, { local: () => ({ meta: { customer: { id, name: name.trim(), phone: phone.trim() || null }, creates: [id] },
+      result: { id, name: name.trim(), phone: phone.trim() || null, active: true, local: true } }) }).catch(() => null);
+    if (c) { newId.current = newKey(); forgetCatalog(); customers.push(c); setAdding(false); setName(''); setPhone(''); onPick(c); }
   };
   return (
     <Sheet open={open} onClose={onClose} title={adding ? t('new_customer') : t('choose_customer')}

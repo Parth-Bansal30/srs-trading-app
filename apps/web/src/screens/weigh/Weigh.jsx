@@ -1,6 +1,6 @@
 // Weighing — for the weigher: sizes and expected weight, big weight boxes, weigh-together. No money.
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { splitBatchWeight, canWeighTogether } from '@srs/core';
+import { splitBatchWeight, canWeighTogether, calcItem } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -8,6 +8,18 @@ import { useAction } from '../../lib/action.js';
 import { kg, shortDate, time } from '../../lib/format.js';
 import { dimText, lengthsText, shapeName, totalPcs } from '../../lib/orders.js';
 import { go } from '../../lib/router.js';
+import { outbox, outboxVersion } from '../../lib/offline/outbox.js';
+import { weighingOverlay } from '../../lib/offline/overlay.js';
+import { usesOf } from '../../lib/offline/local.js';
+
+/** Expected kg of an item from its sizes (for slips made on this phone). */
+const expectedOf = (i, o) => {
+  const c = calcItem({ shape: i.shape, unit: i.unit, d: i.dims, rows: (i.order_item_lengths || []).map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
+    rate: 0, cutRate: 0, density: Number(i.density) }, 'est', { minInch: o?.pricing_rules?.min_inch ?? 1 });
+  return c ? c.est : null;
+};
+/** The weighing list with what waits on this phone (new slips made offline, weights not sent yet). */
+const withWaiting = (list) => weighingOverlay(list || [], outbox.value, expectedOf);
 import { toast } from '../../ui/toast.js';
 import { SHAPE_LOOK } from '../../config/options.js';
 import { Icon, TopBar, LangPill, Skeleton } from '../../ui/kit.jsx';
@@ -16,7 +28,7 @@ import './weigh.css';
 export function WeighList() {
   const [list, setList] = useState(null);
   const tz = company.value?.timezone;
-  useEffect(() => { call('weighingList', {}).then(setList).catch(() => setList([])); }, []);
+  useEffect(() => { call('weighingList', {}).then((l) => setList(withWaiting(l))).catch(() => setList(withWaiting([]))); }, [outboxVersion.value]);
   return (
     <>
       <TopBar title={t('nav_weigh')} sub={list ? t('n_waiting', list.length) : ''} onBack={null} right={<LangPill />} />
@@ -25,7 +37,7 @@ export function WeighList() {
           list.map((o) => (
             <button class="card li" style="margin-bottom:10px" onClick={() => go(`/weigh/${o.id}`)}>
               <div class="iconbox tone-accent"><Icon name="Scale" /></div>
-              <div class="grow"><div class="t num">#{o.slip_no} · {o.customer}</div><div class="s">{t('n_items', o.items.length)} · {shortDate(o.created_at, tz)} {time(o.created_at, tz)}</div></div>
+              <div class="grow"><div class="t num">#{o.slip_no} · {o.customer}</div><div class="s">{o.pending && <><Icon name="CloudUpload" size={12} /> {t('off_waiting')} · </>}{t('n_items', o.items.length)} · {shortDate(o.created_at, tz)} {time(o.created_at, tz)}</div></div>
               <Icon name="ChevronRight" size={18} />
             </button>
           ))}
@@ -44,10 +56,14 @@ export function Weigh({ id }) {
   const save = useAction('recordWeights');
 
   useEffect(() => {
-    call('weighingList', { order_id: id }).then(([x]) => {
+    const pick = (list) => withWaiting(list).find((x) => x.id === id) || null;
+    const show = (x) => {
       setO(x || null);
       if (x) setW(Object.fromEntries(x.items.filter((i) => i.actual_weight != null).map((i) => [i.id, String(Number(i.actual_weight))])));
-    }).catch(() => setO(null));
+    };
+    // without internet: the kept weighing list, or a slip made on this phone
+    call('weighingList', { order_id: id }).then((l) => show(pick(l)))
+      .catch(() => call('weighingList', {}).then((l) => show(pick(l))).catch(() => show(pick([]))));
   }, [id]);
 
   const inBatch = (iid) => batches.find((b) => b.item_ids.includes(iid));
@@ -81,14 +97,14 @@ export function Weigh({ id }) {
   };
   const submit = async (finish) => {
     try {
-      const r = await save.run({
-        order_id: o.id,
-        weights: items.filter((i) => !inBatch(i.id) && Number(w[i.id]) > 0).map((i) => ({ item_id: i.id, weight: Number(w[i.id]) })),
-        batches: batches.map((b) => ({ total_weight: b.total, item_ids: b.item_ids })),
-        submit: finish,
-      });
+      const weights = items.filter((i) => !inBatch(i.id) && Number(w[i.id]) > 0).map((i) => ({ item_id: i.id, weight: Number(w[i.id]) }));
+      const all = { ...Object.fromEntries(weights.map((x) => [x.item_id, x.weight])), ...preview };
+      const r = await save.run({ order_id: o.id, weights, batches: batches.map((b) => ({ total_weight: b.total, item_ids: b.item_ids })), submit: finish },
+        { local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customer, patch: { weights: all, submit: finish } } } });
       if (r.warnings?.length) setWarn(r.warnings);
-      if (finish) { toast(t('weigh_done_msg', o.slip_no)); go('/weigh'); } else toast(t('weights_kept'));
+      if (r.pending) toast(t('off_saved_phone'));
+      else if (finish) toast(t('weigh_done_msg', o.slip_no)); else toast(t('weights_kept'));
+      if (finish) go('/weigh');
     } catch { /* message shown below */ }
   };
 

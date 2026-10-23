@@ -55,6 +55,27 @@ const kg = (v, what) => {
 };
 const payMethod = (v) => { if (!PAY_METHODS.includes(v)) throw bad('Choose how it was paid (Cash, UPI, Bank or Cheque).'); return v; };
 const BANK_METHODS = ['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque'];
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * When an entry made without internet really happened (23 Oct 2026): the phone sends offline_at (ISO time).
+ * The database checks it is not in the future and not too old. null = now.
+ */
+export function offlineAt(v) {
+  if (v == null || v === '') return null;
+  const s = String(v);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})$/.test(s) || Number.isNaN(Date.parse(s))) throw bad('Wrong time on that entry.');
+  return new Date(Date.parse(s)).toISOString();
+}
+/** An expense's day + time: a chosen past day (owners) is that day at noon in the shop's time; offline entries keep their time. */
+function entryAt(a) {
+  const off = offlineAt(a?.offline_at);
+  if (off) return off;
+  if (a?.day != null && a.day !== '') {
+    if (!DAY.test(a.day) || Number.isNaN(Date.parse(a.day))) throw bad('Choose the day.');
+    return `${a.day}T12:00:00+05:30`;
+  }
+  return null;
+}
 
 /**
  * Where the money went (money accounts, 6 Oct 2026). a.parts = a split [{account_id, amount, method}] that must add up
@@ -244,7 +265,7 @@ const DELETE_MONEY = ['none', 'never', 'credit', 'refund'];
  * files (optional): the purchase bill files — { save(caller, base64, mime) → key, url(key) → a short-lived link }.
  * readBill (optional): the AI that reads a bill — (base64, mime) → the model's text (JSON as asked in BILL_PROMPT).
  */
-export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null, otp = null, files = null, readBill = null }) {
+export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null, otp = null, files = null, readBill = null, gstLookup = null }) {
   /** '' clears it; otherwise it must be a correct GST number (typing mistakes are caught). */
   const gstinValue = (v) => {
     const s = String(v ?? '').trim();
@@ -290,6 +311,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     const when = `${dd} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][mo - 1]}`;
     const parts = [w(`Sales ${m(s.sales.total)} · ${s.sales.n} slips`, `बिक्री ${m(s.sales.total)} · ${s.sales.n} पर्चियां`, `Bikri ${m(s.sales.total)} · ${s.sales.n} parchiyan`),
       w(`money in ${m(s.money.total)}`, `आया ${m(s.money.total)}`, `aaya ${m(s.money.total)}`)];
+    if (s.out?.total) parts.push(w(`expenses ${m(s.out.total)}`, `खर्च ${m(s.out.total)}`, `kharcha ${m(s.out.total)}`));
     if (s.cash.diff) parts.push(s.cash.diff < 0 ? w(`cash ${m(s.cash.diff)} short`, `कैश ${m(s.cash.diff)} कम`, `cash ${m(s.cash.diff)} kam`) : w(`cash ${m(s.cash.diff)} extra`, `कैश ${m(s.cash.diff)} ज़्यादा`, `cash ${m(s.cash.diff)} zyada`));
     if (s.look.length) parts.push(w(`${s.look.length} things need a look`, `${s.look.length} बातें देखनी हैं`, `${s.look.length} baatein dekhni hain`));
     return { title: `${w('Evening summary', 'शाम का हिसाब', 'Shaam ka hisaab')} · ${when}`, body: parts.join(' · '),
@@ -370,10 +392,15 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
   };
   const advancePlace = (adv) => (adv ? placement(adv, Number(adv.amount)) : null);
 
-  /** Run a money operation; with accounts chosen it goes through api_pay (all in one go, the split checked). */
-  const payRpc = (fn, args, place) => (place
-    ? rpc('api_pay', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place.parts, p_account: place.account })
-    : rpc(fn, args));
+  /**
+   * Run an operation. With accounts chosen it goes through api_pay (all in one go, the split checked); an entry made
+   * offline goes through api_run with the time it really happened (23 Oct 2026).
+   */
+  const payRpc = (fn, args, place, at = null) => (at
+    ? rpc('api_run', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place?.parts ?? null, p_account: place?.account ?? null, p_at: at })
+    : place
+      ? rpc('api_pay', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place.parts, p_account: place.account })
+      : rpc(fn, args));
 
   async function pricingContext(caller, customerId, items) {
     const matIds = [...new Set((Array.isArray(items) ? items : []).map((i) => i?.material_id).filter(isUuid))];
@@ -389,10 +416,12 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const ctx = await pricingContext(caller, customer, a.items);
       const built = buildItems(caller, ctx, a.items);
       const advance = a.accept ? advanceArg(caller, a.advance) : null;
+      // a slip made offline chose its ids on the phone (so it could be weighed and finished offline too)
+      const items = built.map((b, i) => (isUuid(a.items[i]?.id) ? { id: a.items[i].id, ...b.db } : b.db));
       const res = await payRpc('api_create_order', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: customer, p_rules: pricingRules(ctx),
-        p_items: built.map((b) => b.db), p_accept: !!a.accept, p_advance: advance,
-      }, advance ? advancePlace(a.advance) : null);
+        p_items: items, p_accept: !!a.accept, p_advance: advance, ...(isUuid(a.order_id) ? { p_order_id: a.order_id } : {}),
+      }, advance ? advancePlace(a.advance) : null, offlineAt(a.offline_at));
       return { ...res, estimate: estimateOf(caller, built, ctx.settings.min_inch) };
     },
 
@@ -413,7 +442,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const advance = advanceArg(caller, a.advance);
       return payRpc('api_accept_order', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'), p_advance: advance,
-      }, advance ? advancePlace(a.advance) : null);
+      }, advance ? advancePlace(a.advance) : null, offlineAt(a.offline_at));
     },
 
     async addAdvance(caller, a, key, hash) {
@@ -423,7 +452,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return payRpc('api_add_advance', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'),
         p_amount: amt, p_mode: modeFor(a.mode, place), p_note: text(a.note),
-      }, place);
+      }, place, offlineAt(a.offline_at));
     },
 
     // ---------- weighing ----------
@@ -476,10 +505,10 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         return { total_weight: total, parts: ids.map((id, k) => ({ item_id: id, weight: parts[k] })) };
       });
       if (!weights.length && !batches.length) throw bad('Enter at least one weight.');
-      const res = await rpc('api_record_weights', {
+      const res = await payRpc('api_record_weights', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: orderId,
         p_weights: weights, p_batches: batches, p_submit: !!a.submit,
-      });
+      }, null, offlineAt(a.offline_at));
       // warn (never block) when a weight is far from what the sizes say — like the prototype
       const warnPct = Number((await companySettings(caller.company_id))?.weight_warn_pct ?? 5);
       const warnings = [];
@@ -526,7 +555,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
           basis: { advance, weights: Object.fromEntries(ctx.items.map((i) => [i.id, i.actual_weight == null ? null : Number(i.actual_weight)])) },
           totals: { weight: r3(T.wt), base: T.base, material: T.matK, cutting: T.cutK, gst: T.gst, total: T.total },
         },
-      }, place);
+      }, place, offlineAt(a.offline_at));
       return { ...res, breakdown: { material: T.matK, cutting: T.cutK, gst: T.gst, pct: T.pct, total: T.total, advance: f.A, balance: f.B, extra: f.extra, paid_now: paidNow, due: f.due } };
     },
 
@@ -540,7 +569,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return payRpc('api_record_payment', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: uuid(a.customer_id, 'Choose a customer.'),
         p_amount: amt, p_mode: modeFor(a.mode, place), p_side: a.side, p_note: text(a.note),
-      }, place);
+      }, place, offlineAt(a.offline_at));
     },
 
     async reversePayment(caller, a, key, hash) {
@@ -550,11 +579,152 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return rpc('api_reverse_payment', { p_caller: caller.id, p_key: key, p_hash: hash, p_payment: uuid(a.payment_id, 'Which payment?'), p_note: note });
     },
 
+    /**
+     * The cash count at closing (cash book, 23 Oct 2026): counted = what is in the drawer; take = cash taken out now
+     * (home / bank) into take_to (none given: "Cash at home", made the first time). The rest stays as tomorrow's opening.
+     */
     async saveCashCount(caller, a, key, hash) {
       need(caller, 'money', 'today');
       const counted = Number(a.counted);
       if (!Number.isFinite(counted) || counted < 0 || counted > 1e9) throw bad('Enter the cash you counted.');
-      return rpc('api_save_cash_count', { p_caller: caller.id, p_key: key, p_hash: hash, p_counted: r2(counted), p_note: text(a.note) });
+      const take = a.take == null || a.take === '' ? 0 : Number(a.take);
+      if (!Number.isFinite(take) || take < 0) throw bad('Enter the cash taken out.');
+      if (r2(take) > r2(counted)) throw bad("You can't take out more than you counted.");
+      return rpc('api_close_cash', { p_caller: caller.id, p_key: key, p_hash: hash, p_counted: r2(counted), p_note: text(a.note),
+        p_take: r2(take), p_take_to: take > 0 && a.take_to ? uuid(a.take_to, 'Choose where the cash went.') : null, p_at: offlineAt(a.offline_at) });
+    },
+
+    /** The drawer's cash book for a day (default today): opening, cash in, cash out, should be there, the counts. */
+    async cashBook(caller, a) {
+      need(caller, 'money', 'today');
+      const day = DAY.test(a?.day || '') ? a.day : null;
+      return rpc('api_cash_book', { p_caller: caller.id, p_day: day });
+    },
+
+    // ---------- money out: shop expenses and money moved between accounts (23 Oct 2026) ----------
+    /**
+     * Save an expense. a: { kind: expense | supplier | owner, category, amount, account_id, method, day?, paid_to, note,
+     *   gst_bill, gst_amount, bill_no, seller_gstin, supplier_id, purchase_ids, file_key, replaces_id, offline_at }
+     */
+    async saveExpense(caller, a, key, hash) {
+      const kind = a?.kind || 'expense';
+      if (!core.EXPENSE_KINDS.includes(kind)) throw bad('Choose what the money was for.');
+      if (kind === 'expense' && !core.can(caller.perms, 'expenses') && !core.can(caller.perms, 'settings')) throw forbidden('expenses');
+      if (kind === 'supplier' && !core.can(caller.perms, 'stock') && !core.can(caller.perms, 'settings')) throw forbidden('stock');
+      if (kind === 'owner') need(caller, 'settings');
+      const amt = amount(a.amount, 'amount');
+      const category = kind === 'expense' ? (core.isCategoryKey(a.category) ? a.category : 'other') : kind === 'supplier' ? 'supplier' : 'home';
+      const gstBill = !!a.gst_bill;
+      let gstAmt = null;
+      if (gstBill && a.gst_amount != null && a.gst_amount !== '') {
+        gstAmt = Number(a.gst_amount);
+        if (!(gstAmt >= 0) || gstAmt >= amt) throw bad('The GST must be less than the amount.');
+        gstAmt = r2(gstAmt);
+      }
+      const sellerGstin = gstBill ? gstinValue(a.seller_gstin) || null : null;
+      const bills = Array.isArray(a.purchase_ids) ? [...new Set(a.purchase_ids)] : [];
+      if (bills.length > 50 || !bills.every(isUuid)) throw bad('Choose the bills again.');
+      return rpc('api_save_expense', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+        kind, category, amount: amt, account_id: uuid(a.account_id, 'Choose where the money came from.'),
+        method: BANK_METHODS.includes(a.method) ? a.method : null, at: entryAt(a), paid_to: text(a.paid_to, 80), note: text(a.note, 300),
+        gst_bill: gstBill, gst_amount: gstAmt, bill_no: gstBill ? text(a.bill_no, 40) : null, seller_gstin: sellerGstin,
+        supplier_id: kind === 'supplier' ? uuid(a.supplier_id, 'Choose the supplier.') : null, purchase_ids: kind === 'supplier' ? bills : [],
+        file_key: typeof a.file_key === 'string' && a.file_key.startsWith(`${caller.company_id}/`) ? a.file_key.slice(0, 200) : null,
+        replaces_id: a.replaces_id ? uuid(a.replaces_id, 'Which expense?') : null, offline: !!a.offline_at,
+      } });
+    },
+
+    async cancelExpense(caller, a, key, hash) {
+      if (!['expenses', 'settings', 'stock'].some((p) => core.can(caller.perms, p))) throw forbidden('expenses');
+      const reason = text(a?.reason, 300);
+      if (!reason) throw bad('Write why it is cancelled.');
+      return rpc('api_cancel_expense', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which expense?'), p_reason: reason });
+    },
+
+    /** Expenses and money moves between two days (default: this month so far), with totals. */
+    async expenses(caller, a) {
+      if (!['expenses', 'settings', 'stock'].some((p) => core.can(caller.perms, p))) throw forbidden('expenses');
+      const from = DAY.test(a?.from || '') ? a.from : null;
+      const to = DAY.test(a?.to || '') ? a.to : null;
+      if (!from || !to) throw bad('Choose the dates.');
+      const r = await rpc('api_expenses', { p_caller: caller.id, p_from: from, p_to: to });
+      const totals = core.expenseTotals((r.items || []).map((e) => ({ kind: e.kind, category: e.category, amount: Number(e.amount), accountId: e.account_id,
+        isDrawer: !!e.is_drawer, gstAmount: e.gst_amount == null ? null : Number(e.gst_amount), status: e.status })));
+      return { ...r, totals };
+    },
+
+    /** A photo of an expense's bill / receipt (base64, like a purchase bill). Returns the file key for saveExpense. */
+    async uploadReceipt(caller, a) {
+      if (!['expenses', 'settings', 'stock'].some((p) => core.can(caller.perms, p))) throw forbidden('expenses');
+      const mime = String(a?.mime || '');
+      if (!BILL_MIMES.includes(mime)) throw bad('Send a PDF or a photo (JPG / PNG).');
+      const data = String(a?.data || '').replace(/^data:[^,]*,/, '');
+      if (!data || !/^[A-Za-z0-9+/=\s]+$/.test(data)) throw bad('That file could not be read.');
+      if (Math.floor(data.replace(/\s/g, '').length * 3 / 4) > 6 * 1024 * 1024) throw bad('The photo is too big (over 6 MB).');
+      const fileKey = files ? await files.save(caller, data, mime) : null;
+      if (!fileKey) throw new ApiError(502, 'upload_failed', 'The photo could not be saved. Please try again.');
+      return { file_key: fileKey };
+    },
+
+    async expenseFile(caller, a) {
+      if (!['expenses', 'settings', 'stock'].some((p) => core.can(caller.perms, p))) throw forbidden('expenses');
+      const k = await rpc('api_expense_file', { p_caller: caller.id, p_id: uuid(a?.id, 'Which expense?') });
+      return { url: k && files && k.startsWith(`${caller.company_id}/`) ? await files.url(k).catch(() => null) : null };
+    },
+
+    /** Move money between two of the shop's accounts: { from_account, to_account, amount, reason, method, note, day?, offline_at }. */
+    async saveTransfer(caller, a, key, hash) {
+      if (!core.can(caller.perms, 'expenses') && !core.can(caller.perms, 'settings')) throw forbidden('expenses');
+      const amt = amount(a?.amount, 'amount');
+      const from = uuid(a?.from_account, 'Choose where the money came from.');
+      const to = uuid(a?.to_account, 'Choose where the money went.');
+      if (from === to) throw bad('Choose two different accounts.');
+      const reason = core.TRANSFER_REASONS.includes(a?.reason) ? a.reason : 'move';
+      return rpc('api_save_transfer', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+        from_account: from, to_account: to, amount: amt, reason, method: BANK_METHODS.includes(a.method) ? a.method : null,
+        note: text(a.note, 300), at: entryAt(a), offline: !!a.offline_at } });
+    },
+
+    async cancelTransfer(caller, a, key, hash) {
+      if (!core.can(caller.perms, 'expenses') && !core.can(caller.perms, 'settings')) throw forbidden('expenses');
+      const reason = text(a?.reason, 300);
+      if (!reason) throw bad('Write why it is cancelled.');
+      return rpc('api_cancel_transfer', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which move?'), p_reason: reason });
+    },
+
+    /** Owners: every account with what should be in it now. */
+    async accountBalances(caller) {
+      need(caller, 'settings', 'money');
+      return rpc('api_account_balances', { p_caller: caller.id });
+    },
+
+    /** Owners: one account's book between two days, with the running balance after every move. */
+    async accountBook(caller, a) {
+      need(caller, 'settings', 'money');
+      const from = DAY.test(a?.from || '') ? a.from : null;
+      const to = DAY.test(a?.to || '') ? a.to : null;
+      if (!from || !to) throw bad('Choose the dates.');
+      const r = await rpc('api_account_book', { p_caller: caller.id, p_account: uuid(a?.id, 'Which account?'), p_from: from, p_to: to });
+      // the running balance: from the balance before the first day, reset at each balance point (count / passbook)
+      const points = (r.points || []).map((x) => ({ ...x, at: x.at, point: true }));
+      const start = r.opening?.known || r.account?.is_drawer ? Number(r.opening?.balance ?? 0) : null;
+      let b = start;
+      const rows = [...(r.moves || []).map((m) => ({ ...m, amount: Number(m.amount) })), ...points]
+        .sort((x, y) => String(x.at).localeCompare(String(y.at)) || (x.point ? 1 : -1))
+        .map((m) => {
+          if (m.point) { const row = { ...m, before: b, balance: Number(m.balance) }; b = Number(m.balance); return row; }
+          if (b != null) b = r2(b + m.amount);
+          return { ...m, balance: b };
+        });
+      return { ...r, rows };
+    },
+
+    /** Owners: "the passbook / Paytm app says ₹…" (or the starting cash) → a balance point for that account. */
+    async setBalance(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      const bal = Number(a?.balance);
+      if (!Number.isFinite(bal) || Math.abs(bal) > 1e10) throw bad('Enter the balance.');
+      return rpc('api_set_balance', { p_caller: caller.id, p_key: key, p_hash: hash, p_account: uuid(a?.id, 'Which account?'), p_balance: r2(bal), p_note: text(a.note, 300) });
     },
 
     // ---------- rates, grades, customers, settings ----------
@@ -597,7 +767,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const extra = {};
       if (a.gstin) extra.gstin = gstinValue(a.gstin);
       if (a.address) extra.address = text(a.address, 300);
-      const cu = await rpc('api_create_customer', { p_caller: caller.id, p_key: key, p_hash: hash, p_name: name, p_phone: text(a.phone, 30), p_notes: text(a.notes) });
+      const cu = await payRpc('api_create_customer', { p_caller: caller.id, p_key: key, p_hash: hash, p_name: name, p_phone: text(a.phone, 30), p_notes: text(a.notes),
+        ...(isUuid(a.id) ? { p_id: a.id } : {}) }, null, offlineAt(a.offline_at));
       if (!Object.keys(extra).length) return cu;
       return rpc('api_update_customer', { p_caller: caller.id, p_key: newKey(), p_hash: hash, p_customer: cu.id, p_changes: extra });
     },
@@ -885,13 +1056,33 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'money');
       const day = /^\d{4}-\d{2}-\d{2}$/.test(a?.day || '') ? a.day : null;
       const raw = await rpc('api_day_data', { p_caller: caller.id, p_day: day });
-      const deleted = await rpc('api_day_deleted', { p_caller: caller.id, p_day: raw.day });
-      const stock = await rpc('api_day_stock', { p_caller: caller.id, p_day: raw.day });
-      // owners: each money account's day (who paid what into which account)
-      const acc = core.can(caller.perms, 'settings') ? dayAccountsFromDb(await rpc('api_day_accounts', { p_caller: caller.id, p_day: raw.day })) : null;
+      // the rest is read at the same time (23 Oct 2026: one after another made the evening summary slow)
+      const [deleted, stock, accRaw, mo, gstRaw, kraw] = await Promise.all([
+        rpc('api_day_deleted', { p_caller: caller.id, p_day: raw.day }),
+        rpc('api_day_stock', { p_caller: caller.id, p_day: raw.day }),
+        // owners: each money account's day (who paid what into which account)
+        core.can(caller.perms, 'settings') ? rpc('api_day_accounts', { p_caller: caller.id, p_day: raw.day }) : null,
+        // money out that day (expenses, money moved) and the drawer's cash book (23 Oct 2026)
+        rpc('api_day_money', { p_caller: caller.id, p_day: raw.day }),
+        core.can(caller.perms, 'stock') ? rpc('api_gst_alerts', { p_caller: caller.id }) : null,
+        core.can(caller.perms, 'khata') ? rpc('api_khata_data', { p_caller: caller.id, p_customer: null }) : null,
+      ]);
+      const acc = accRaw ? dayAccountsFromDb(accRaw) : null;
+      const gstAlerts = (gstRaw || []).map((g) => ({ name: g.name, gstin: g.gstin, status: g.status, cancelDate: g.cancel_date || null }));
+      const expenses = (mo?.expenses || []).map((e) => ({ id: e.id, kind: e.kind, category: e.category, amount: Number(e.amount), accountId: e.account_id,
+        isDrawer: !!e.is_drawer, mode: e.mode, gstAmount: e.gst_amount == null ? null : Number(e.gst_amount), paidTo: e.paid_to || e.supplier || null,
+        note: e.note || null, at: e.at, by: e.by || null }));
+      const transfers = (mo?.transfers || []).map((x) => ({ amount: Number(x.amount), from: x.from, to: x.to, fromAccount: x.from_account, toAccount: x.to_account,
+        fromDrawer: !!x.from_drawer, toDrawer: !!x.to_drawer, reason: x.reason, at: x.at, by: x.by || null }));
+      if (acc) { // the account tally shows money out and moves too
+        for (const e of expenses) acc.parts.push({ accountId: e.accountId, amount: -e.amount, mode: e.mode, kind: 'expense', at: e.at, customer: e.paidTo || '' });
+        for (const x of transfers) {
+          acc.parts.push({ accountId: x.fromAccount, amount: -x.amount, kind: 'transfer', at: x.at, customer: x.to });
+          acc.parts.push({ accountId: x.toAccount, amount: x.amount, kind: 'transfer', at: x.at, customer: x.from });
+        }
+      }
       let reminders = []; let toReceive = 0;
-      if (core.can(caller.perms, 'khata')) {
-        const kraw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: null });
+      if (kraw) {
         const k = coreKhataFromDb(kraw);
         const sides = core.visibleSides(caller.perms);
         toReceive = r2(kraw.customers.reduce((x, c) => x + core.customerLedger({ custId: c.id, ...k, sides, allSides: sides }).due, 0));
@@ -916,6 +1107,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         stock: stock ? dayStockFromDb(stock) : null,
         lastWeek: raw.last_week ? { total: Number(raw.last_week.total), n: Number(raw.last_week.n) } : null,
         weightWarnPct: Number(raw.settings.weight_warn_pct ?? 5), isToday: raw.day === raw.today,
+        expenses, transfers, cashBook: mo?.cash_book || null, gstAlerts,
       });
       return { day: raw.day, today: raw.today, timezone: raw.timezone, shop: raw.shop, kacha: core.can(caller.perms, 'kacha'),
         khata: core.can(caller.perms, 'khata'), summary, account_parts: acc ? acc.parts : undefined };
@@ -1178,6 +1370,58 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return rpc('api_set_item_stock', { p_caller: caller.id, p_key: key, p_hash: hash, p_item: uuid(a?.item_id, 'Which item?'), p_stock: stock });
     },
 
+    // ---------- fingerprint phones (23 Oct 2026) ----------
+    /** My fingerprint phones (person_id: someone else's — people managers). */
+    async passkeys(caller, a) {
+      const person = a?.person_id ? uuid(a.person_id, 'Who?') : null;
+      if (person && person !== caller.id) need(caller, 'people');
+      return rpc('api_passkeys', { p_caller: caller.id, p_person: person });
+    },
+    async passkeyRemove(caller, a, key, hash) {
+      return rpc('api_passkey_remove', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which phone?') });
+    },
+
+    // ---------- is the supplier's GST number active? (23 Oct 2026) ----------
+    /** Suppliers with their GST status; service = whether the automatic check is switched on. */
+    async suppliers(caller) {
+      need(caller, 'stock');
+      return { suppliers: await rpc('api_suppliers', { p_caller: caller.id }), service: !!gstLookup, portal: core.GST_PORTAL_SEARCH };
+    },
+
+    /**
+     * Check a GST number with the GST data service (when switched on). A check from the last 7 days is used again
+     * (each check costs money) unless refresh. Returns { service, check } — check null when it couldn't be checked.
+     */
+    async gstCheck(caller, a, key, hash) {
+      need(caller, 'stock');
+      const g = core.checkGstin(a?.gstin);
+      if (!g.ok) throw bad('That GST number has a mistake. Please check it.');
+      if (!a.refresh) {
+        const last = await rpc('api_gst_last', { p_caller: caller.id, p_gstin: g.gstin, p_days: 7 });
+        if (last) return { service: !!gstLookup, check: last, cached: true };
+      }
+      if (!gstLookup) return { service: false, check: null };
+      let ans;
+      try { ans = core.readGstAnswer(await gstLookup(g.gstin)); } catch (e) { console.error('gstCheck:', e?.message); ans = null; }
+      if (!ans) return { service: true, check: null, failed: true };
+      const check = await rpc('api_gst_save', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+        gstin: g.gstin, status: ans.status, legal_name: ans.legalName, trade_name: ans.tradeName, reg_date: ans.regDate,
+        cancel_date: ans.cancelDate, taxpayer_type: ans.taxpayerType, source: 'service' } });
+      return { service: true, check };
+    },
+
+    /** "I checked on the GST portal": status (+ cancelled since, the name shown there). */
+    async gstMark(caller, a, key, hash) {
+      need(caller, 'stock');
+      const g = core.checkGstin(a?.gstin);
+      if (!g.ok) throw bad('That GST number has a mistake. Please check it.');
+      if (!core.GST_STATUSES.includes(a.status)) throw bad('Choose what the GST portal says.');
+      const cancel = a.cancel_date && DAY.test(a.cancel_date) ? a.cancel_date : null;
+      return rpc('api_gst_save', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+        gstin: g.gstin, status: a.status, legal_name: text(a.legal_name, 200), cancel_date: a.status === 'active' ? null : cancel,
+        source: 'portal', note: text(a.note, 300) } });
+    },
+
     // ---------- Ask Claude (steel guide) ----------
     async askSteelQuestion(caller, a) {
       const q = text(a.question, 1000);
@@ -1215,8 +1459,113 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     return { companies: (due || []).length, sent };
   }
 
-  return { ops, buildItems, runEvening, eveningNote };
+  /** The GST data service checks suppliers again (every 30 days, those with bills in the last 6 months), a few per run. */
+  async function runGstChecks(limit = 5) {
+    if (!gstLookup) return { skipped: 'no_gst_service' };
+    const due = (await rpc('api_gst_due', { p_limit: limit })) || [];
+    let checked = 0;
+    for (const d of due) {
+      let ans = null;
+      try { ans = core.readGstAnswer(await gstLookup(d.gstin)); } catch (e) { console.error('gst job:', e?.message); }
+      if (!ans) continue;
+      await rpc('api_gst_save_job', { p_company: d.company_id, p: { gstin: d.gstin, status: ans.status, legal_name: ans.legalName, trade_name: ans.tradeName,
+        reg_date: ans.regDate, cancel_date: ans.cancelDate, taxpayer_type: ans.taxpayerType } });
+      checked++;
+    }
+    return { due: due.length, checked };
+  }
+
+  return { ops, buildItems, runEvening, runGstChecks, eveningNote };
 }
+
+/**
+ * The GST data service (switched on when the owner adds its key). provider: 'sandbox' (sandbox.co.in — POST /authenticate
+ * with x-api-key + x-api-secret → data.access_token, 24 h, sent as Authorization without "Bearer"; then
+ * POST /gst/compliance/public/gstin/search {gstin} → data.data {sts, lgnm, tradeNam, rgdt, cxdt}, checked 23 Oct 2026), 'cashfree', or
+ * 'custom' (url with {gstin}, method, headers as JSON). Returns (gstin) → the service's JSON, or null when not set up.
+ */
+export function makeGstLookup({ provider, key, secret, url, method, headers, fetchFn = fetch } = {}) {
+  if (!provider || !key) return null;
+  const json = async (r) => { const t = await r.text(); try { return JSON.parse(t); } catch { return { message: t.slice(0, 200) }; } };
+  if (provider === 'sandbox') {
+    let token = null; let until = 0;
+    const base = url || 'https://api.sandbox.co.in';
+    return async (gstin) => {
+      if (!token || Date.now() > until) {
+        const r = await fetchFn(`${base}/authenticate`, { method: 'POST', headers: { 'x-api-key': key, 'x-api-secret': secret || '', 'x-api-version': '1.0' } });
+        const b = await json(r);
+        token = b.access_token || b.data?.access_token || null;
+        if (!token) throw new Error(`gst auth ${r.status}`);
+        until = Date.now() + 20 * 3600 * 1000;
+      }
+      const r = await fetchFn(`${base}/gst/compliance/public/gstin/search`, { method: 'POST',
+        headers: { Authorization: token, 'x-api-key': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ gstin }) });
+      return json(r);
+    };
+  }
+  if (provider === 'cashfree') {
+    const endpoint = url || 'https://api.cashfree.com/verification/gstin';
+    return async (gstin) => json(await fetchFn(endpoint, { method: 'POST',
+      headers: { 'x-client-id': key, 'x-client-secret': secret || '', 'Content-Type': 'application/json' }, body: JSON.stringify({ GSTIN: gstin, gstin }) }));
+  }
+  if (provider === 'custom' && url) {
+    let extra = {};
+    try { extra = headers ? JSON.parse(headers) : {}; } catch { extra = {}; }
+    const m = (method || 'GET').toUpperCase();
+    return async (gstin) => json(await fetchFn(url.replace('{gstin}', encodeURIComponent(gstin)), {
+      method: m, headers: { ...extra, ...(m === 'POST' ? { 'Content-Type': 'application/json' } : {}) }, ...(m === 'POST' ? { body: JSON.stringify({ gstin }) } : {}) }));
+  }
+  return null;
+}
+
+// ---------- fingerprint / face unlock (passkeys, 23 Oct 2026) ----------
+/** The app's own addresses that may use fingerprint unlock (the server checks the phone's answer came from one of them). */
+export const PASSKEY_ORIGINS = ['https://srs-trading-app.bansalparth12345.workers.dev', 'http://localhost:8173', 'http://localhost:8174', 'http://localhost:5173'];
+
+/**
+ * These run before the PIN unlock (unlocking with the finger IS the unlock). who: { user, session, unlocked, person }.
+ *   passkeyBegin  { purpose: 'unlock' | 'register' } → challenge (+ for register: the details the phone needs)
+ *   passkeyRegister { challenge, clientDataJSON, attestationObject, label } — needs a PIN unlock in the last 10 minutes
+ *   passkeyUnlock { challenge, credential_id, clientDataJSON, authenticatorData, signature }
+ */
+export function makePasskeyOps({ core, rpc, origins = PASSKEY_ORIGINS, appName = 'SRS Trading' }) {
+  const strOf = (v, max) => { const x = String(v ?? ''); if (!x || x.length > max || !/^[A-Za-z0-9_-]+$/.test(x)) throw bad('Please try again.'); return x; };
+  const toApi = (e) => { if (e instanceof core.WebAuthnError) return new ApiError(401, 'passkey_failed', 'The fingerprint could not be checked. Use your PIN.', { reason: e.code }); return e; };
+  return {
+    async passkeyBegin(who, a) {
+      const purpose = a?.purpose === 'register' ? 'register' : 'unlock';
+      if (purpose === 'register' && !who.unlocked) throw new ApiError(401, 'pin_required', 'Enter your PIN.');
+      const r = await rpc('api_passkey_begin', { p_user: who.user, p_session: who.session, p_purpose: purpose });
+      const ids = (r.credentials || []).map((k) => k.id);
+      if (purpose === 'unlock') return { challenge: r.challenge, credentials: ids };
+      return { challenge: r.challenge, exclude: ids, user: { id: core.b64uEncode(new TextEncoder().encode(r.person_id)), name: who.phone || r.name, displayName: r.name }, rp: { name: appName } };
+    },
+    async passkeyRegister(who, a) {
+      if (!who.unlocked) throw new ApiError(401, 'pin_required', 'Enter your PIN.');
+      const challenge = strOf(a?.challenge, 100);
+      let v;
+      try { v = await core.verifyRegistration({ clientDataJSON: strOf(a.clientDataJSON, 4000), attestationObject: strOf(a.attestationObject, 6000) }, { challenge, origins }); }
+      catch (e) { throw toApi(e); }
+      return rpc('api_passkey_save', { p_user: who.user, p_session: who.session, p_challenge: challenge, p_credential_id: v.credentialId,
+        p_public_key: v.jwk, p_alg: v.alg, p_sign_count: v.signCount, p_label: text(a.label, 60) });
+    },
+    async passkeyUnlock(who, a) {
+      const challenge = strOf(a?.challenge, 100);
+      const credId = strOf(a?.credential_id, 1400);
+      const k = await rpc('api_passkey_key', { p_user: who.user, p_credential_id: credId });
+      if (!k) throw new ApiError(401, 'passkey_failed', 'Fingerprint is not switched on for this phone any more. Use your PIN.', { reason: 'unknown_key' });
+      let v;
+      try {
+        v = await core.verifyAssertion({ clientDataJSON: strOf(a.clientDataJSON, 4000), authenticatorData: strOf(a.authenticatorData, 2000), signature: strOf(a.signature, 2000) },
+          { challenge, origins, jwk: k.public_key, alg: k.alg });
+      } catch (e) { throw toApi(e); }
+      const r = await rpc('api_passkey_unlock', { p_user: who.user, p_session: who.session, p_challenge: challenge, p_credential_id: credId, p_sign_count: v.signCount });
+      if (!r?.ok) throw new ApiError(401, 'passkey_failed', r?.reason === 'blocked' ? 'Too many wrong PINs. Log in again with an SMS code.' : 'The fingerprint could not be checked. Use your PIN.', { reason: r?.reason });
+      return { ok: true };
+    },
+  };
+}
+export const PASSKEY_OPS = new Set(['passkeyBegin', 'passkeyRegister', 'passkeyUnlock']);
 
 /** Same instructions as the prototype's Ask Claude screen. */
 export function steelPrompt({ lang, stock, question }) {
@@ -1232,7 +1581,8 @@ Question: ${question}`;
 
 /** Operations that change something need a request key; readers don't. */
 export const READ_OPS = new Set(['accounts', 'weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
-  'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill']);
+  'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
+  'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 
 /** Database error code → HTTP answer the app can show. */
 export function mapDbError(code, message) {

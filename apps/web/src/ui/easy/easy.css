@@ -26,3 +26,4 @@ html.easy .main{zoom:1.16}
 .cstep-n{width:32px;height:32px;border-radius:16px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;background:var(--sunk);color:var(--ink-2)}
 .cstep-n.done{background:var(--ok);color:#fff}.cstep-n.now{background:var(--accent);color:var(--accent-ink)}
 .cstep-t{font-weight:700;font-size:17px}
+.etiles>.etile:last-child:nth-child(odd){grid-column:1/-1;min-height:104px}

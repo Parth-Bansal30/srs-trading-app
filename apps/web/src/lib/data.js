@@ -1,6 +1,6 @@
 // Reading data for the screens. The database only returns what this person may see
 // (no money for the weigher, no kacha without permission), so screens stay simple.
-import { cashOf } from '@srs/core';
+import { cashOf, businessDate } from '@srs/core';
 import { db } from './backend.js';
 import { call } from './api.js';
 import { dayStartISO } from './format.js';
@@ -27,10 +27,16 @@ export async function loadToday({ perms, tz }) {
       .neq('status', 'deleted').order('created_at', { ascending: false }).limit(8)).then((rows) => { out.recent = rows; }));
   }
   if (perms.money && perms.today) {
-    // cash in the drawer today: the cash part of every payment (a split payment is only partly cash)
-    jobs.push(q(db.from('payments').select('amount,mode,parts:payment_parts(mode,amount)').neq('mode', 'Adjust').gte('received_at', since)).then((rows) => {
-      out.cash = rows.reduce((a, r) => a + cashOf(r), 0);
-    }));
+    // what should be in the drawer now: the cash book (left last night + cash in − cash out, 23 Oct 2026);
+    // if that can't be read, the old way: the cash part of today's payments
+    jobs.push(call('cashBook', {}).then((cb) => { out.cash = Number(cb.expected); out.cashBook = cb; })
+      .catch(() => q(db.from('payments').select('amount,mode,parts:payment_parts(mode,amount)').neq('mode', 'Adjust').gte('received_at', since)).then((rows) => {
+        out.cash = rows.reduce((a, r) => a + cashOf(r), 0);
+      })));
+  }
+  if (perms.expenses || perms.settings) {
+    const day = businessDate(new Date().toISOString(), tz);
+    jobs.push(call('expenses', { from: day, to: day }).then((x) => { out.expenses = x.totals; }));
   }
   if (perms.weigh) jobs.push(call('weighingList', {}).then((list) => { out.counts.toWeigh = list.length; out.weighing = list; }));
   if (perms.money && perms.khata) {

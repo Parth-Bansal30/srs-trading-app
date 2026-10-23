@@ -63,3 +63,22 @@ They expire on 31 March 2027. **They must never be added to the production proje
 4. An SMS provider account (recommended: MSG91), with its key entered into Supabase secrets by the owner.
 Then: a `send-sms` hook function connects Supabase Auth to the provider (built once the account exists, so it
 can be tested with real messages).
+
+## Fingerprint / face unlock (23 Oct 2026)
+- After the PIN, the app offers once per person per phone: "Unlock with your fingerprint next time?" (More → Fingerprint unlock switches it on or off).
+  On a phone others use too, the offer warns that anyone whose finger opens that phone could open the account.
+- It is a passkey (WebAuthn, platform authenticator, user verification required). The private key never leaves the phone; the
+  server keeps the public key (`private.passkeys`). Switching on needs a PIN unlock in the last 10 minutes on that login session.
+- Unlock: a fresh one-time challenge from the server (3 minutes, bound to the login session), signed by the phone, checked by
+  the api with the saved public key → the same `session_unlocks` row as the PIN (`method = passkey`). A signature counter that
+  goes backwards (a copied key) switches that key off. A PIN blocked after 10 wrong tries still needs a new SMS code.
+- If the finger fails or is cancelled, the PIN pad is right there. Up to 5 phones per person; the owner can remove one
+  (People → person → Fingerprint phones); "sign out everywhere" removes all.
+
+## Without internet (23 Oct 2026)
+- A person who was fully logged in on this phone before can open the app offline. The PIN is then checked on the phone
+  against a scrambled copy (PBKDF2-SHA256, 150,000 rounds, random salt) kept after the server last accepted it; 5 wrong
+  tries → 15 minutes wait on that phone. The finger is checked on the phone with the kept public key.
+- Nothing reaches the server until the internet is back: the waiting entries are then sent with their request keys (never
+  twice). If the server wants the PIN again first, the app says "Unlock to send". A PIN unlock lasts a working day (12 h) on
+  the phone too.

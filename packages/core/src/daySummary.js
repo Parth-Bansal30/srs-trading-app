@@ -1,5 +1,6 @@
 import { r2 } from './round.js';
 import { modeAmounts, accountTally } from './money.js';
+import { expenseTotals, cashDay } from './moneyOut.js';
 
 const sum = (xs, f = (x) => x) => r2(xs.reduce((a, x) => a + Number(f(x) || 0), 0));
 const ADVANCE_KINDS = ['advance', 'refund', 'transfer'];
@@ -24,10 +25,15 @@ const MODES = ['Cash', 'UPI', 'Bank', 'Cheque'];
  * reminders: customers who should get a reminder [{ name, due, days }]
  * toReceive: everything customers owe right now (khata)
  * lastWeek: { total, n } for the same weekday a week earlier
+ * expenses: money out that day (23 Oct 2026) [{ kind, category, amount, accountId, isDrawer, gstAmount, paidTo, at, by }]
+ * transfers: money moved between accounts that day [{ amount, from, to, fromDrawer, toDrawer, reason, at }]
+ * gstAlerts: suppliers the shop dealt with lately whose GST number is no longer active [{ name, gstin, status, cancelDate }]
+ * cashBook: the drawer's cash book for the day (opening, in, out, expected, counts) — when given, the cash drawer
+ *           is worked out from it (what was left last night + cash in − cash out); without it, the old way (cash in only).
  */
 export function daySummary({
   orders = [], payments = [], cashClose = null, weighed = [], waiting = [], cancelled = [], deleted = [], reminders = [], stock = null, accounts = null,
-  toReceive = 0, lastWeek = null, weightWarnPct = 5, isToday = false,
+  toReceive = 0, lastWeek = null, weightWarnPct = 5, isToday = false, expenses = [], transfers = [], cashBook = null, gstAlerts = [],
 }) {
   // ---- sales: slips finished today
   const slips = orders.map((o) => {
@@ -62,9 +68,20 @@ export function daySummary({
     out: sum(real.filter((p) => p.amount < 0), (p) => -p.amount),
   };
 
-  // ---- cash drawer
-  const cash = { expected: byMode.Cash, counted: cashClose ? r2(Number(cashClose.counted)) : null, by: cashClose?.by || null, at: cashClose?.at || null };
-  cash.diff = cash.counted == null ? null : r2(cash.counted - cash.expected);
+  // ---- money out: shop expenses, supplier payments, owner's own; money moved between accounts
+  const out = { ...expenseTotals(expenses), list: expenses.filter((e) => e.status == null || e.status === 'ok').map((e) => ({ ...e, amount: r2(Number(e.amount)) })) };
+  const moved = transfers.filter((x) => x.status == null || x.status === 'ok').map((x) => ({ ...x, amount: r2(Number(x.amount)) }));
+
+  // ---- cash drawer: the cash book when there is one (opening + in − out), else cash in only (the old way)
+  let cash;
+  const cb = cashDay(cashBook);
+  if (cb) {
+    cash = { book: true, opening: cb.opening, in: cb.in, out: cb.out, expected: cb.counted != null ? cb.countExpected : cb.expected, now: cb.expected,
+      counted: cb.counted, diff: cb.diff, takenOut: cb.takenOut, left: cb.left, by: cb.by, at: cb.at };
+  } else {
+    cash = { book: false, expected: byMode.Cash, counted: cashClose ? r2(Number(cashClose.counted)) : null, by: cashClose?.by || null, at: cashClose?.at || null };
+    cash.diff = cash.counted == null ? null : r2(cash.counted - cash.expected);
+  }
 
   // ---- khata
   const khata = { newDues: sales.toKhata, collected: money.oldDues, toReceive: r2(toReceive) };
@@ -72,7 +89,7 @@ export function daySummary({
   // ---- things that need a look (most important first)
   const look = [];
   if (cash.diff != null && cash.diff !== 0) look.push({ type: cash.diff < 0 ? 'cash_short' : 'cash_over', amount: Math.abs(cash.diff) });
-  if (cash.diff == null && !isToday && cash.expected !== 0) look.push({ type: 'cash_not_counted', amount: cash.expected });
+  if (cash.diff == null && !isToday && (cash.book ? cash.in !== 0 || cash.out !== 0 : cash.expected !== 0)) look.push({ type: 'cash_not_counted', amount: cash.expected });
   for (const o of orders) {
     for (const it of o.items || []) {
       if (!it.special && it.stdRate != null && Number(it.rate) < Number(it.stdRate)) {
@@ -95,6 +112,7 @@ export function daySummary({
   const acc = accounts ? accountTally({ accounts: accounts.list || [], parts: accounts.parts || [], payments: real, checks: accounts.checks || [] }) : null;
   if (acc && acc.notPlaced !== 0 && (accounts.list || []).some((a) => !a.isDrawer)) look.push({ type: 'not_placed', amount: acc.notPlaced });
   if (stock?.noStock?.length) look.push({ type: 'no_stock', n: stock.noStock.length, slips: stock.noStock.slice(0, 5) });
+  for (const g of gstAlerts) look.push({ type: 'supplier_gst', name: g.name, gstin: g.gstin, status: g.status, cancelDate: g.cancelDate || null });
   for (const p of real.filter((x) => x.amount < 0 && x.kind === 'refund' && !x.rev)) look.push({ type: 'money_out', customer: p.customer, amount: -p.amount, mode: p.mode });
   for (const r of [...reminders].sort((a, b) => b.due - a.due).slice(0, 3)) look.push({ type: 'overdue', customer: r.name, amount: r2(r.due), days: r.days });
   if (waiting.length) look.push({ type: 'waiting', n: waiting.length, customers: [...new Set(waiting.map((w) => w.customer))].slice(0, 3) });
@@ -108,5 +126,5 @@ export function daySummary({
   }
   const top = [...byCust.values()].sort((a, b) => b.total - a.total).slice(0, 3);
 
-  return { sales, slips, money, cash, khata, look, top, lastWeek, stock, accounts: acc };
+  return { sales, slips, money, cash, khata, look, top, lastWeek, stock, accounts: acc, out, moved };
 }

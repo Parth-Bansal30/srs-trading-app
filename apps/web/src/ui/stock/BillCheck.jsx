@@ -3,6 +3,7 @@
 import { t } from '../../lib/i18n.js';
 import { money, shortDate } from '../../lib/format.js';
 import { Icon } from '../kit.jsx';
+import { gstWords } from './GstStatus.jsx';
 
 const LOOK = { bad: 'CircleAlert', warn: 'TriangleAlert' };
 
@@ -16,7 +17,7 @@ export function checkWords(c, tz) {
     case 'rate_far': return [c.times >= 1 ? t('chk_rate_t', money(c.rate), c.times, c.code || '') : t('chk_rate_low_t', money(c.rate), c.code || ''),
       t('chk_rate_s', c.n, c.code || '', money(c.low), money(c.high), c.last.supplier || '—', money(c.last.rate), shortDate(c.last.date, tz))];
     case 'duplicate': return [t('chk_dup_t', c.billNo || '—', c.date ? shortDate(c.date, tz) : ''), t('chk_dup_s')];
-    default: return [c.type, ''];
+    default: return c.type.startsWith('gst_') ? gstWords(c) : [c.type, ''];
   }
 }
 

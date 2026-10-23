@@ -3,7 +3,10 @@ import { useEffect, useState } from 'preact/hooks';
 import { r2, calcItem } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
-import { loadOrder, dimText, lengthsText, shapeName, totalPcs } from '../../lib/orders.js';
+import { loadOrderAny, dimText, lengthsText, shapeName, totalPcs } from '../../lib/orders.js';
+import { outboxVersion } from '../../lib/offline/outbox.js';
+import { usesOf, payPatch } from '../../lib/offline/local.js';
+import { online } from '../../lib/net.js';
 import { db } from '../../lib/backend.js';
 import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate, time } from '../../lib/format.js';
@@ -33,14 +36,15 @@ export function Slip({ id }) {
   const [stock, setStock] = useState(null);      // to show / change which stock each item comes from
   const [pickFor, setPickFor] = useState(null);  // item whose stock is being changed
   const tz = company.value?.timezone;
-  const load = () => loadOrder(id).then((x) => {
+  const load = () => loadOrderAny(id).then((x) => {
     setO(x);
+    if (x?.local) { setReq(null); return; }   // made on this phone, not sent yet
     if (x?.status === 'deleted' && x.deleted_by) db.from('people').select('display_name').eq('id', x.deleted_by).maybeSingle().then(({ data }) => setDeleter(data?.display_name || '')).catch(() => {});
     if (x && x.status !== 'deleted' && can('delete')) call('deletedSlips', { order_id: x.id }).then((r) => setReq(r.requests?.[0] || null)).catch(() => {});
     else setReq(null);
     if (x && (x.order_items.some((i) => i.stock_item_id) || ['estimate', 'accepted'].includes(x.status))) loadStock(true).then(setStock).catch(() => {});
   }).catch(() => setO(null));
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [id, outboxVersion.value]);
   const decline = useAction('declineDelete');
   const setStockOf = useAction('setItemStock');
   const done = (msg) => { setSheet(null); toast(msg || t('done_ok')); load(); };
@@ -54,8 +58,10 @@ export function Slip({ id }) {
   const deleted = o.status === 'deleted';
   const showBar = !deleted && o.status !== 'cancelled' && (o.status !== 'done' || justDone || (extra > 0 && can('money')));
   const billed = o.status === 'done' || o.deleted_from === 'done';
-  const menu = deleted ? [] : can('delete') ? ['delete'] : (can('orders') || can('new')) ? ['ask'] : [];
-  const stockOpen = ['estimate', 'accepted'].includes(o.status) && (can('new') || can('weigh'));
+  // made on this phone (not sent yet) or with entries waiting: only what works without internet
+  const local = !!o.local; const waits = !!o.pending; const net = online.value && !waits;
+  const menu = deleted || local ? [] : can('delete') ? ['delete'] : (can('orders') || can('new')) ? ['ask'] : [];
+  const stockOpen = ['estimate', 'accepted'].includes(o.status) && (can('new') || can('weigh')) && !local;
   const needOf = (it) => {
     const c = calcItem({ shape: it.shape, unit: it.unit, d: it.dims, rows: it.order_item_lengths.map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
       rate: 0, cutRate: 0, density: Number(it.density) }, 'est', { minInch: o.pricing_rules?.min_inch ?? 1 });
@@ -79,7 +85,16 @@ export function Slip({ id }) {
               <div class="muted" style="font-size:13px">{due > 0 ? t('pickup_done_due', t(BILLS[o.bill_type]?.word), money(due, true)) : t('pickup_done_paid', t(BILLS[o.bill_type]?.word))}</div></div>
           </div>
         )}
-        {o.status === 'done' && can('money') && <GiveSlip o={o} autoOpen={route.value.query.send === '1'} />}
+        {waits && (
+          <div class="notice tone-accent row" style="gap:10px;margin-bottom:12px;align-items:flex-start">
+            <Icon name="CloudUpload" size={18} />
+            <span class="grow">{local ? t('off_slip_no', o.slip_no) : t('off_waiting')}
+              <span style="display:block;font-weight:500;font-size:12.5px">{local ? t('off_slip_no_s') : t('off_slip_wait_s')}</span></span>
+            <button class="link" style="min-height:0" onClick={() => go('/waiting')}>{t('see')}</button>
+          </div>
+        )}
+        {o.status === 'done' && can('money') && !waits && <GiveSlip o={o} autoOpen={route.value.query.send === '1'} />}
+        {o.status === 'done' && can('money') && waits && <div class="notice tone-warn" style="margin-bottom:12px;font-size:13.5px">{t('off_give_later')}</div>}
         {o.status === 'cancelled' && <div class="card pad tone-bad" style="margin-bottom:12px;font-weight:600">{t('cancelled_because', o.cancel_reason)}</div>}
         {deleted && (
           <div class="del-banner tone-bad">
@@ -138,7 +153,7 @@ export function Slip({ id }) {
               {o.payments.length === 0 ? <div class="li muted">{t('no_payments')}</div> : o.payments.map((p) => (
                 <div class="li" style={p.reversed ? 'opacity:.5' : ''}>
                   <div class={`iconbox tone-${Number(p.amount) < 0 ? 'bad' : 'ok'}`}><Icon name={p.mode === 'Adjust' ? 'RefreshCw' : modeIcon(p.mode)} size={18} /></div>
-                  <div class="grow"><div class="t">{t(KIND_WORD[p.kind] || p.kind)} · {p.mode === 'Adjust' ? '—' : modeText(p.mode)}</div>
+                  <div class="grow"><div class="t">{t(KIND_WORD[p.kind] || p.kind)} · {p.mode === 'Adjust' ? '—' : modeText(p.mode)}{p.pending && <span class="faint" style="font-weight:600"> · <Icon name="CloudUpload" size={12} /> {t('off_waiting')}</span>}</div>
                     {p.payment_parts?.length > 0 && <div class="s">{p.payment_parts.map((x) => `${accName({ ...x.money_accounts })}${p.payment_parts.length > 1 ? ` ${money(Math.abs(x.amount))}` : ''}${x.method ? ` (${x.method})` : ''}`).join(' · ')}</div>}
                     <div class="s">{shortDate(p.received_at, tz)} · {time(p.received_at, tz)}{p.note ? ` · ${p.note}` : ''}</div></div>
                   <div class="num" style={`font-weight:700;color:${Number(p.amount) < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{money(p.amount)}</div>
@@ -151,7 +166,7 @@ export function Slip({ id }) {
 
       {showBar && <div class="actionbar">
         {o.status === 'estimate' && can('new') && (
-          <div class="row"><button class="btn btn-ghost" onClick={() => go(`/new?edit=${o.id}`)}><Icon name="FileText" size={18} />{t('act_edit')}</button>
+          <div class="row">{!local && <button class="btn btn-ghost" disabled={!net} onClick={() => go(`/new?edit=${o.id}`)}><Icon name="FileText" size={18} />{t('act_edit')}</button>}
             <button class="btn btn-accent grow" onClick={() => setSheet('accept')}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button></div>
         )}
         {o.status === 'accepted' && (
@@ -164,9 +179,10 @@ export function Slip({ id }) {
         )}
         {justDone && can('new') && <button class="btn btn-brand btn-block" onClick={() => go('/new')}><Icon name="Plus" size={20} stroke={2.4} />{t('next_order')}</button>}
         <div class="row" style="justify-content:center;gap:18px;margin-top:6px">
-          {['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
-          {o.status === 'done' && extra > 0 && can('money') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
-          {['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
+          {net && ['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
+          {net && o.status === 'done' && extra > 0 && can('money') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
+          {net && ['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
+          {!net && !local && ['accepted', 'weighed', 'done'].includes(o.status) && <span class="faint" style="font-size:12.5px">{t('off_more_later')}</span>}
         </div>
       </div>}
 
@@ -205,7 +221,9 @@ function AcceptSheet({ open, o, onClose, onDone }) {
   const [where, setWhere, accs] = useWhere(open && can('money'));
   const a = useAction('acceptOrder');
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
-  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null })
+  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null }, {
+    local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: { status: 'accepted', payment: can('money') ? payPatch(amt, whereArgs(where, Number(amt)), accs) : null } } },
+  })
     .then((r) => { if (can('money') && Number(amt) > 0) moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {});
   return (
     <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy || !!bad} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : t('accept')}</button>}>
@@ -224,7 +242,9 @@ function AdvanceSheet({ open, o, onClose, onDone }) {
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('adv_add')}
-      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }).then((r) => { moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {})}>{bad ? t(bad) : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }, {
+        local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: { payment: payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
+      }).then((r) => { moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {})}>{bad ? t(bad) : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
       <div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />

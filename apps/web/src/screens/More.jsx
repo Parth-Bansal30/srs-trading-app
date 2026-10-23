@@ -1,6 +1,12 @@
 // More — every other screen, plus language, appearance and log out.
 import { t, lang, setLang } from '../lib/i18n.js';
-import { me, company, can, lock, logOut, switchPerson } from '../lib/session.js';
+import { useEffect, useState } from 'preact/hooks';
+import { me, company, can, lock, logOut, switchPerson, fingerOn, switchOffFinger } from '../lib/session.js';
+import { passkeyReady } from '../lib/passkey.js';
+import { outbox } from '../lib/offline/outbox.js';
+import { online } from '../lib/net.js';
+import { toast } from '../ui/toast.js';
+import { turnFingerOn } from '../ui/FingerOffer.jsx';
 import { theme, applyTheme } from '../lib/theme.js';
 import { go } from '../lib/router.js';
 import { MENU } from '../config/navigation.js';
@@ -14,6 +20,9 @@ export function More() {
   const c = company.value;
   const trialLeft = c?.plan === 'trial' && c?.trial_ends_at ? Math.max(0, Math.ceil((new Date(c.trial_ends_at) - Date.now()) / 86400000)) : null;
   const items = MENU.filter((m) => m.id !== 'today' && (!m.perm || can(m.perm)));
+  const [sure, setSure] = useState(false);
+  // entries not sent yet would be lost: ask once ("tap again"), and show how many
+  const outLater = () => { if (outbox.value.length && !sure) { setSure(true); toast(t('off_logout_q', outbox.value.length), 6000); return; } logOut(); };
   return (
     <>
       <TopBar title={t('nav_more')} sub={`${me.value?.name} · ${company.value?.name}`} onBack={null} />
@@ -49,6 +58,8 @@ export function More() {
           <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:10px">{t('easy_note')}</div>
         </div>
 
+        <FingerSwitch />
+
         <div class="sec"><h3>{t('language')}</h3></div>
         <div class="seg">{APP.languages.map((l) => <button class={lang.value === l.id ? 'on' : ''} onClick={() => setLang(l.id)}>{l.label}</button>)}</div>
 
@@ -61,10 +72,33 @@ export function More() {
         <div class="card" style="margin-top:22px">
           <button class="li" onClick={lock}><div class="iconbox tone-neutral"><Icon name="Lock" /></div><div class="grow t">{t('lock')}</div></button>
           <button class="li" onClick={switchPerson}><div class="iconbox tone-neutral"><Icon name="Users" /></div><div class="grow t">{t('switch_person')}</div></button>
-          <button class="li" onClick={logOut}><div class="iconbox tone-bad"><Icon name="LogOut" /></div><div class="grow t">{t('log_out_phone')}</div></button>
+          <button class="li" onClick={outLater}><div class="iconbox tone-bad"><Icon name="LogOut" /></div><div class="grow t">{t('log_out_phone')}</div></button>
         </div>
         <div class="faint" style="text-align:center;font-size:12px;margin-top:18px">{APP.name} · v{APP.version}{BUILD ? ` · ${BUILD.slice(0, 10)} ${BUILD.slice(11, 16)} UTC` : ''}</div>
       </div>
     </>
+  );
+}
+
+/** Fingerprint / face unlock on this phone for the person using it. */
+function FingerSwitch() {
+  const [ready, setReady] = useState(null);
+  const [on, setOn] = useState(fingerOn());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { passkeyReady().then(setReady); }, []);
+  if (ready === null) return null;
+  const flip = async (want) => {
+    setBusy(true);
+    if (want) { const ok = await turnFingerOn(); setOn(ok); } else { await switchOffFinger(); setOn(false); toast(t('fp_off_done')); }
+    setBusy(false);
+  };
+  return (
+    <div class="card pad" style="margin-top:14px">
+      <label class="row" style="gap:12px">
+        <div class="iconbox tone-accent"><Icon name="Fingerprint" /></div>
+        <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{t('fp_title')}</div><div class="muted" style="font-size:13px">{ready ? t('fp_sub') : t('fp_none')}</div></div>
+        <input type="checkbox" class="switch" checked={on} disabled={!ready || busy || (!on && !online.value)} onChange={(e) => flip(e.currentTarget.checked)} />
+      </label>
+    </div>
   );
 }

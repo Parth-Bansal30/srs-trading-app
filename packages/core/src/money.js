@@ -13,15 +13,16 @@ import { r2 } from './round.js';
  * - Customers only ever see the mode ("Paid · UPI"), never an account name.
  */
 
-export const ACCOUNT_KINDS = Object.freeze(['cash', 'bank', 'upi', 'paytm', 'wallet', 'other']);
+/** 'safe' (23 Oct 2026) = cash kept outside the shop: at home, in a locker. */
+export const ACCOUNT_KINDS = Object.freeze(['cash', 'bank', 'upi', 'paytm', 'wallet', 'safe', 'other']);
 export const ACCOUNT_OWNERS = Object.freeze(['firm', 'personal']);
 export const MODES = Object.freeze(['Cash', 'UPI', 'Bank', 'Cheque']);
 /** How money reached a bank account (or "other"). */
 export const BANK_METHODS = Object.freeze(['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque']);
 
-/** The mode of one part: cash drawer = Cash; UPI / Paytm / wallet = UPI; bank / other: by method (default Bank). */
+/** The mode of one part: cash drawer / cash at home = Cash; UPI / Paytm / wallet = UPI; bank / other: by method (default Bank). */
 export function partMode(kind, method) {
-  if (kind === 'cash') return 'Cash';
+  if (kind === 'cash' || kind === 'safe') return 'Cash';
   if (kind === 'upi' || kind === 'paytm' || kind === 'wallet') return 'UPI';
   if (method === 'UPI') return 'UPI';
   if (method === 'Cheque') return 'Cheque';

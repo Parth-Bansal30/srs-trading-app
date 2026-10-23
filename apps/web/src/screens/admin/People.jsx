@@ -5,6 +5,8 @@ import { t } from '../../lib/i18n.js';
 import { me, can } from '../../lib/session.js';
 import { db } from '../../lib/backend.js';
 import { staff } from '../../lib/staff.js';
+import { call } from '../../lib/api.js';
+import { shortDate } from '../../lib/format.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
@@ -80,8 +82,30 @@ function PersonSheet({ p, onClose, onDone }) {
         <button class="li" disabled={busy} onClick={() => run('sign_out_everywhere', {})}><div class="iconbox tone-neutral"><Icon name="LogOut" size={18} /></div><div class="grow t">{t('sign_out_all')}</div></button>
         {!self && <button class="li" disabled={busy} onClick={() => run('set_active', { active: !p.active })}><div class="iconbox tone-bad"><Icon name="X" size={18} /></div><div class="grow t" style="color:var(--bad)">{p.active ? t('deactivate') : t('activate')}</div></button>}
       </div>
+      <FingerPhones person={p} />
       {err && <div class="error">{err}</div>}
     </Sheet>
+  );
+}
+
+/** The phones where this person unlocks with a fingerprint (23 Oct 2026) — the owner can remove one (a lost phone). */
+function FingerPhones({ person }) {
+  const [list, setList] = useState(null);
+  const load = () => call('passkeys', { person_id: person.id }).then(setList).catch(() => setList([]));
+  useEffect(() => { load(); }, [person.id]);
+  if (!list || !list.length) return null;
+  const remove = (k) => call('passkeyRemove', { id: k.id }).then(() => { toast(t('fp_removed')); load(); }).catch((e) => toast(e.message));
+  return (
+    <>
+      <div class="sec"><h3>{t('fp_phones', list.length)}</h3></div>
+      <div class="card">{list.map((k) => (
+        <div class="li">
+          <div class="iconbox tone-neutral"><Icon name="Fingerprint" size={18} /></div>
+          <div class="grow"><div class="t">{k.label || t('fp_phone')}</div><div class="s">{k.last_used_at ? t('fp_last_used', shortDate(k.last_used_at)) : shortDate(k.created_at)}</div></div>
+          <button class="link" style="color:var(--bad)" onClick={() => remove(k)}>{t('fp_remove')}</button>
+        </div>
+      ))}</div>
+    </>
   );
 }
 

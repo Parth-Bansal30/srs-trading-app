@@ -177,15 +177,24 @@ check('the finished slip moved into the khata', (await rows(owner, 'orders', `se
 check('the same payment can\'t be cancelled twice', (await api(owner, 'reversePayment', { payment_id: pickup.id, note: 'again' })).status === 409);
 const kp = await api(owner, 'recordPayment', { customer_id: CUST, amount: pickup.amount, mode: 'UPI', side: 'pakka', note: 'e2e khata' });
 check('khata payment recorded', kp.status === 200, short(kp.data));
-const cash = await api(owner, 'saveCashCount', { counted: 1000, note: 'e2e' });
 const today = core.businessDate(new Date().toISOString(), 'Asia/Kolkata');
+// 23 Oct 2026: the drawer is a cash book. What should be there = the last balance point (a count, or zero at the
+// start of the day before the drawer was ever counted) + every cash move after it: the cash part of payments,
+// minus expenses paid from the drawer, minus / plus money moved out of / into it. Worked out here independently.
+const [{ exp }] = await query(`with d as (select id from public.money_accounts where company_id = ${lit(co.id)} and is_drawer),
+  pt as (select b.at, b.balance from public.account_balances b where b.company_id = ${lit(co.id)} and b.account_id = (select id from d) order by b.at desc, b.created_at desc limit 1),
+  since as (select coalesce((select at from pt), ((${lit(today)})::date::timestamp at time zone 'Asia/Kolkata') - interval '1 microsecond') t)
+  select round(coalesce((select balance from pt), 0)
+    + coalesce((select sum(pp.amount) from public.payment_parts pp join public.payments p on p.id = pp.payment_id
+                where pp.company_id = ${lit(co.id)} and pp.account_id = (select id from d) and p.received_at > (select t from since)), 0)
+    - coalesce((select sum(e.amount) from public.expenses e where e.company_id = ${lit(co.id)} and e.account_id = (select id from d) and e.status = 'ok' and e.paid_at > (select t from since)), 0)
+    - coalesce((select sum(x.amount) from public.money_transfers x where x.company_id = ${lit(co.id)} and x.from_account = (select id from d) and x.status = 'ok' and x.at > (select t from since)), 0)
+    + coalesce((select sum(x.amount) from public.money_transfers x where x.company_id = ${lit(co.id)} and x.to_account = (select id from d) and x.status = 'ok' and x.at > (select t from since)), 0), 2) as exp`);
+const cb = await api(owner, 'cashBook', {});
+const cash = await api(owner, 'saveCashCount', { counted: 1000, note: 'e2e' });
 check('cash count filed under the shop\'s (Indian) date', cash.data.data?.business_date === today, short(cash.data));
-// the cash part of each payment (a payment split across accounts is only partly cash; older ones by their mode)
-const [{ exp }] = await query(`select coalesce(sum(case when exists (select 1 from public.payment_parts pp where pp.payment_id = p.id)
-    then (select coalesce(sum(pp.amount), 0) from public.payment_parts pp where pp.payment_id = p.id and pp.mode = 'Cash')
-    when p.mode = 'Cash' then p.amount else 0 end), 0)::numeric as exp
-  from public.payments p where p.company_id = ${lit(co.id)} and (p.received_at at time zone 'Asia/Kolkata')::date = ${lit(today)}`);
-check('expected cash = the cash part of today\'s payments', Number(cash.data.data?.expected) === Number(exp), `${cash.data.data?.expected} vs ${exp}`);
+check('expected cash = last count + cash in − cash out since (cash book)', Number(cash.data.data?.expected) === Number(exp), `${cash.data.data?.expected} vs ${exp}`);
+check('the cash book said the same just before', Number(cb.data.data?.expected) === Number(exp), `${cb.data.data?.expected} vs ${exp}`);
 check('weigher can\'t do the cash count', (await api(weigher, 'saveCashCount', { counted: 1 })).status === 403);
 
 console.log('\n9. Advance returned / moved / kept as credit, cancelling, old balances, reminders');

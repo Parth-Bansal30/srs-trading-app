@@ -29,3 +29,5 @@ jobs:
         env:
           TZ: ${{ matrix.tz }}
         run: node --test supabase/functions/api/ops.test.mjs
+      - name: App - entries made without internet (unit tests)
+        run: node --test apps/web/test/overlay.test.mjs

@@ -4,6 +4,8 @@ import { SHAPES } from '@srs/core';
 import { t } from './i18n.js';
 import { SHAPE_LOOK } from '../config/options.js';
 import { money, kg, shortDate } from './format.js';
+import { outbox } from './offline/outbox.js';
+import { localOrder, patchOrder } from './offline/overlay.js';
 
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
 const ORDER = 'id,slip_no,internal_no,status,bill_type,customer_id,created_at,accepted_at,weighed_at,done_at,cancelled_at,cancel_reason,deleted_at,deleted_by,delete_reason,deleted_from,pay_mode,in_khata,gst_pct,kacha_pct,total_weight,base_amount,material_amount,cutting_amount,gst_amount,total_amount,pricing_rules';
@@ -19,6 +21,16 @@ export async function loadOrder(id) {
   o.paid = sum(() => true);
   o.advance = sum((p) => ['advance', 'refund', 'transfer'].includes(p.kind) || (p.kind === 'reversal' && o.payments.find((x) => x.id === p.reverses_payment_id)?.kind === 'advance'));
   return o;
+}
+
+/**
+ * A slip for the screens, with what is waiting on this phone on top (23 Oct 2026): a slip made offline comes
+ * from the phone; a server slip gets its waiting weights / pickup / advance shown (marked pending).
+ */
+export async function loadOrderAny(id) {
+  const mine = localOrder(outbox.value, id);
+  if (mine) return mine;
+  return patchOrder(await loadOrder(id), outbox.value);
 }
 
 export async function listOrders({ stage, search, limit = 60 } = {}) {

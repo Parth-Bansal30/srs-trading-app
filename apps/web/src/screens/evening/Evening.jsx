@@ -16,6 +16,7 @@ import { Preview } from '../../ui/docs/Preview.jsx';
 import { DayReport } from '../../ui/docs/DayReport.jsx';
 import { call } from '../../lib/api.js';
 import { accName, kindOf, modeText } from '../../lib/accounts.js';
+import { catOf, catWord, moveWord } from '../../lib/expenses.js';
 import '../../ui/money/money.css';
 import './evening.css';
 
@@ -87,7 +88,7 @@ export function Evening() {
           <button class={`card eve-tile tone-${cashTone}`} onClick={() => go('/reports')}>
             <div class="eve-k">{t('eve_cash')}</div>
             <div class="num eve-v">{s.cash.counted == null ? t('eve_not_counted') : s.cash.diff === 0 ? t('eve_matches') : t(s.cash.diff < 0 ? 'eve_short' : 'eve_over', money(Math.abs(s.cash.diff), true))}</div>
-            <div class="muted num eve-s">{t('eve_expected', money(s.cash.expected, false))}{s.cash.counted != null ? <><br />{t('eve_counted', money(s.cash.counted, false))}</> : <><br /><span style="color:var(--accent);font-weight:700">{t('eve_count_now')} →</span></>}</div>
+            <div class="muted num eve-s">{s.cash.book ? <>{t('eve_opening', money(s.cash.opening, false))}<br /></> : null}{t('eve_expected', money(s.cash.expected, false))}{s.cash.counted != null ? <><br />{t('eve_counted', money(s.cash.counted, false))}</> : <><br /><span style="color:var(--accent);font-weight:700">{t('eve_count_now')} →</span></>}</div>
           </button>
         </div>
 
@@ -108,6 +109,8 @@ export function Evening() {
           {s.money.out > 0 && <Row a={t('eve_out')} b={money(s.money.out, false)} />}
           {d.khata && <Row a={t('eve_to_receive')} b={money(s.khata.toReceive, false)} top strong />}
         </div>
+
+        {(s.out?.n > 0 || s.moved?.length > 0) && <MoneyOut s={s} tz={d.timezone} />}
 
         {can('settings') && <AccountTally d={d} />}
 
@@ -246,7 +249,7 @@ function AccountTally({ d }) {
           <div class="card">
             {parts(sel.id).map((x) => (
               <button class="li" onClick={() => x.orderId && go(`/slip/${x.orderId}`)} style={x.orderId ? '' : 'cursor:default'}>
-                <div class="grow"><div class="t" style="font-size:14.5px">{x.customer}{x.slipNo ? ` · #${x.slipNo}` : ''}</div>
+                <div class="grow"><div class="t" style="font-size:14.5px">{x.kind === 'expense' ? [t('bal_m_expense'), x.customer].filter(Boolean).join(' · ') : x.kind === 'transfer' ? `${t('tr_move')} · ${x.amount < 0 ? '→' : '←'} ${accName({ name: x.customer, is_drawer: x.customer === 'Shop cash' })}` : x.customer}{x.slipNo ? ` · #${x.slipNo}` : ''}</div>
                   <div class="s">{[time(x.at, d.timezone), modeText(x.mode), x.method].filter(Boolean).join(' · ')}</div></div>
                 <b class="num" style={x.amount < 0 ? 'color:var(--bad)' : ''}>{money(x.amount, false)}</b>
               </button>
@@ -254,6 +257,47 @@ function AccountTally({ d }) {
           </div>
         ))}
       </Sheet>
+    </>
+  );
+}
+
+/** Money that went out of the shop that day (expenses, supplier payments, owner's own) and money moved between accounts. */
+function MoneyOut({ s, tz }) {
+  const [all, setAll] = useState(false);
+  const o = s.out;
+  const list = all ? o.list : o.list.slice(0, 5);
+  return (
+    <>
+      <div class="sec"><h3>{t('eve_out_title')}</h3>{can('expenses') && <button class="link" style="min-height:0" onClick={() => go('/expenses')}>{t('nav_expenses')}</button>}</div>
+      {o.n > 0 ? (
+        <div class="card" style="padding:4px 0">
+          <div class="row" style="justify-content:space-between;padding:10px 16px 4px"><span class="muted">{t('exp_total')}</span><b class="num" style="font-size:20px">{money(o.total, false)}</b></div>
+          {o.fromDrawer > 0 && <div class="faint" style="font-size:12.5px;font-weight:600;padding:0 16px 6px">{t('eve_out_drawer', money(o.fromDrawer, false))}</div>}
+          {list.map((e) => {
+            const look = catOf(e);
+            return (
+              <div class="li" style="padding:9px 16px">
+                <span class="acc-ic" style={`background:${look.tone};width:30px;height:30px;border-radius:9px`}><Icon name={look.icon} size={15} stroke={2.2} /></span>
+                <span class="grow" style="min-width:0"><span class="t ellip" style="display:block;font-size:14.5px">{catWord(e)}{e.paidTo ? ` · ${e.paidTo}` : ''}</span>
+                  <span class="s">{[time(e.at, tz), e.by].filter(Boolean).join(' · ')}</span></span>
+                <b class="num">{money(e.amount, false)}</b>
+              </div>
+            );
+          })}
+          {o.list.length > 5 && <button class="link" style="padding:0 16px" onClick={() => setAll(!all)}>{all ? t('eve_less') : t('eve_all_n', o.list.length)}</button>}
+        </div>
+      ) : <div class="card pad faint" style="font-size:14px">{t('eve_out_none')}</div>}
+      {s.moved?.length > 0 && <>
+        <div class="sec"><h3>{t('eve_moved')}</h3></div>
+        <div class="card">{s.moved.map((x) => (
+          <div class="li" style="padding:9px 16px">
+            <span class="acc-ic" style="background:#5B6472;width:30px;height:30px;border-radius:9px"><Icon name="ArrowRightLeft" size={15} stroke={2.2} /></span>
+            <span class="grow" style="min-width:0"><span class="t ellip" style="display:block;font-size:14.5px">{accName({ name: x.from, is_drawer: x.fromDrawer })} → {accName({ name: x.to, is_drawer: x.toDrawer })}</span>
+              <span class="s">{[time(x.at, tz), moveWord(x.reason), x.by].filter(Boolean).join(' · ')}</span></span>
+            <b class="num">{money(x.amount, false)}</b>
+          </div>
+        ))}</div>
+      </>}
     </>
   );
 }

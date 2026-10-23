@@ -21,4 +21,4 @@ render(<App />, document.getElementById('app'));
 watchUpdates();
 
 // Installed app ("Add to Home Screen"): lets it open even on a weak network. Only on the real https site.
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => {});
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {});

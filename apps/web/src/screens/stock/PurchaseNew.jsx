@@ -3,7 +3,7 @@
 // Each line goes into the stock item with the same grade + shape + HSN + rate (or a new one).
 // Address: #/purchases/new  (?kind=opening = stock already in the godown, no bill)
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { billLine, billTotals, landedCosts, matchStockItem, guessGrade, guessShape, descKey, cleanHsn, businessDate, r2, purchaseChecks } from '@srs/core';
+import { billLine, billTotals, landedCosts, matchStockItem, guessGrade, guessShape, descKey, cleanHsn, businessDate, r2, purchaseChecks, checkGstin, supplierGstWarnings } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -18,6 +18,9 @@ import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { GradePicker } from '../order/GradePicker.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { CheckNote, checkWords } from '../../ui/stock/BillCheck.jsx';
+import { fileToData } from '../../lib/files.js';
+import { online } from '../../lib/net.js';
+import { GstNote, gstFromCheck, gstFromSupplier, setGstService } from '../../ui/stock/GstStatus.jsx';
 import '../order/order.css';
 import './stock.css';
 
@@ -32,20 +35,6 @@ const blankLine = () => ({ key: key(), description: '', hsn: '', qty: '', qtyUni
 const today = () => businessDate(new Date().toISOString(), company.value?.timezone || 'Asia/Kolkata');
 const blankForm = (kind = 'bill') => ({ kind, supplier: { id: null, name: '', gstin: '', city: '' }, bill_no: '', bill_date: today(), bill_type: 'pakka',
   lines: [blankLine()], freight: '', other: '', gst: '', round_off: '', total: '', pay_status: 'to_pay', note: '', unsure: [], file_key: null, read_by_ai: false });
-
-/** A photo is made smaller before it is sent (max 2000 px, JPEG) — quicker on a weak network. */
-async function fileToData(file) {
-  if (file.type.startsWith('image/')) {
-    const img = await createImageBitmap(file);
-    const k = Math.min(1, 2000 / Math.max(img.width, img.height));
-    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    const url = c.toDataURL('image/jpeg', 0.85);
-    return { mime: 'image/jpeg', data: url.split(',')[1] };
-  }
-  const url = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(file); });
-  return { mime: file.type || 'application/pdf', data: String(url).split(',')[1] };
-}
 
 export function PurchaseNew() {
   const opening = route.value.query.kind === 'opening';
@@ -63,6 +52,26 @@ export function PurchaseNew() {
   const [review, setReview] = useState(false); // the "before saving" list
   const save = useAction('savePurchase');
   const pdfIn = useRef(); const photoIn = useRef();
+  // the supplier's GST number: checked by itself (GST data service, or a check from the last 7 days) — 23 Oct 2026
+  const [gstSeen, setGstSeen] = useState({});   // gstin → the latest check (api shape) or null
+  const supRow = form?.supplier?.id ? (ctx?.suppliers || []).find((x) => x.id === form.supplier.id) : null;
+  const supGstin = (supRow ? supRow.gstin : form?.supplier?.gstin) || '';
+  useEffect(() => {
+    const g = checkGstin(supGstin);
+    if (!g.ok || g.gstin in gstSeen || !online.value || form?.kind !== 'bill') return undefined;
+    const known = gstFromSupplier(supRow);
+    if (known && Date.now() - Date.parse(known.checkedAt) < 30 * 86400000) return undefined;
+    const tm = setTimeout(() => {
+      setGstSeen((x) => ({ ...x, [g.gstin]: x[g.gstin] ?? null }));
+      call('gstCheck', { gstin: g.gstin }).then((r) => { setGstService(r.service); if (r.check) gstChecked(r.check); }).catch(() => {});
+    }, 600);
+    return () => clearTimeout(tm);
+  }, [supGstin, ctx]);
+  const gstChecked = (c) => {
+    setGstSeen((x) => ({ ...x, [c.gstin]: c }));
+    setCtx((cx) => (cx ? { ...cx, suppliers: cx.suppliers.map((x) => (x.gstin === c.gstin ? { ...x, gst_status: c.status, gst_checked_at: c.checked_at, gst_source: c.source,
+      gst_legal_name: c.legal_name || x.gst_legal_name, gst_trade_name: c.trade_name || x.gst_trade_name, gst_cancel_date: c.cancel_date || null } : x)) } : cx));
+  };
 
   useEffect(() => {
     Promise.all([call('purchaseContext', {}), loadCatalog()]).then(([c, k]) => { setCtx(c); setCat(k); }).catch((e) => setErr(e.message));
@@ -211,6 +220,12 @@ export function PurchaseNew() {
     totalKg: calc.kg, total: calc.tot.total,
     lines: f.lines.map((l, i) => { const m = matOf(l.material_id); return { hsn: l.hsn, rateKg: calc.lines[i].rateKg, family: m?.family, materialId: l.material_id, code: m?.code, shape: l.shape }; }),
   }, hist, [...(f.okChecks || []), ...okHsn()]) : [];
+  // the supplier's GST number: cancelled / suspended / not found (red), a different firm's name, never or long ago checked
+  const gstOf = checkGstin(supGstin);
+  const gstInfo = gstOf.ok ? (gstSeen[gstOf.gstin] ? gstFromCheck(gstSeen[gstOf.gstin]) : gstFromSupplier(supRow)) : null;
+  const gstWarn = isBill && gstOf.ok ? supplierGstWarnings(gstInfo, { gstin: gstOf.gstin, billDate: f.bill_date, supplierName: supRow?.name || sup.name, billType: f.bill_type })
+    .filter((w) => !(f.okChecks || []).includes(w.key)) : [];
+  const allChecks = [...checks, ...gstWarn.filter((w) => w.level !== 'info')];
   const sayOk = (c) => { if (c.type.startsWith('hsn')) rememberOk(c.key); set({ okChecks: [...(f.okChecks || []), c.key] }); };
   const lineChecks = (i) => checks.filter((c) => c.line === i);
   const hsnActions = (c, i) => c.suggest.map((x, k) => [`${t('chk_use', x.hsn)} · ${x.words}`, () => setLine(i, { hsn: x.hsn }), k === 0]);
@@ -274,6 +289,7 @@ export function PurchaseNew() {
                 ? [t('chk_clear_billno'), () => set({ bill_no: '' }), true]
                 : [t('chk_move'), () => set({ bill_no: '', supplier: { ...sup, gstin: c.gstin } }), true]]} />))}
             {checks.filter((c) => c.type === 'gstin_typo').map((c) => <CheckNote c={c} tz={tz} onOk={() => sayOk(c)} />)}
+            {gstWarn.map((w) => <GstNote w={w} gstin={gstOf.gstin} onChecked={gstChecked} onOk={() => sayOk(w)} />)}
             {can('kacha') && <><div class="lbl" style="margin-top:12px">{t('pu_type_q')}</div>
               <div class="seg"><button class={f.bill_type === 'pakka' ? 'on' : ''} onClick={() => set({ bill_type: 'pakka' })}>{t('bill_gst_short')}</button>
                 <button class={f.bill_type === 'kacha' ? 'on' : ''} onClick={() => set({ bill_type: 'kacha', gst: '' })}>{t('bill_none_short')}</button></div></>}
@@ -363,16 +379,16 @@ export function PurchaseNew() {
         </div>}
       </div>
       <div class="quotebar">
-        <button class="btn btn-accent btn-block" disabled={save.busy} onClick={() => (checks.length && !problems() ? setReview(true) : submit(false))}><Icon name="Boxes" size={19} stroke={2.3} />{save.busy ? '…' : t('pu_save', kgTxt(calc.kg))}</button>
+        <button class="btn btn-accent btn-block" disabled={save.busy} onClick={() => (allChecks.length && !problems() ? setReview(true) : submit(false))}><Icon name="Boxes" size={19} stroke={2.3} />{save.busy ? '…' : t('pu_save', kgTxt(calc.kg))}</button>
       </div>
-      <Sheet open={review} onClose={() => setReview(false)} title={checks.length === 1 ? t('chk_sheet_t1') : t('chk_sheet_t', checks.length)}
+      <Sheet open={review} onClose={() => setReview(false)} title={allChecks.length === 1 ? t('chk_sheet_t1') : t('chk_sheet_t', allChecks.length)}
         footer={<><button class="btn btn-ghost btn-block" onClick={() => setReview(false)}>{t('chk_back')}</button>
           <button class="btn btn-accent btn-block" style="margin-top:8px" disabled={save.busy} onClick={() => {
             checks.filter((c) => c.type.startsWith('hsn')).forEach((c) => rememberOk(c.key));
-            setForm({ ...f, okChecks: [...(f.okChecks || []), ...checks.map((c) => c.key)] }); setReview(false); submit(false);
+            setForm({ ...f, okChecks: [...(f.okChecks || []), ...allChecks.map((c) => c.key)] }); setReview(false); submit(false);
           }}>{t('chk_save_all')}</button></>}>
         <div class="muted" style="font-size:14px;margin-bottom:10px">{t('chk_sheet_s')}</div>
-        <div class="card chk-list">{checks.map((c) => { const [a, b] = checkWords(c, tz); return (
+        <div class="card chk-list">{allChecks.map((c) => { const [a, b] = checkWords(c, tz); return (
           <div class="li"><span style={`color:var(--${c.level});flex:none;margin-top:2px`}><Icon name={c.level === 'bad' ? 'CircleAlert' : 'TriangleAlert'} size={18} stroke={2.4} /></span>
             <div class="grow"><div class="t" style="font-size:14px">{c.line != null ? `${t('chk_line', c.line + 1)} · ` : ''}{a}</div><div class="s">{b}</div></div></div>); })}</div>
       </Sheet>

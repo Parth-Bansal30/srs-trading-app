@@ -44,6 +44,7 @@ export function EasyToday({ d }) {
         <Tile show={can('new')} icon="Plus" w="etile_new" s={sub('etile_new')} bg="var(--accent)" fg="var(--accent-ink)" onClick={() => go('/new')} />
         <Tile show={can('money') && can('khata')} icon="IndianRupee" w="etile_money" s={sub('etile_money')} bg="#1C8456" onClick={payWho} />
         <Tile show={can('money')} icon="BookOpenText" w="etile_khata" s={sub('etile_khata')} bg="#2C5CC5" onClick={() => go('/khata')} />
+        <Tile show={can('expenses') || can('settings')} icon="Receipt" w="etile_expense" s={sub('etile_expense')} bg="#9A5B0E" onClick={() => go('/expenses?add=1')} />
         <Tile show={can('today')} icon="ClipboardCheck" w="etile_close" s={sub('etile_close')} bg="#1B2130" onClick={() => go('/close-day')} />
         <Tile show={!can('money') && can('weigh')} icon="Scale" w="nav_weigh" bg="#1C8456" onClick={() => go('/weigh')} />
       </div>

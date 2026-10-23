@@ -68,6 +68,14 @@ export function Today() {
         </div>
       )}
 
+      {(can('expenses') || can('settings')) && (
+        <button class="card li" style="margin-top:12px" onClick={() => go('/expenses')}>
+          <div class="iconbox" style="background:#9A5B0E;color:#fff"><Icon name="Receipt" /></div>
+          <div class="grow"><div class="t">{d?.expenses?.n ? t('exp_today_line', money(d.expenses.total, false)) : t('exp_today_none')}</div><div class="s">{t('exp_today_s')}</div></div>
+          <span class="pill" style="height:36px" onClick={(e) => { e.stopPropagation(); go('/expenses?add=1'); }}><Icon name="Plus" size={16} stroke={2.6} />{t('exp_add_short')}</span>
+        </button>
+      )}
+
       {can('money') && new Date().getHours() >= 17 && (
         <button class="card li" style="margin-top:12px" onClick={() => go('/evening')}>
           <div class="iconbox tone-brand-soft"><Icon name="Moon" /></div>

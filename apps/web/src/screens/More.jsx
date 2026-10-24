@@ -1,8 +1,9 @@
 // More — every other screen, plus language, appearance and log out.
 import { t, lang, setLang } from '../lib/i18n.js';
 import { useEffect, useState } from 'preact/hooks';
-import { me, company, can, lock, logOut, switchPerson, fingerOn, switchOffFinger, pinJustNow, prepareFinger } from '../lib/session.js';
-import { passkeyReady, bt, bioIcon } from '../lib/passkey.js';
+import { me, company, can, lock, logOut, switchPerson, fingerOn, switchOffFinger, pinJustNow, prepareFinger, lockAfter, setLockAfter } from '../lib/session.js';
+import { LOCK_CHOICES } from '../lib/autolock.js';
+import { passkeyReady, bt, bioIcon, bioName } from '../lib/passkey.js';
 import { outbox } from '../lib/offline/outbox.js';
 import { online } from '../lib/net.js';
 import { toast } from '../ui/toast.js';
@@ -59,6 +60,7 @@ export function More() {
         </div>
 
         <FingerSwitch />
+        <LockAfter />
 
         <div class="sec"><h3>{t('language')}</h3></div>
         <div class="seg">{APP.languages.map((l) => <button class={lang.value === l.id ? 'on' : ''} onClick={() => setLang(l.id)}>{l.label}</button>)}</div>
@@ -100,6 +102,26 @@ function FingerSwitch() {
         <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{bt('fp_title')}</div><div class="muted" style="font-size:13px">{ready ? bt('fp_sub') : t('fp_none')}</div></div>
         <input type="checkbox" class="switch" checked={on} disabled={!ready || busy || (!on && !online.value)} onChange={(e) => flip(e.currentTarget.checked)} />
       </label>
+    </div>
+  );
+}
+
+/** "Lock the app": how soon after leaving the app it asks for Face ID / fingerprint / PIN again (this person, this phone). */
+function LockAfter() {
+  const [mins, setMins] = useState(lockAfter());
+  const pick = (m) => { setLockAfter(m); setMins(m); toast(t('al_saved', t(`al_${m}`))); };
+  return (
+    <div class="card pad" style="margin-top:14px">
+      <div class="row" style="gap:12px">
+        <div class="iconbox tone-accent"><Icon name="TimerReset" /></div>
+        <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{t('al_title')}</div><div class="muted" style="font-size:13px">{fingerOn() ? t('al_sub_f', bioName()) : t('al_sub')}</div></div>
+      </div>
+      <div class="lock-seg" role="radiogroup" aria-label={t('al_title')}>
+        {LOCK_CHOICES.map((m) => <button role="radio" aria-checked={mins === m ? 'true' : 'false'} class={mins === m ? 'on' : ''} onClick={() => pick(m)}>{t(`al_${m}`)}</button>)}
+      </div>
+      <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:10px">
+        {mins === 0 ? t('al_now_0') : mins >= 60 ? t('al_long', t(`al_w_${mins}`)) : t('al_now_n', t(`al_w_${mins}`))}
+      </div>
     </div>
   );
 }

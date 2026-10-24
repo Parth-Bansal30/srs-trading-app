@@ -6,6 +6,10 @@ import { store } from './store.js';
 
 const KEY = 'device_people';
 export const devicePeople = signal(store.json(KEY) || []);
+/** Always build on the newest stored list (another tab or window of the app may have changed it). */
+const current = () => store.json(KEY) || devicePeople.value;
+// another tab changed the list: show it here too
+if (typeof addEventListener === 'function') addEventListener('storage', (e) => { if (e.key === `srs:${KEY}`) devicePeople.value = store.json(KEY) || []; });
 
 function save(list) {
   const sorted = [...list].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
@@ -17,8 +21,9 @@ function save(list) {
 export function remember(session, status) {
   if (!session?.user?.id || !status?.person) return;
   const uid = session.user.id;
-  const was = devicePeople.value.find((p) => p.uid === uid) || {};
-  const rest = devicePeople.value.filter((p) => p.uid !== uid);
+  const list = current();
+  const was = list.find((p) => p.uid === uid) || {};
+  const rest = list.filter((p) => p.uid !== uid);
   save([...rest, {
     ...was,   // keeps the offline PIN check, fingerprint key and last unlock (23 Oct 2026)
     uid,
@@ -37,7 +42,7 @@ export function remember(session, status) {
 /** The login refreshed itself — keep the newest tokens for that person. */
 export function keepTokens(session) {
   if (!session?.user?.id) return;
-  const list = devicePeople.value;
+  const list = current();
   const i = list.findIndex((p) => p.uid === session.user.id);
   if (i < 0 || list[i].refresh_token === session.refresh_token) return;
   const next = [...list];
@@ -46,15 +51,15 @@ export function keepTokens(session) {
 }
 
 export function touch(uid) {
-  save(devicePeople.value.map((p) => (p.uid === uid ? { ...p, lastUsed: Date.now() } : p)));
+  save(current().map((p) => (p.uid === uid ? { ...p, lastUsed: Date.now() } : p)));
 }
 
 export function setPersonLang(uid, lang) {
-  save(devicePeople.value.map((p) => (p.uid === uid ? { ...p, lang } : p)));
+  save(current().map((p) => (p.uid === uid ? { ...p, lang } : p)));
 }
 
 export function forget(uid) {
-  save(devicePeople.value.filter((p) => p.uid !== uid));
+  save(current().filter((p) => p.uid !== uid));
 }
 
 /** One person on this phone (by login id). */
@@ -65,7 +70,7 @@ export const personOf = (uid) => (uid ? devicePeople.value.find((p) => p.uid ===
  * unlockedAt, pinCheck (scrambled PIN copy for offline), offFails / offLockUntil, passkey ({ credId, jwk, alg }).
  */
 export function setPersonExtra(uid, patch) {
-  const list = devicePeople.value;
+  const list = current();
   const i = list.findIndex((p) => p.uid === uid);
   if (i < 0) return;
   const next = [...list];

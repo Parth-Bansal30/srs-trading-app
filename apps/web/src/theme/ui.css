@@ -107,3 +107,9 @@ select.field{font-weight:600;font-size:16px;appearance:auto}
 .spin{animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (min-width:1024px){.offbar{max-width:640px;margin:10px auto 0}}
+/* "Lock the app after…" (24 Oct 2026): plain cover while the app is off the screen or locking */
+.lock-cover{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink-3)}
+/* lock-time choice in More */
+.lock-seg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:12px}
+.lock-seg button{min-height:48px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:13.5px;line-height:1.15;padding:4px 2px}
+.lock-seg button.on{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}

@@ -1196,6 +1196,24 @@ const NEW_WORDS = {
   fp_remove: ['Remove', 'हटाएं', 'Hatao'],
   fp_last_used: ['last used {0}', 'आख़िरी बार {0}', 'aakhri baar {0}'],
 
+  // ---------- lock the app after… (24 Oct 2026) ----------
+  al_title: ['Lock the app', 'ऐप लॉक करें', 'App lock karo'],
+  al_sub: ['How soon after you leave the app it asks for your PIN again. Only on this phone, only for you.', 'ऐप से निकलने के कितनी देर बाद फिर से PIN पूछे। सिर्फ़ इस फ़ोन पर, सिर्फ़ आपके लिए।', 'App se nikalne ke kitni der baad phir se PIN pooche. Sirf is phone par, sirf aapke liye.'],
+  al_sub_f: ['How soon after you leave the app it asks for {0} (or your PIN) again. Only on this phone, only for you.', 'ऐप से निकलने के कितनी देर बाद फिर से {0} (या PIN) पूछे। सिर्फ़ इस फ़ोन पर, सिर्फ़ आपके लिए।', 'App se nikalne ke kitni der baad phir se {0} (ya PIN) pooche. Sirf is phone par, sirf aapke liye.'],
+  al_0: ['Instantly', 'तुरंत', 'Turant'],
+  al_5: ['5 min', '5 मिनट', '5 min'],
+  al_30: ['30 min', '30 मिनट', '30 min'],
+  al_60: ['1 hour', '1 घंटा', '1 ghanta'],
+  al_720: ['12 hours', '12 घंटे', '12 ghante'],
+  al_now_0: ['Locks every time you leave the app. Sharing on WhatsApp, a bill photo or a call from the app does not lock it.', 'हर बार ऐप से निकलते ही लॉक। ऐप से WhatsApp भेजना, बिल की फ़ोटो या कॉल करने पर लॉक नहीं होगा।', 'Har baar app se nikalte hi lock. App se WhatsApp bhejna, bill ki photo ya call karne par lock nahi hoga.'],
+  al_now_n: ['Locks when you have been away from the app for {0}.', 'ऐप से {0} दूर रहने पर लॉक।', 'App se {0} door rehne par lock.'],
+  al_saved: ['Saved: {0}', 'सेव हो गया: {0}', 'Save ho gaya: {0}'],
+  al_long: ['Locks when you have been away for {0}. On a phone that others use, a shorter time is safer.', '{0} दूर रहने पर लॉक। जिस फ़ोन को दूसरे भी इस्तेमाल करते हैं, उस पर कम समय सुरक्षित है।', '{0} door rehne par lock. Jis phone ko doosre bhi use karte hain, us par kam time safe hai.'],
+  al_w_5: ['5 minutes', '5 मिनट', '5 minute'],
+  al_w_30: ['30 minutes', '30 मिनट', '30 minute'],
+  al_w_60: ['1 hour', '1 घंटा', '1 ghanta'],
+  al_w_720: ['12 hours', '12 घंटे', '12 ghante'],
+
   // ---------- working without internet ----------
   off_bar: ['No internet — working on this phone', 'इंटरनेट नहीं — फ़ोन पर काम चल रहा है', 'Internet nahi — phone par kaam chal raha hai'],
   off_bar_s: ['Shown: last seen {0}. New entries are saved on the phone.', 'दिखा रहे हैं: {0} का। नई एंट्री फ़ोन पर सेव हो रही हैं।', 'Dikha rahe hain: {0} ka. Nayi entry phone par save ho rahi hain.'],

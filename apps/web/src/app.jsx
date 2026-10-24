@@ -1,6 +1,6 @@
 // The app frame: login gate → screens, with the bottom bar (phone) or left menu (laptop).
 import { useEffect } from 'preact/hooks';
-import { auth, boot, can } from './lib/session.js';
+import { auth, boot, can, covered } from './lib/session.js';
 import { route, go } from './lib/router.js';
 import { t } from './lib/i18n.js';
 import { TABS, MENU } from './config/navigation.js';
@@ -157,7 +157,8 @@ function Screens() {
   if (step === 'phone') return <PhoneStep />;
   if (step === 'code') return <CodeStep />;
   if (step === 'set_pin') return <SetPinStep />;
-  if (step === 'unlock') return <UnlockStep />;
+  const locked = step === 'unlock' && auth.value.autoLocked;   // locked because the person was away: their screen stays underneath
+  if (step === 'unlock' && !locked) return <UnlockStep />;
   if (step === 'not_staff') return <NotStaffStep />;
   if (step === 'error') return <div class="login"><div class="login-body"><div class="error">{t('err_generic')}</div><button class="btn btn-ghost" onClick={boot}>{t('retry')}</button></div></div>;
 
@@ -165,13 +166,17 @@ function Screens() {
   const screen = match(path) || soonFor(path);
   const full = FULL_SCREEN.some((p) => path === p || path.startsWith(p));
   return (
-    <div class="app">
-      <Sidebar path={path} />
-      <main class="main"><OfflineBar path={path} />{screen}</main>
-      {!full && <TabBar path={path} />}
-      {toastMsg.value && <div class="toast">{toastMsg.value}</div>}
-      <Praise />
-      <FingerOffer />
-    </div>
+    <>
+      <div class="app" style={locked ? 'display:none' : undefined} aria-hidden={locked ? 'true' : undefined}>
+        <Sidebar path={path} />
+        <main class="main"><OfflineBar path={path} />{screen}</main>
+        {!full && <TabBar path={path} />}
+        {toastMsg.value && !locked && <div class="toast">{toastMsg.value}</div>}
+        <Praise />
+        {!locked && <FingerOffer />}
+      </div>
+      {locked && <UnlockStep />}
+      {covered.value && <div class="lock-cover"><Icon name="Lock" size={34} stroke={2} /></div>}
+    </>
   );
 }

@@ -25,7 +25,7 @@
 | Weak PINs refused | All-same (1111), in a row (1234, 4321), common ones (2580, 1212…), end of own mobile number |
 | PIN never readable | Stored scrambled with bcrypt; never copied into history or logs |
 | Changing a PIN | Needs an SMS code from the last 10 minutes (a refreshed login keeps the original code time) |
-| Unlock doesn't last forever | Ends after 12 hours (setting `unlock_hours`), on sign-out, or if the person is deactivated |
+| Unlock doesn't last forever | Ends after 12 hours (setting `unlock_hours`), on sign-out, or if the person is deactivated — and on the phone sooner: "Lock the app after…" (default instantly, see below) |
 | Staff management | Only people with the `people` permission, only in their own company, can't give permissions they don't have, can't deactivate themselves, and the company always keeps at least one manager |
 | History | Every unlock, lock, PIN change, failed try (without the PIN) and staff change is in the audit log with who did it |
 
@@ -89,3 +89,21 @@ can be tested with real messages).
 - Nothing reaches the server until the internet is back: the waiting entries are then sent with their request keys (never
   twice). If the server wants the PIN again first, the app says "Unlock to send". A PIN unlock lasts a working day (12 h) on
   the phone too.
+
+## Lock the app after… (24 Oct 2026)
+- Each person chooses on each phone (More → **Lock the app**): **Instantly** (the default), 5 min, 30 min, 1 hour or 12 hours.
+  Kept with the person on that phone (`device_people[].lockAfter`, `lib/autolock.js`). The server's `unlock_hours` still applies
+  on top — the phone can only lock sooner.
+- "Away" = the app is off the screen (`visibilitychange` / `pagehide`; `lastSeen` is kept per person). Coming back from the
+  background after the chosen time → **automatic lock**: the server session is locked too (`lock_session`), and the screen the
+  person was on stays open underneath, so a half-filled form is still there after Face ID / fingerprint / PIN
+  (`auth.autoLocked`; only for the same person — "Not you?" starts fresh). While away on "Instantly", a plain cover hides the
+  app (the recent-apps picture shows nothing).
+- Opening the app fresh (closed from recent apps) after the chosen time also asks; on "Instantly" it always asks. A flicker
+  shorter than 3 s when coming back from the background is ignored.
+- Leaving **on purpose** from inside the app never locks if the person is back within 5 minutes: bill photo / file picker,
+  WhatsApp and other links, phone calls, print, the share sheet, an app update. It only counts if the app leaves the screen within
+  15 s of that tap; the share sheet and Face ID sheet end it as soon as they close. Unlocking or locking forgets it.
+- `device.js` now always builds on the newest stored list of people and follows changes from other tabs (a second tab
+  could otherwise undo a change such as switching Face ID on).
+- Tests: `apps/web/test/autolock.test.mjs` (rules) and the browser test t8 (29 checks incl. iPhone Face ID after an auto lock).

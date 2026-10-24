@@ -15,6 +15,7 @@ import { pinCopy, pinMatches } from './offline/pin.js';
 import { unlockOnline, unlockOffline, registerPasskey, prepare } from './passkey.js';
 import { call } from './api.js';
 import { warmUp } from './offline/warm.js';
+import { lockAfterOf, shouldLock, noteHidden, takeLeaving, clearLeaving, watchLeavingOnPurpose } from './autolock.js';
 
 /**
  * step: loading | welcome | tour | who | phone | code | not_staff | register | joining | set_pin | unlock | ready | error
@@ -26,7 +27,12 @@ export const company = computed(() => auth.value.status?.company || null);
 /** Permission check for the screens. A business that makes no estimates never sees that choice. */
 export const can = (perm) => (perm === 'kacha' && company.value?.estimates === false ? false : !!me.value?.perms?.[perm]);
 
-const set = (patch) => { auth.value = { ...auth.value, error: null, ...patch }; };
+const set = (patch) => {
+  const next = { ...auth.value, error: null, ...patch };
+  // the app stays open underneath only for an automatic lock of the same person; any other step forgets that
+  if (patch.step && !(patch.step === 'unlock' && (patch.autoLocked || (auth.value.step === 'unlock' && auth.value.autoLocked)))) next.autoLocked = false;
+  auth.value = next;
+};
 const start = () => (devicePeople.value.length ? 'who' : 'welcome');
 
 // Keep every person's newest login tokens (the active one refreshes itself in the background).
@@ -48,7 +54,7 @@ function offlineStep(uid, extra = {}) {
   const p = personOf(uid);
   if (!p?.status) return set({ step: 'error', error: 'offline_first', offline: true });
   setCacheOwner(uid); loadOutbox(uid);
-  const fresh = p.unlockedAt && Date.now() - p.unlockedAt < UNLOCK_MS && !extra.locked;
+  const fresh = p.unlockedAt && Date.now() - p.unlockedAt < UNLOCK_MS && !extra.locked && !(extra.boot && lockedByTime(p));
   if (fresh) return set({ step: 'ready', status: p.status, offline: true });
   return set({ step: 'unlock', status: p.status, offline: true, offlineUid: uid });
 }
@@ -56,12 +62,12 @@ function offlineStep(uid, extra = {}) {
 export async function boot() {
   const joining = /^#\/join/.test(location.hash);
   if (joining) replace('/'); // the invite link only picks the door; after login the app starts on Today
-  if (!online.value) { const st = storedSession(); return st ? offlineStep(st.user.id) : set({ step: start(), mode: 'login', phone: '' }); }
+  if (!online.value) { const st = storedSession(); return st ? offlineStep(st.user.id, { boot: true }) : set({ step: start(), mode: 'login', phone: '' }); }
   let session = null;
   try { ({ data: { session } } = await db.auth.getSession()); } catch { /* checked below */ }
   if (!session) {
     const st = storedSession();
-    if (st && !online.value) return offlineStep(st.user.id);
+    if (st && !online.value) return offlineStep(st.user.id, { boot: true });
     return set({ step: joining ? 'phone' : start(), mode: joining ? 'join' : 'login', phone: '' });
   }
   return refresh({ boot: true });
@@ -77,7 +83,7 @@ export async function refresh(extra = {}) {
       markOffline();
       if (auth.value.step === 'ready') return set({ offline: true });   // keep working
       const st = storedSession();
-      if (st) return offlineStep(st.user.id);
+      if (st) return offlineStep(st.user.id, { boot: extra.boot });
     }
     return set({ step: 'error', error: error.message });
   }
@@ -95,7 +101,14 @@ export async function refresh(extra = {}) {
 
   if (!auth.value.status && data.person?.lang && !store.get('lang')) setLang(data.person.lang);
   if (data.unlocked && !extra.resetting && !auth.value.resetting) {
-    const p = personOf(data && (await db.auth.getSession()).data.session?.user?.id);
+    const uid = (await db.auth.getSession()).data.session?.user?.id;
+    const p = personOf(uid);
+    // the app was opened fresh: has this person's "lock the app after…" time passed since they left it?
+    if (extra.boot && p && lockedByTime(p)) {
+      try { await db.rpc('lock_session'); } catch { /* checked again by the server anyway */ }
+      setPersonExtra(uid, { unlockedAt: 0 });
+      return set({ step: 'unlock', status: data, offlineUid: uid });
+    }
     return ready(data, { unlockedNow: !p?.unlockedAt || extra.unlockedNow });
   }
   if (data.can_set_pin && (!data.has_pin || data.blocked || extra.resetting || auth.value.resetting)) {
@@ -117,6 +130,7 @@ async function ready(status, patch = {}) {
   if (session?.user?.id) {
     setCacheOwner(session.user.id);
     setPersonExtra(session.user.id, { status, ...(patch.unlockedNow ? { unlockedAt: Date.now() } : {}) });
+    if (patch.unlockedNow) clearLeaving();
     await loadOutbox(session.user.id);
     offlinePin = null; offlineSwitch = null; needUnlock.value = false;
     if (outbox.value.length) flush();
@@ -315,6 +329,7 @@ whenOnline(async () => {
 export function unlockToSend() { set({ step: 'unlock', offline: false }); }
 
 export async function lock() {
+  clearLeaving();
   try { await db.rpc('lock_session'); } catch { /* offline: the phone locks itself */ }
   const uid = storedSession()?.user?.id;
   if (uid) setPersonExtra(uid, { unlockedAt: 0 });
@@ -380,9 +395,58 @@ export async function logOut() {
   setTimeout(() => location.reload(), 50);
 }
 
-// The PIN unlock lasts a working day; re-check when the app comes back to the screen.
-addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || auth.value.step !== 'ready') return;
-  if (!online.value) { const uid = storedSession()?.user?.id; const p = personOf(uid); if (p && (!p.unlockedAt || Date.now() - p.unlockedAt > UNLOCK_MS)) offlineStep(uid, { locked: true }); return; }
+// ---------- "Lock the app after…" (24 Oct 2026, lib/autolock.js) ----------
+/** A plain cover over the app while it is off the screen (so the recent-apps picture shows nothing) and while locking. */
+export const covered = signal(false);
+let hiddenAt = 0;
+
+/** This person's choice on this phone, in minutes (0 = instantly). */
+export const lockAfter = (uid) => lockAfterOf(personOf(uid || storedSession()?.user?.id));
+export function setLockAfter(minutes) {
+  const uid = storedSession()?.user?.id;
+  if (uid) setPersonExtra(uid, { lockAfter: minutes });
+}
+
+/** Opened fresh: lock if the person left the app longer ago than their choice (or we don't know when). */
+function lockedByTime(p) {
+  const away = p.lastSeen ? Date.now() - p.lastSeen : null;
+  return shouldLock(lockAfterOf(p), away, takeLeaving(), true);
+}
+
+/** Lock because the person was away: the screen they were on stays open underneath and comes back after the unlock. */
+async function autoLock(uid) {
+  covered.value = true;
+  if (online.value) {
+    try { await Promise.race([db.rpc('lock_session'), new Promise((r) => setTimeout(r, 4000))]); } catch { /* offline: the phone locks itself */ }
+  }
+  setPersonExtra(uid, { unlockedAt: 0 });
+  offlinePin = null;
+  set({ step: 'unlock', autoLocked: true, offlineUid: uid });
+  covered.value = false;
+}
+
+function wentAway() {
+  if (auth.value.step !== 'ready' || hiddenAt) return;
+  const now = Date.now();
+  hiddenAt = now;
+  const uid = storedSession()?.user?.id;
+  const onPurpose = noteHidden(now);
+  if (uid) setPersonExtra(uid, { lastSeen: now });
+  if (!onPurpose && lockAfter(uid) === 0) covered.value = true;
+}
+
+function cameBack() {
+  const at = hiddenAt; hiddenAt = 0;
+  if (auth.value.step !== 'ready') { covered.value = false; return; }
+  const uid = storedSession()?.user?.id;
+  if (uid && at && shouldLock(lockAfter(uid), Date.now() - at, takeLeaving())) return void autoLock(uid);
+  covered.value = false;
+  // the server's unlock (12 hours by default) can also have run out
+  if (!online.value) { const p = personOf(uid); if (p && (!p.unlockedAt || Date.now() - p.unlockedAt > UNLOCK_MS)) offlineStep(uid, { locked: true }); return; }
   refresh();
-});
+}
+
+watchLeavingOnPurpose();
+addEventListener('visibilitychange', () => (document.visibilityState === 'visible' ? cameBack() : wentAway()));
+addEventListener('pagehide', wentAway);
+addEventListener('pageshow', (e) => { if (e.persisted) cameBack(); });

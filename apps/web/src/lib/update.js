@@ -3,6 +3,7 @@
 // website for a newer version (on start, when it comes back to the screen, every 30 minutes) and shows
 // "New version ready · Update". Tapping it reloads. Shop data is never touched.
 import { signal } from '@preact/signals';
+import { markLeaving } from './autolock.js';
 
 export const updateReady = signal(false);
 export const BUILD = typeof __BUILD__ !== 'undefined' ? __BUILD__ : '';
@@ -26,4 +27,4 @@ export function watchUpdates() {
   addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
 }
 
-export const updateNow = () => location.reload();
+export const updateNow = () => { markLeaving(); location.reload(); };

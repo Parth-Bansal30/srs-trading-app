@@ -1,8 +1,8 @@
 // More — every other screen, plus language, appearance and log out.
 import { t, lang, setLang } from '../lib/i18n.js';
 import { useEffect, useState } from 'preact/hooks';
-import { me, company, can, lock, logOut, switchPerson, fingerOn, switchOffFinger } from '../lib/session.js';
-import { passkeyReady } from '../lib/passkey.js';
+import { me, company, can, lock, logOut, switchPerson, fingerOn, switchOffFinger, pinJustNow, prepareFinger } from '../lib/session.js';
+import { passkeyReady, bt, bioIcon } from '../lib/passkey.js';
 import { outbox } from '../lib/offline/outbox.js';
 import { online } from '../lib/net.js';
 import { toast } from '../ui/toast.js';
@@ -85,18 +85,19 @@ function FingerSwitch() {
   const [ready, setReady] = useState(null);
   const [on, setOn] = useState(fingerOn());
   const [busy, setBusy] = useState(false);
-  useEffect(() => { passkeyReady().then(setReady); }, []);
+  // switching on needs a PIN in the last 10 minutes; then get the challenge ready so the tap goes straight to Face ID
+  useEffect(() => { passkeyReady().then((ok) => { setReady(ok); if (ok && !fingerOn() && Date.now() - pinJustNow.value < 9 * 60000) prepareFinger('register'); }); }, []);
   if (ready === null) return null;
   const flip = async (want) => {
     setBusy(true);
-    if (want) { const ok = await turnFingerOn(); setOn(ok); } else { await switchOffFinger(); setOn(false); toast(t('fp_off_done')); }
+    if (want) { const ok = await turnFingerOn(); setOn(ok); } else { await switchOffFinger(); setOn(false); toast(bt('fp_off_done')); }
     setBusy(false);
   };
   return (
     <div class="card pad" style="margin-top:14px">
       <label class="row" style="gap:12px">
-        <div class="iconbox tone-accent"><Icon name="Fingerprint" /></div>
-        <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{t('fp_title')}</div><div class="muted" style="font-size:13px">{ready ? t('fp_sub') : t('fp_none')}</div></div>
+        <div class="iconbox tone-accent"><Icon name={bioIcon()} /></div>
+        <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{bt('fp_title')}</div><div class="muted" style="font-size:13px">{ready ? bt('fp_sub') : t('fp_none')}</div></div>
         <input type="checkbox" class="switch" checked={on} disabled={!ready || busy || (!on && !online.value)} onChange={(e) => flip(e.currentTarget.checked)} />
       </label>
     </div>

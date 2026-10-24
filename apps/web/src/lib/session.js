@@ -12,7 +12,7 @@ import { online, whenOnline, markOffline } from './net.js';
 import { setCacheOwner, forgetPerson } from './offline/cache.js';
 import { loadOutbox, flush, needUnlock, outbox, forgetOutbox } from './offline/outbox.js';
 import { pinCopy, pinMatches } from './offline/pin.js';
-import { unlockOnline, unlockOffline, registerPasskey } from './passkey.js';
+import { unlockOnline, unlockOffline, registerPasskey, prepare } from './passkey.js';
 import { call } from './api.js';
 import { warmUp } from './offline/warm.js';
 
@@ -254,6 +254,12 @@ export async function unlockFinger() {
   await unlockOnline(p.passkey);
   await refresh({ unlockedNow: true });
   return { ok: true };
+}
+
+/** Get the server's challenge ready before the tap (iPhone: Face ID must come straight after the tap). */
+export function prepareFinger(purpose = 'unlock') {
+  if (!online.value || (purpose === 'unlock' && (offlineSwitch || !fingerOn()))) return;
+  prepare(purpose);
 }
 
 /** Is fingerprint unlock switched on for this person on this phone? */

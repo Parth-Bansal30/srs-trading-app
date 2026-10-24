@@ -100,7 +100,7 @@ function FingerPhones({ person }) {
       <div class="sec"><h3>{t('fp_phones', list.length)}</h3></div>
       <div class="card">{list.map((k) => (
         <div class="li">
-          <div class="iconbox tone-neutral"><Icon name="Fingerprint" size={18} /></div>
+          <div class="iconbox tone-neutral"><Icon name={/iPhone|iPad|Mac/.test(k.label || '') ? 'ScanFace' : 'Fingerprint'} size={18} /></div>
           <div class="grow"><div class="t">{k.label || t('fp_phone')}</div><div class="s">{k.last_used_at ? t('fp_last_used', shortDate(k.last_used_at)) : shortDate(k.created_at)}</div></div>
           <button class="link" style="color:var(--bad)" onClick={() => remove(k)}>{t('fp_remove')}</button>
         </div>

@@ -64,7 +64,14 @@ They expire on 31 March 2027. **They must never be added to the production proje
 Then: a `send-sms` hook function connects Supabase Auth to the provider (built once the account exists, so it
 can be tested with real messages).
 
-## Fingerprint / face unlock (23 Oct 2026)
+## Fingerprint / Face ID unlock (23 Oct 2026)
+- The app names it by the device: **Face ID** on iPhones with the tall screen (X and newer), **Touch ID** on iPhone 8 / SE and
+  Macs, "Face ID / Touch ID" on iPads, **Windows Hello** on Windows, **fingerprint** elsewhere (`lib/passkey.js` bioKind; the
+  face icon on Face ID devices). It is the same passkey everywhere — the phone decides how the person proves it is them.
+- Apple only shows Face ID / Touch ID after a tap, so on Apple devices the lock screen waits for "Unlock with Face ID"
+  instead of asking by itself, and the server's challenge is fetched when the screen opens (also when the "switch on" offer
+  opens) — the tap then goes straight to Face ID (a network wait between the tap and the request makes Safari refuse it).
+  Android / Windows still ask by themselves.
 - After the PIN, the app offers once per person per phone: "Unlock with your fingerprint next time?" (More → Fingerprint unlock switches it on or off).
   On a phone others use too, the offer warns that anyone whose finger opens that phone could open the account.
 - It is a passkey (WebAuthn, platform authenticator, user verification required). The private key never leaves the phone; the

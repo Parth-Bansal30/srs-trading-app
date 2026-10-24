@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'preact/hooks';
 import { t } from '../../lib/i18n.js';
 import {
-  auth, sendCode, verifyCode, setPin, unlock, forgotPin, goBack, openDoor, switchTo, switchPerson, addPerson, logOut, unlockFinger, fingerOn,
+  auth, sendCode, verifyCode, setPin, unlock, forgotPin, goBack, openDoor, switchTo, switchPerson, addPerson, logOut, unlockFinger, fingerOn, prepareFinger,
 } from '../../lib/session.js';
+import { bt, bioIcon, bioWaiting, isApple } from '../../lib/passkey.js';
 import { online } from '../../lib/net.js';
 import { outbox } from '../../lib/offline/outbox.js';
 import { devicePeople } from '../../lib/device.js';
@@ -175,24 +176,27 @@ export function UnlockStep() {
   };
   const useFinger = async () => {
     setFbusy(true); setMsg(null);
-    try { await unlockFinger(); } catch (e) { setMsg(e?.name === 'NotAllowedError' || e?.code === 'no_key' ? t('fp_use_pin') : e?.message || t('fp_use_pin')); }
-    finally { setFbusy(false); }
+    try { await unlockFinger(); } catch (e) {
+      setMsg(e?.name === 'NotAllowedError' || e?.code === 'no_key' ? bt('fp_use_pin') : e?.message || bt('fp_use_pin'));
+      if (isApple()) prepareFinger();   // ready for the next tap
+    } finally { setFbusy(false); }
   };
-  // ask for the finger straight away (the PIN pad stays below if it is cancelled or fails)
-  useEffect(() => { if (finger) useFinger(); }, []);
+  // Android / Windows: ask for the finger straight away (the PIN pad stays below if it is cancelled or fails).
+  // iPhone / iPad / Mac: Face ID / Touch ID only comes after a tap — get the server's challenge ready, then wait for the tap.
+  useEffect(() => { if (!finger) return; if (isApple()) prepareFinger(); else useFinger(); }, []);
   return (
     <Frame>
       <div class="unlock-head">
         <Avatar name={name} size={80} />
         <h1 class="login-title" style="margin-top:14px">{t('pin_hello', name)}</h1>
         <div class="faint" style="font-weight:600">{s?.company?.name}</div>
-        <p class="login-sub" style="margin-top:6px">{finger ? t('fp_or_pin') : t('pin_enter')}</p>
+        <p class="login-sub" style="margin-top:6px">{finger ? bt('fp_or_pin') : t('pin_enter')}</p>
         {off && <div class="chip tone-warn" style="margin-top:8px"><Icon name="WifiOff" size={14} />{t('off_unlock_phone')}</div>}
         {!off && outbox.value.length > 0 && <div class="chip tone-accent" style="margin-top:8px"><Icon name="CloudUpload" size={14} />{t('off_unlock_send', outbox.value.length)}</div>}
       </div>
       {finger && (
         <button class="btn btn-brand btn-block fp-btn" disabled={fbusy || busy} onClick={useFinger}>
-          <Icon name="Fingerprint" size={26} stroke={2} />{fbusy ? t('fp_touch') : t('fp_unlock')}
+          <Icon name={bioIcon()} size={26} stroke={2} />{fbusy ? bioWaiting() : bt('fp_unlock')}
         </button>
       )}
       <PinPad length={s?.pin_length || 4} onDone={done} busy={busy} />

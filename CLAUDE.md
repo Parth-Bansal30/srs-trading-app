@@ -4,6 +4,10 @@ Steel trading app: orders with cut lengths, weight from size, cutting charge, we
 GST (pakka) / no-bill (kacha) billing, advances, khata (customer account book), slip numbers.
 Used by shop staff and the owner's father — simplicity and correct numbers matter more than anything.
 
+**This repo is public** (github.com/Parth-Bansal30/srs-trading-app, moved from a private account on 23 Oct 2026, full history).
+Never commit secrets (`.env` stays git-ignored), real customer names, real phone numbers or real shop data — made-up test data only.
+Every push to `main` deploys the live app (Cloudflare Workers Builds, `wrangler.jsonc`) — push only tested code.
+
 Design docs live in the claude.ai project "SRS trading application":
 `claude/agreed-business-rules.md`, `claude/production-architecture.md` (v2), `claude/dev-environment.md`.
 

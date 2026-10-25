@@ -82,6 +82,15 @@ can be tested with real messages).
 - If the finger fails or is cancelled, the PIN pad is right there. Up to 5 phones per person; the owner can remove one
   (People → person → Fingerprint phones); "sign out everywhere" removes all.
 
+- **The phone already has the key but the app forgot it** (25 Oct 2026 — found on Parth's iPhone): logging out, "Forgot PIN",
+  or opening the app from Safari instead of the Home Screen icon (iOS keeps their storage apart) loses the app's note of the key,
+  while the phone's keychain and the server still have it. Switching on then made the phone refuse a second key
+  (`InvalidStateError`, the server lists the old key in `excludeCredentials`) and the switch stayed off. Now the switch / the
+  offer shows **"This phone already has your Face ID key · Use it with Face ID"** (`NotAllowedError` with existing keys: "Switched
+  it on before on this phone?"): one Face ID check with the server (`passkeyUnlock`, which now also returns the key's public half
+  `{ credential_id, jwk, alg }`) and the phone keeps the same key again (`reconnectPasskey` / `reconnectFinger`). The unlock
+  challenge is fetched as soon as the save fails, so the iPhone tap goes straight to Face ID. Browser test t9 (21 checks).
+
 ## Without internet (23 Oct 2026)
 - A person who was fully logged in on this phone before can open the app offline. The PIN is then checked on the phone
   against a scrambled copy (PBKDF2-SHA256, 150,000 rounds, random salt) kept after the server last accepted it; 5 wrong

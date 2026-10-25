@@ -963,7 +963,7 @@ test('fingerprint: switch on (fresh PIN), unlock with the finger, refused when t
   const b = await px.passkeyBegin(locked, { purpose: 'unlock' });
   assert.deepEqual(b.credentials, [p.credId]);
   const ans = await p.get(b.challenge);
-  assert.deepEqual(await px.passkeyUnlock(locked, { challenge: b.challenge, credential_id: p.credId, ...ans }), { ok: true });
+  assert.deepEqual(await px.passkeyUnlock(locked, { challenge: b.challenge, credential_id: p.credId, ...ans }), { ok: true, credential_id: p.credId, jwk: store.key.public_key, alg: store.key.alg }, 'the public key comes back (a phone that forgot it keeps it again)');
   assert.equal(calls.filter((c) => c.fn === 'api_passkey_unlock').at(-1).args.p_sign_count, 1);
   // someone else's phone answering, an unknown key, a wrong challenge
   const other = await phone();

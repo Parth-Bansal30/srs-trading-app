@@ -1324,6 +1324,11 @@ const NEW_WORDS = {
 
   // fingerprint
   fp_already: ['{0} is already on for this phone', 'इस फ़ोन पर {0} पहले से चालू है', 'Is phone par {0} pehle se chaalu hai'],
+  fp_have_t: ['This phone already has your {0} key', 'इस फ़ोन में आपकी {0} चाबी पहले से है', 'Is phone mein aapki {0} chaabi pehle se hai'],
+  fp_have_s: ['The app had forgotten it (after logging out, a new PIN, or opening from Safari). Use the same key — nothing new to save.', 'ऐप उसे भूल गया था (लॉग आउट, नया PIN या Safari से खोलने के बाद)। वही चाबी इस्तेमाल करें — कुछ नया सेव नहीं करना।', 'App use bhool gaya tha (log out, naya PIN ya Safari se kholne ke baad). Wahi chaabi use karo — kuch naya save nahi karna.'],
+  fp_maybe_t: ['Switched it on before on this phone?', 'पहले इस फ़ोन पर चालू किया था?', 'Pehle is phone par chaalu kiya tha?'],
+  fp_maybe_s: ['If this phone already has your {0} key, use it instead of saving a new one.', 'अगर इस फ़ोन में आपकी {0} चाबी पहले से है, तो नई की जगह वही इस्तेमाल करें।', 'Agar is phone mein aapki {0} chaabi pehle se hai, to nayi ki jagah wahi use karo.'],
+  fp_use_key: ['Use it with {0}', '{0} से चालू करें', '{0} se chaalu karo'],
   fp_phone: ['Phone', 'फ़ोन', 'Phone'],
   fp_removed: ['Removed', 'हटा दिया', 'Hata diya'],
 

@@ -12,7 +12,7 @@ import { online, whenOnline, markOffline } from './net.js';
 import { setCacheOwner, forgetPerson } from './offline/cache.js';
 import { loadOutbox, flush, needUnlock, outbox, forgetOutbox } from './offline/outbox.js';
 import { pinCopy, pinMatches } from './offline/pin.js';
-import { unlockOnline, unlockOffline, registerPasskey, prepare } from './passkey.js';
+import { unlockOnline, unlockOffline, registerPasskey, reconnectPasskey, prepare } from './passkey.js';
 import { call } from './api.js';
 import { warmUp } from './offline/warm.js';
 import { lockAfterOf, shouldLock, noteHidden, takeLeaving, clearLeaving, watchLeavingOnPurpose } from './autolock.js';
@@ -284,6 +284,14 @@ export async function switchOnFinger(label) {
   const uid = storedSession()?.user?.id;
   const keep = await registerPasskey(label);
   if (uid) setPersonExtra(uid, { passkey: keep, fingerAsked: true });
+  return keep;
+}
+/** The phone already has the key (the app forgot it): keep it again after one Face ID / fingerprint check. */
+export async function reconnectFinger() {
+  const uid = storedSession()?.user?.id;
+  const keep = await reconnectPasskey();
+  if (uid) setPersonExtra(uid, { passkey: keep, fingerAsked: true });
+  clearLeaving();
   return keep;
 }
 /** Switch it off on this phone (the server forgets this phone's key too). */

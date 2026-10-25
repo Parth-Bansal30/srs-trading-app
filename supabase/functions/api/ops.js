@@ -1526,7 +1526,8 @@ export const PASSKEY_ORIGINS = ['https://srs-trading-app.bansalparth12345.worker
  * These run before the PIN unlock (unlocking with the finger IS the unlock). who: { user, session, unlocked, person }.
  *   passkeyBegin  { purpose: 'unlock' | 'register' } → challenge (+ for register: the details the phone needs)
  *   passkeyRegister { challenge, clientDataJSON, attestationObject, label } — needs a PIN unlock in the last 10 minutes
- *   passkeyUnlock { challenge, credential_id, clientDataJSON, authenticatorData, signature }
+ *   passkeyUnlock { challenge, credential_id, clientDataJSON, authenticatorData, signature } → { ok, credential_id, jwk, alg }
+ *     (the public key comes back so a phone that already has the key but forgot it can keep it again — "Use it with Face ID")
  */
 export function makePasskeyOps({ core, rpc, origins = PASSKEY_ORIGINS, appName = 'SRS Trading' }) {
   const strOf = (v, max) => { const x = String(v ?? ''); if (!x || x.length > max || !/^[A-Za-z0-9_-]+$/.test(x)) throw bad('Please try again.'); return x; };
@@ -1561,7 +1562,8 @@ export function makePasskeyOps({ core, rpc, origins = PASSKEY_ORIGINS, appName =
       } catch (e) { throw toApi(e); }
       const r = await rpc('api_passkey_unlock', { p_user: who.user, p_session: who.session, p_challenge: challenge, p_credential_id: credId, p_sign_count: v.signCount });
       if (!r?.ok) throw new ApiError(401, 'passkey_failed', r?.reason === 'blocked' ? 'Too many wrong PINs. Log in again with an SMS code.' : 'The fingerprint could not be checked. Use your PIN.', { reason: r?.reason });
-      return { ok: true };
+      // the key's public half (not secret): a phone that forgot it (logged out, "forgot PIN") keeps it again — 25 Oct 2026
+      return { ok: true, credential_id: credId, jwk: k.public_key, alg: k.alg };
     },
   };
 }

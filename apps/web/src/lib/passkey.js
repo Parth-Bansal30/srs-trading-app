@@ -71,7 +71,10 @@ async function challengeFor(purpose) {
 /** Switch it on for the person signed in now (needs a PIN in the last 10 minutes). Returns { credId, jwk, alg } to keep on the phone. */
 export async function registerPasskey(label) {
   const o = await challengeFor('register');
-  const cred = await navigator.credentials.create({ publicKey: {
+  const hasKeys = (o.exclude || []).length > 0;   // this person already has a key somewhere (maybe on this very phone)
+  let cred;
+  try {
+    cred = await navigator.credentials.create({ publicKey: {
     challenge: b64uDecode(o.challenge),
     rp: { name: o.rp?.name || APP.name, id: location.hostname },
     user: { id: b64uDecode(o.user.id), name: o.user.name || o.user.displayName, displayName: o.user.displayName },
@@ -79,7 +82,13 @@ export async function registerPasskey(label) {
     authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
     excludeCredentials: (o.exclude || []).map((id) => ({ type: 'public-key', id: b64uDecode(id) })),
     timeout: 60000, attestation: 'none',
-  } });
+    } });
+  } catch (e) {
+    // InvalidStateError = this phone already has this person's key (the app forgot it: logged out, "forgot PIN",
+    // opened from Safari instead of the Home Screen) → offer "Use it with Face ID" (reconnectPasskey)
+    if (hasKeys && e) { try { e.hasKeys = true; } catch { /* read-only error */ } prepare('unlock'); }
+    throw e;
+  }
   const answer = { clientDataJSON: b(cred.response.clientDataJSON), attestationObject: b(cred.response.attestationObject) };
   // the same check the server makes — and it gives the public key to keep for unlocking offline
   const mine = await verifyRegistration(answer, { challenge: o.challenge, origins: [location.origin] });
@@ -101,6 +110,20 @@ export async function unlockOnline(keep) {
   const ids = (o.credentials || []).filter((id) => !keep?.credId || id === keep.credId);
   if (!ids.length) throw Object.assign(new Error('not on this phone'), { code: 'no_key' });
   return call('passkeyUnlock', { challenge: o.challenge, ...(await ask(o.challenge, ids)) });
+}
+
+/**
+ * The phone already has this person's key but the app forgot it: one Face ID / fingerprint check with the server
+ * (also unlocks), and the server sends the public half back to keep. Returns { credId, jwk, alg } like registerPasskey.
+ */
+export async function reconnectPasskey() {
+  const o = await challengeFor('unlock');
+  const ids = o.credentials || [];
+  if (!ids.length) throw Object.assign(new Error('no key'), { code: 'no_key' });
+  const a = await ask(o.challenge, ids);
+  const r = await call('passkeyUnlock', { challenge: o.challenge, ...a });
+  if (!r?.jwk) throw Object.assign(new Error('no key'), { code: 'no_key' });
+  return { credId: r.credential_id || a.credential_id, jwk: r.jwk, alg: r.alg };
 }
 
 /** Unlock without internet: the phone checks the finger's signature itself with the kept public key. */

@@ -7,7 +7,7 @@ import { passkeyReady, bt, bioIcon, bioName } from '../lib/passkey.js';
 import { outbox } from '../lib/offline/outbox.js';
 import { online } from '../lib/net.js';
 import { toast } from '../ui/toast.js';
-import { turnFingerOn } from '../ui/FingerOffer.jsx';
+import { turnFingerOn, UseKey } from '../ui/FingerOffer.jsx';
 import { theme, applyTheme } from '../lib/theme.js';
 import { go } from '../lib/router.js';
 import { MENU } from '../config/navigation.js';
@@ -87,12 +87,13 @@ function FingerSwitch() {
   const [ready, setReady] = useState(null);
   const [on, setOn] = useState(fingerOn());
   const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(null);   // 'have' | 'maybe': this phone already has the key → "Use it with Face ID"
   // switching on needs a PIN in the last 10 minutes; then get the challenge ready so the tap goes straight to Face ID
   useEffect(() => { passkeyReady().then((ok) => { setReady(ok); if (ok && !fingerOn() && Date.now() - pinJustNow.value < 9 * 60000) prepareFinger('register'); }); }, []);
   if (ready === null) return null;
   const flip = async (want) => {
     setBusy(true);
-    if (want) { const ok = await turnFingerOn(); setOn(ok); } else { await switchOffFinger(); setOn(false); toast(bt('fp_off_done')); }
+    if (want) { const ok = await turnFingerOn(); setOn(ok === true); setKey(ok === true || !ok ? null : ok); } else { await switchOffFinger(); setOn(false); setKey(null); toast(bt('fp_off_done')); }
     setBusy(false);
   };
   return (
@@ -102,6 +103,7 @@ function FingerSwitch() {
         <div class="grow"><div class="t" style="font-weight:700;font-size:16px">{bt('fp_title')}</div><div class="muted" style="font-size:13px">{ready ? bt('fp_sub') : t('fp_none')}</div></div>
         <input type="checkbox" class="switch" checked={on} disabled={!ready || busy || (!on && !online.value)} onChange={(e) => flip(e.currentTarget.checked)} />
       </label>
+      {key && !on && <UseKey kind={key} onDone={() => { setOn(true); setKey(null); }} />}
     </div>
   );
 }

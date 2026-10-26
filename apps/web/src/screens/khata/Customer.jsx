@@ -28,8 +28,9 @@ const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata
 
 export function Customer({ id }) {
   const [r, setR] = useState(undefined);
-  const [sheet, setSheet] = useState(null); // pay | remind | old | edit | statement
-  useEffect(() => { if (route.value.query.pay && can('khata')) setSheet('pay'); }, []);
+  const [sheet, setSheet] = useState(null); // pay | remind | old | edit | statement | giveback
+  const [payOpen, setPayOpen] = useState(null);   // a payment row tapped → its details (+ owner: cancel / give back)
+  useEffect(() => { if (route.value.query.pay && can('khata')) setSheet('pay'); if (route.value.query.giveback && can('delete')) setSheet('giveback'); }, []);
   const [info, setInfo] = useState(null);     // gstin, address, note…
   const [extra, setExtra] = useState({});     // bought this year, special rates, sent slips
   const tz = company.value?.timezone;
@@ -49,7 +50,7 @@ export function Customer({ id }) {
   const sides = Object.keys(r.by_side || {});
   const days = r.oldest ? daysSince(r.oldest, tz) : 0;
   const pak = r.by_side?.pakka?.due || 0; const kac = r.by_side?.kacha?.due || 0;
-  const entries = [...(r.entries || [])].reverse();
+  const entries = [...(r.entries || [])].filter((e) => !e.reversal).reverse();   // a cancellation shows on the payment it cancels
   const waiting = pendingPayments(outbox.value, id);
 
   return (
@@ -92,6 +93,7 @@ export function Customer({ id }) {
         <div class="row" style="margin-top:12px">
           {can('khata') && <button class="btn btn-brand grow" style="min-height:50px;font-size:15px" onClick={() => setSheet('pay')}><Icon name="IndianRupee" size={18} stroke={2.4} />{t('record_payment')}</button>}
           {can('khata') && r.due > 0 && <button class="btn btn-ghost" style="min-height:50px;font-size:15px;color:var(--bad)" onClick={() => setSheet('remind')}><Icon name="BellRing" size={18} />{t('remind')}</button>}
+          {can('delete') && r.due <= 0 && (r.credit > 0 || r.pending_advance > 0) && <button class="btn btn-ghost" style="min-height:50px;font-size:15px;color:var(--warn)" onClick={() => setSheet('giveback')}><Icon name="Undo2" size={18} />{t('gb_btn')}</button>}
         </div>
 
         {can('khata') && <button class="btn btn-brand btn-block" style="margin-top:12px" onClick={() => setSheet('statement')}><Icon name="FileText" size={19} stroke={2.3} />{t('send_stmt')}</button>}
@@ -118,17 +120,21 @@ export function Customer({ id }) {
                 {e.rem > 0 ? <Chip tone={e.paid > 0 ? 'accent' : 'warn'}>{e.paid > 0 ? t('due_left', money(e.rem)) : t('s_unpaid')}</Chip> : <Chip tone="ok">{t('s_paid')}</Chip>}</div>
             </button>
           ) : (
-            <div class="li" style={e.pending ? 'opacity:.7' : ''}>
-              <div class={`iconbox tone-${e.amt < 0 ? 'bad' : 'ok'}`}><Icon name={e.mode && e.mode !== 'Adjust' ? modeIcon(e.mode) : 'RefreshCw'} size={18} /></div>
+            <button class={`li ${e.cancelled ? 'pay-cancelled' : ''}`} style={e.pending ? 'opacity:.7' : ''} onClick={() => e.pid && setPayOpen(e)}>
+              <div class={`iconbox tone-${e.cancelled ? 'neutral' : e.amt < 0 ? 'bad' : 'ok'}`}><Icon name={e.cancelled ? 'Ban' : e.mode && e.mode !== 'Adjust' ? modeIcon(e.mode) : 'RefreshCw'} size={18} /></div>
               <div class="grow"><div class="t">{e.pending ? t('pending_adv') : t(KIND_WORD[e.kind] || 'payment')}{e.mode && e.mode !== 'Adjust' ? ` · ${modeText(e.mode)}` : ''}</div>
-                <div class="s ellip">{shortDate(e.date, tz)}{e.oid && r.slips?.[e.oid] ? ` · #${r.slips[e.oid]}` : ''}{e.note ? ` · ${e.note}` : ''}</div></div>
-              <div class="num" style={`font-weight:700;color:${e.amt < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{e.amt < 0 ? money(-e.amt) : `− ${money(e.amt)}`}</div>
-            </div>
+                {e.cancelled
+                  ? <div class="s ellip" style="color:var(--bad);font-weight:700">{`${t('pc_cancelled_t')}: ${e.cancelled.reason}${e.cancelled.by ? ` · ${e.cancelled.by}` : ''}`}</div>
+                  : <div class="s ellip">{shortDate(e.date, tz)}{e.oid && r.slips?.[e.oid] ? ` · #${r.slips[e.oid]}` : ''}{e.note ? ` · ${e.note}` : ''}</div>}</div>
+              <div class="num amt" style={`font-weight:700;color:${e.cancelled ? 'var(--ink-3)' : e.amt < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{e.amt < 0 ? money(-e.amt) : `− ${money(e.amt)}`}</div>
+            </button>
           ))}
         </div>
       </div>
 
       <PaySheet open={sheet === 'pay'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
+      <GiveBackSheet open={sheet === 'giveback'} c={c} r={r} entries={entries} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('gb_done', money(amt))); load(); }} />
+      <PaymentSheet e={payOpen} slips={r.slips || {}} tz={tz} onClose={() => setPayOpen(null)} onDone={() => { setPayOpen(null); toast(t('pc_done')); load(); }} />
       <OldDueSheet open={sheet === 'old'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={() => { setSheet(null); toast(t('done_ok')); load(); }} />
       <CustomerEdit open={sheet === 'edit'} c={c} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); toast(t('cust_saved')); loadInfo(); load(); }} />
       {can('khata') && <StatementSheet open={sheet === 'statement'} c={c} sides={sides} onClose={() => setSheet(null)} />}
@@ -185,6 +191,91 @@ function OldDueSheet({ open, c, sides, onClose, onDone }) {
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
       <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} />
       {a.error && <div class="error">{a.error.message}</div>}
+    </Sheet>
+  );
+}
+
+function MoneyInput({ value, onInput }) {
+  return <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={value} onInput={(e) => onInput(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>;
+}
+const Err = ({ a }) => a.error && <div class="error">{a.error.message}</div>;
+
+/**
+ * "Give money back" (owner, 25 Oct 2026): the advance / extra money the customer has with us goes back to them —
+ * from the khata credit (refundCredit), or an advance still sitting on an open slip (that slip's own sheet: return or move).
+ */
+function GiveBackSheet({ open, c, r, entries, sides, onClose, onDone }) {
+  const withCredit = sides.filter((s) => (r.by_side?.[s]?.adv || 0) > 0);
+  const [side, setSide] = useState(withCredit[0] || 'pakka');
+  const avail = r.by_side?.[side]?.adv || 0;
+  const [amt, setAmt] = useState('');
+  const [where, setWhere, accs] = useWhere(open);
+  const [note, setNote] = useState('');
+  const a = useAction('refundCredit');
+  useEffect(() => { if (open) { setAmt(avail ? String(avail) : ''); setNote(''); } }, [open, side]);
+  const onSlips = entries.filter((e) => e.pending && e.oid);
+  const ok = Number(amt) > 0 && Number(amt) <= avail && note.trim();
+  return (
+    <Sheet open={open} onClose={onClose} title={t('gb_title', c.name)}
+      footer={avail > 0 && <button class="btn btn-accent btn-block" disabled={a.busy || !ok} onClick={() => a.run({ customer_id: c.id, side, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }).then(() => onDone(Number(amt))).catch(() => {})}>
+        <Icon name="Undo2" size={18} stroke={2.4} />{t('gb_give')} {Number(amt) > 0 ? money(amt) : ''}</button>}>
+      {avail > 0 ? (
+        <>
+          <div class="notice tone-ok" style="font-size:14px">{t('gb_has', money(r.credit, false))}</div>
+          {withCredit.length > 1 && <SideSeg sides={withCredit} side={side} setSide={setSide} />}
+          <div class="lbl" style="margin-top:14px">{t('gb_how_much')}</div><MoneyInput value={amt} onInput={setAmt} />
+          <div class="lbl" style="margin-top:14px">{t('gb_from')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} single />
+          <div class="lbl" style="margin-top:14px">{t('reason')}</div>
+          <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('gb_reason_ph')} />
+        </>
+      ) : <div class="muted">{t('gb_nothing_khata')}</div>}
+      {onSlips.length > 0 && (
+        <>
+          <div class="lbl" style="margin-top:18px">{t('gb_on_slips')}</div>
+          <div class="card">{onSlips.map((e) => (
+            <button class="li" onClick={() => go(`/slip/${e.oid}?adjust=1`)}>
+              <div class="iconbox tone-neutral"><Icon name="ReceiptText" size={18} /></div>
+              <div class="grow"><div class="t num">{t('slip')} #{r.slips?.[e.oid] ?? ''}</div><div class="s">{t('gb_slip_s')}</div></div>
+              <b class="num">{money(e.amt)}</b><Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
+            </button>))}</div>
+        </>
+      )}
+      <Err a={a} />
+    </Sheet>
+  );
+}
+
+/** One payment: what, when, how — and for the owner: cancel it (a mistake) with a reason. Nothing is erased: it shows crossed out. */
+function PaymentSheet({ e, slips, tz, onClose, onDone }) {
+  const [why, setWhy] = useState('');
+  const [asking, setAsking] = useState(false);
+  const a = useAction('reversePayment');
+  useEffect(() => { setWhy(''); setAsking(false); a.setError(null); }, [e?.pid]);
+  if (!e) return null;
+  const slipNo = e.oid ? slips[e.oid] : null;
+  const owner = can('delete');
+  return (
+    <Sheet open={!!e} onClose={onClose} title={t(KIND_WORD[e.kind] || 'payment')}
+      footer={owner && !e.pending && !e.cancelled && e.amt > 0 && (asking
+        ? <button class="btn btn-block" style="background:var(--bad);color:#fff" disabled={a.busy || !why.trim()} onClick={() => a.run({ payment_id: e.pid, note: why }).then(onDone).catch(() => {})}><Icon name="Ban" size={18} />{t('pc_confirm', money(e.amt))}</button>
+        : <button class="btn btn-ghost btn-block" style="color:var(--bad)" onClick={() => setAsking(true)}><Icon name="Ban" size={18} />{t('pc_cancel')}</button>)}>
+      <div class="num" style={`font-size:34px;font-weight:800;letter-spacing:-.03em;color:${e.cancelled ? 'var(--ink-3)' : 'var(--ok)'}${e.cancelled ? ';text-decoration:line-through' : ''}`}>{money(Math.abs(e.amt), false)}</div>
+      {e.cancelled && <div class="notice tone-bad" style="margin-top:10px;font-size:14px"><b>{t('pc_cancelled_t')}</b> · {shortDate(e.cancelled.at, tz)}{e.cancelled.by ? ` · ${e.cancelled.by}` : ''}<br />{e.cancelled.reason}</div>}
+      <div class="card" style="margin-top:12px">
+        <div class="li"><div class="iconbox tone-neutral"><Icon name={e.mode && e.mode !== 'Adjust' ? modeIcon(e.mode) : 'RefreshCw'} size={18} /></div><div class="grow"><div class="t">{e.mode && e.mode !== 'Adjust' ? modeText(e.mode) : t('kind_transfer')}</div><div class="s">{shortDate(e.date, tz)}</div></div></div>
+        {slipNo && <button class="li" onClick={() => go(`/slip/${e.oid}`)}><div class="iconbox tone-neutral"><Icon name="ReceiptText" size={18} /></div><div class="grow"><div class="t num">{t('slip')} #{slipNo}</div><div class="s">{e.pending ? t('pc_on_open_slip') : t('pc_on_slip')}</div></div><Icon name="ChevronRight" size={18} style="color:var(--ink-3)" /></button>}
+        {e.note && <div class="li"><div class="iconbox tone-neutral"><Icon name="StickyNote" size={18} /></div><div class="grow"><div class="s" style="color:var(--ink)">{e.note}</div></div></div>}
+      </div>
+      {owner && e.pending && !e.cancelled && <button class="btn btn-ghost btn-block" style="margin-top:12px" onClick={() => go(`/slip/${e.oid}?adjust=1`)}><Icon name="Undo2" size={18} />{t('pc_adv_back')}</button>}
+      {owner && asking && (
+        <>
+          <div class="notice tone-bad" style="margin-top:12px;font-size:13.5px">{slipNo && !e.pending ? t('pc_warn_slip', slipNo, money(e.amt)) : t('pc_warn')}</div>
+          <div class="lbl" style="margin-top:12px">{t('reason')}</div>
+          <input class="textarea" autofocus value={why} onInput={(x) => setWhy(x.currentTarget.value)} placeholder={t('pc_reason_ph')} />
+        </>
+      )}
+      {!owner && !e.cancelled && <div class="faint" style="margin-top:12px;font-size:12.5px;font-weight:600">{t('pc_owner_only')}</div>}
+      <Err a={a} />
     </Sheet>
   );
 }

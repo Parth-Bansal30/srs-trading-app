@@ -27,6 +27,7 @@ export function Expenses() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   const [add, setAdd] = useState(route.value.query.add === '1');
+  const startMove = route.value.query.move === '1';
   const [edit, setEdit] = useState(null);
   const [open, setOpen] = useState(null);       // an expense, for details
   const [move, setMove] = useState(false);
@@ -35,7 +36,7 @@ export function Expenses() {
   const load = () => call('expenses', { from: range.from, to: range.to > today ? today : range.to })
     .then((x) => { setD(x); setErr(null); }).catch((e) => setErr(e.message || t('err_generic')));
   useEffect(() => { if (!expenseKinds().length) { go('/'); return; } setD(null); load(); }, [which, outboxVersion.value]);
-  useEffect(() => { if (route.value.query.add === '1') replace('/expenses'); }, []);
+  useEffect(() => { if (route.value.query.add === '1' || startMove) replace('/expenses'); if (startMove) setMove(true); }, []);
   const saved = (msg) => { setAdd(false); setEdit(null); setMove(false); setOpen(null); forgetAccounts(); toast(msg); load(); };
 
   const inRange = (day) => day >= range.from && day <= range.to;

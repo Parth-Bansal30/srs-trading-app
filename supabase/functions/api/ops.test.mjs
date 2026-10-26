@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as core from '../../../packages/core/src/index.js';
-import { makeOps, stableStringify, mapDbError, ApiError, coreItemFromDb, makeGstLookup, makePasskeyOps, offlineAt } from './ops.js';
+import { makeOps, stableStringify, mapDbError, ApiError, coreItemFromDb, makeGstLookup, makePasskeyOps, offlineAt, markCancelled } from './ops.js';
 import { phone } from '../../../packages/core/test/helpers/phone.js';
 
 const EN8 = '10000000-0000-4000-8000-000000000001';
@@ -164,6 +164,33 @@ test('finalizeOrder: refusals', async () => {
   await rejects(ops.finalizeOrder(weigher, { order_id: ORDER, bill: 'pakka', pay_mode: 'now' }, 'k', 'h'), 403);
   const done = fakeDb({ orderContext: { order: { id: ORDER, status: 'done', pricing_rules: {} } } });
   await rejects(done.ops.finalizeOrder(owner, { order_id: ORDER, bill: 'pakka', pay_mode: 'now', pay_method: 'Cash' }, 'k', 'h'), 409);
+});
+
+test('cancelling a payment and giving money back are the owner\'s (25 Oct 2026)', async () => {
+  const accounts = { id: 'p-acc', company_id: 'c1', perms: core.ROLE_PRESETS.accounts() };   // money + khata, not delete
+  const { ops, calls } = fakeDb();
+  await rejects(ops.reversePayment(accounts, { payment_id: CUST, note: 'typed twice' }, 'k', 'h'), 403);
+  await rejects(ops.refundCredit(accounts, { customer_id: CUST, side: 'pakka', amount: 100, mode: 'Cash', note: 'paid twice' }, 'k', 'h'), 403);
+  await rejects(ops.adjustAdvance(accounts, { order_id: ORDER, action: 'refund', amount: 100, mode: 'Cash', note: 'cancelled' }, 'k', 'h'), 403);
+  assert.equal(calls.length, 0, 'nothing reached the database');
+  await ops.reversePayment(owner, { payment_id: CUST, note: 'typed twice' }, 'k', 'h');
+  assert.equal(calls.at(-1).fn, 'api_reverse_payment');
+});
+
+test('a cancelled payment shows crossed out; its cancellation row is marked to leave out', () => {
+  const entries = [
+    { t: 'bill', oid: 'o1', amt: 5000 },
+    { t: 'pay', pid: 'p1', amt: 1500, kind: 'khata' },
+    { t: 'pay', pid: 'p2', amt: -1500, kind: 'khata' },
+    { t: 'pay', pid: 'p3', amt: 700, kind: 'khata' },
+  ];
+  const pays = [{ id: 'p1' }, { id: 'p2', reverses: 'p1', note: 'written twice', by: 'Papa', at: '2026-10-25T10:00:00Z' }, { id: 'p3' }];
+  const m = markCancelled(entries, pays);
+  assert.deepEqual(m[1].cancelled, { reason: 'written twice', by: 'Papa', at: '2026-10-25T10:00:00Z' });
+  assert.equal(m[2].reversal, true);
+  assert.equal(m[3].cancelled, undefined); assert.equal(m[3].reversal, undefined);
+  assert.equal(m[0], entries[0], 'bills untouched');
+  assert.deepEqual(markCancelled(entries, undefined), entries, 'old data without the new fields still works');
 });
 
 test('money inputs are checked before anything is saved', async () => {

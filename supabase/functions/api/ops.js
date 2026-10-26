@@ -143,6 +143,21 @@ export function coreKhataFromDb(k) {
   };
 }
 
+/**
+ * Cancelled payments (25 Oct 2026): the payment shows crossed out with the reason, who and when; its cancellation
+ * row is marked so the screen can leave it out (together they add up to nothing, so the totals don't change).
+ */
+export function markCancelled(entries, payments = []) {
+  const byId = new Map(payments.map((p) => [p.id, p]));
+  const undo = new Map(payments.filter((p) => p.reverses).map((p) => [p.reverses, p]));
+  return entries.map((e) => {
+    if (e.t !== 'pay' || !e.pid) return e;
+    if (byId.get(e.pid)?.reverses) return { ...e, reversal: true };
+    const u = undo.get(e.pid);
+    return u ? { ...e, cancelled: { reason: u.note || '', by: u.by || null, at: u.at } } : e;
+  });
+}
+
 /** A database order (from api_order_context / api_weighing_list) in @srs/core's shape. */
 export function coreItemFromDb(i) {
   return {
@@ -574,6 +589,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
 
     async reversePayment(caller, a, key, hash) {
       need(caller, 'money', 'khata');
+      need(caller, 'delete');   // the owner's (25 Oct 2026): cancelling money is with the "delete" permission
       const note = text(a.note);
       if (!note) throw bad('Write why this payment is being cancelled.');
       return rpc('api_reverse_payment', { p_caller: caller.id, p_key: key, p_hash: hash, p_payment: uuid(a.payment_id, 'Which payment?'), p_note: note });
@@ -813,6 +829,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         p_action: a.action, p_amount: amount(a.amount, 'amount'), p_mode: null, p_target: null, p_side: null, p_note: text(a.note) };
       let place = null;
       if (a.action === 'refund') {
+        need(caller, 'delete');   // giving money back is the owner's (25 Oct 2026)
         place = placement({ account_id: a.account_id, method: a.method }, null); // given back from one account
         args.p_mode = modeFor(a.mode, place);
         if (!args.p_note) throw bad('Write why the money is returned.');
@@ -831,6 +848,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     /** Give back credit a customer holds in the khata (how much is available is worked out with @srs/core). */
     async refundCredit(caller, a, key, hash) {
       need(caller, 'money', 'khata');
+      need(caller, 'delete');   // giving money back is the owner's (25 Oct 2026)
       const customer = uuid(a.customer_id, 'Which customer?');
       if (!BILLS.includes(a.side)) throw bad('Choose the account.');
       if (a.side === 'kacha') need(caller, 'kacha');
@@ -875,7 +893,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return raw.customers.map((c) => {
         const l = core.customerLedger({ custId: c.id, ...k, sides, allSides: sides });
         return { customer: c, due: l.due, credit: l.adv, pending_advance: l.pend, oldest: l.oldest, by_side: l.bySide,
-          entries: customer ? l.entries : undefined,
+          entries: customer ? markCancelled(l.entries, raw.payments) : undefined,
           slips: customer ? Object.fromEntries(raw.orders.map((o) => [o.id, o.slip_no])) : undefined };
       }).filter((x) => customer || x.due > 0 || x.credit > 0);
     },

@@ -26,37 +26,20 @@ export function setEasy(patch) {
   if (id) store.setJson(KEY(id), next);
 }
 
-// ---------------------------------------------------------------- saying it out loud
-export const canSpeak = () => typeof window !== 'undefined' && 'speechSynthesis' in window;
+// ---------------------------------------------------------------- saying it out loud (lib/speech.js, smoother 25 Oct 2026)
+import { canSpeak as canSpeakNow, say as sayNow, moneySpeech, primeSpeech } from './speech.js';
+export const canSpeak = canSpeakNow;
 
-function pickVoice(code) {
-  const vs = window.speechSynthesis.getVoices() || [];
-  return vs.find((v) => v.lang === code) || vs.find((v) => v.lang?.startsWith(code.slice(0, 2))) || null;
-}
+/** Say a sentence in Hindi ('hi') or English ('en') with this person's voice and speed. Never throws. */
+export const say = (text, voiceLang = 'hi') => sayNow(text, voiceLang, { voice: easy.value.voice || null, rate: easy.value.rate || 'normal' });
 
-/** Say a sentence in Hindi ('hi') or English ('en'). Never throws. */
-export function say(text, voiceLang = 'hi') {
-  if (!canSpeak() || !text) return false;
-  try {
-    const code = voiceLang === 'en' ? 'en-IN' : 'hi-IN';
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = code; u.rate = 0.95;
-    const v = pickVoice(code);
-    if (v) u.voice = v;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-    return true;
-  } catch { return false; }
-}
+/** The sentence spoken for money received ({ text, voiceLang }). Hindi and Hinglish are spoken in Hindi script. */
+export const moneyTalk = (how, amount, customer) => moneySpeech(how, amount, customer);
 
-/** The sentence for money received, in the chosen speaking language. amount in rupees. */
-export function moneyWords(how, amount, customer) {
-  const rs = Math.round(Number(amount) || 0);
-  const who = String(customer || '').trim();
-  if (how === 'en') return who ? `Received ${rs} rupees from ${who}.` : `Received ${rs} rupees.`;
-  if (how === 'hn') return who ? `${rs} rupaye mil gaye, ${who} se.` : `${rs} rupaye mil gaye.`;
-  return who ? `${who} से ${rs} रुपये मिल गए।` : `${rs} रुपये मिल गए।`;
-}
+/** Kept for older screens: the sentence for money received (spoken form). */
+export const moneyWords = (how, amount, customer) => moneySpeech(how, amount, customer).text;
+
+const speakMoney = (p) => { const e = easy.value; if (e.speak && e.speak !== 'off') { const m = moneySpeech(e.speak, p.amount, p.customer); say(m.text, m.voiceLang); } };
 
 /**
  * Money was SAVED in the app (never from a screenshot): show the big green "₹45,000 mil gaye" in easy
@@ -67,6 +50,9 @@ export function moneySaved(p) {
   if (!(Number(p?.amount) > 0)) return;
   const e = easy.value;
   if (e.on) praise.value = { ...p, at: Date.now() };
-  if (e.speak && e.speak !== 'off') say(moneyWords(e.speak, p.amount, p.customer), e.speak === 'en' ? 'en' : e.speak === 'hn' ? 'hi' : 'hi');
+  speakMoney(p);
 }
-export const sayAgain = () => { const p = praise.value; const e = easy.value; if (p && e.speak !== 'off') say(moneyWords(e.speak, p.amount, p.customer), e.speak === 'en' ? 'en' : 'hi'); };
+export const sayAgain = () => { const p = praise.value; if (p) speakMoney(p); };
+
+// iPhone lets the voice speak after saving only if a first (silent) sentence came from a tap
+if (typeof document !== 'undefined') document.addEventListener('pointerdown', () => { if (easy.value.speak && easy.value.speak !== 'off') primeSpeech(); }, { capture: true, passive: true });

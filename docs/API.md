@@ -50,14 +50,14 @@ Authorization: Bearer <the person's login token>
 | `recordWeights` | weigh | `{order_id, weights:[{item_id, weight}], batches:[{total_weight, item_ids}], submit}`. Weigh-together split by `@srs/core` — **always adds up exactly** to the scale reading. Warns (never blocks) when a weight is more than the set % from the sizes |
 | `finalizeOrder` | money (+kacha for kacha) | `{order_id, bill, pay_mode, paid?, pay_method, note?}` → totals by `@srs/core finishCalc`, GST/kacha % from settings, pickup payment, khata flag. If weights, advance or % changed meanwhile → `409 changed` |
 | `recordPayment` | money + khata (+kacha) | khata payment `{customer_id, amount, mode, side, note}` |
-| `reversePayment` | money + khata | cancel a payment with the exact opposite entry (reason required, once only). A finished slip it was paid on moves into the khata |
+| `reversePayment` | money + khata + **delete** (owner, 25 Oct 2026) | cancel a payment with the exact opposite entry (reason required, once only). A finished slip it was paid on moves into the khata. `khata` marks the payment `cancelled: {reason, by, at}` and its opposite entry `reversal: true` (left out on screen) |
 | `saveCashCount` | money + today | filed under the **shop's date**; expected cash worked out by the database |
 | `changeMaterialRate` · `createMaterial` · `updateMaterial` · `setCustomerRate` | rates | rate history is kept for ever; `rate: null` removes a special rate |
 | `createCustomer` · `updateCustomer` | new | |
 | `changeSettings` | settings | GST %, kacha %, min inch, slip numbering, weight warning %, **starting slip number** (only before the first order), AI daily limit, company name/GSTIN/phone/address |
 | `cancelOrder` | new | cancel an accepted/weighed order with a reason — only once its advance is settled (estimates are simply deleted) |
-| `adjustAdvance` | money (+kacha) | `{order_id, action, amount, …}`: **refund** (give money back by Cash/UPI/Bank/Cheque, reason required — also the extra paid on a finished order), **move** (to `target_order_id`, same customer, open order), **credit** (keep for the customer on `side`). Moves and credit are marked `Adjust`, so they never touch the cash count |
-| `refundCredit` | money + khata | give back credit a customer holds in the khata (available amount worked out by `@srs/core`) |
+| `adjustAdvance` | money (+kacha); refund also **delete** (owner) | `{order_id, action, amount, …}`: **refund** (give money back by Cash/UPI/Bank/Cheque, reason required — also the extra paid on a finished order), **move** (to `target_order_id`, same customer, open order), **credit** (keep for the customer on `side`). Moves and credit are marked `Adjust`, so they never touch the cash count |
+| `refundCredit` | money + khata + **delete** (owner) | give back credit a customer holds in the khata (available amount worked out by `@srs/core`) |
 | `addOldDue` · `reverseOldDue` | money + khata (+kacha) | old balances from the paper khata: a lump sum (no `ref`) or one old slip (`ref` = old slip number), dated; corrected only by an exact opposite entry |
 | `khata` | money | every customer's account worked out by `@srs/core` (due, credit, oldest due, per side); with `customer_id` also the full entries |
 | `reminderList` | money + khata | customers to **ask** about: slips unpaid/part-paid for `reminder_after_days` (default 25), not reminded in the last `reminder_repeat_days` (default 7). Nothing is sent. Message preview is neutral (no bill type) |

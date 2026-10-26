@@ -15,7 +15,9 @@ import { APP } from '../config/app.js';
 import { BUILD } from '../lib/update.js';
 import { longDay } from '../lib/format.js';
 import { Icon, TopBar } from '../ui/kit.jsx';
-import { easy, setEasy, say, moneyWords, canSpeak } from '../lib/easy.js';
+import { easy, setEasy, say, moneyTalk, canSpeak } from '../lib/easy.js';
+import { phoneVoices, voicesReady, isClearVoice } from '../lib/speech.js';
+import { isApple } from '../lib/passkey.js';
 
 export function More() {
   const c = company.value;
@@ -54,7 +56,7 @@ export function More() {
           <div class="seg speak-seg">{[['hi', 'हिंदी'], ['hn', 'Hinglish'], ['en', 'English'], ['off', t('speak_off')]].map(([id, w]) =>
             <button class={easy.value.speak === id ? 'on' : ''} onClick={() => setEasy({ speak: id })}>{w}</button>)}</div>
           {easy.value.speak !== 'off' && (canSpeak()
-            ? <button class="link" style="margin-top:8px" onClick={() => say(moneyWords(easy.value.speak, 45000, 'Sharma ji'), easy.value.speak === 'en' ? 'en' : 'hi')}><Icon name="Volume2" size={16} />{t('speak_test')}</button>
+            ? <VoicePick how={easy.value.speak} />
             : <div class="notice tone-warn" style="margin-top:8px;font-size:13px">{t('speak_none')}</div>)}
           <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:10px">{t('easy_note')}</div>
         </div>
@@ -127,3 +129,42 @@ function LockAfter() {
     </div>
   );
 }
+
+/** The voice: hear it, slow / normal, and which of the phone's voices (best first; "Clearer" = the natural ones). */
+function VoicePick({ how }) {
+  const voiceLang = how === 'en' ? 'en' : 'hi';
+  const [list, setList] = useState(() => phoneVoices(voiceLang));
+  useEffect(() => { setList(phoneVoices(voiceLang)); voicesReady().then(() => setList(phoneVoices(voiceLang))); }, [voiceLang]);
+  const sample = moneyTalk(how, 125000, 'Sharma ji');
+  const hear = () => say(sample.text, sample.voiceLang);
+  const chosen = easy.value.voice && list.some((v) => v.voiceURI === easy.value.voice) ? easy.value.voice : null;
+  const pick = (uri) => { setEasy({ voice: uri }); setTimeout(hear, 50); };
+  const clear = list.some(isClearVoice);
+  return (
+    <div class="voice-pick">
+      <button class="btn btn-ghost btn-block" style="margin-top:10px;min-height:48px" onClick={hear}><Icon name="Volume2" size={18} />{t('speak_test')}</button>
+      <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{t('speak_says')} “{sample.text}”</div>
+      <div class="lbl" style="margin-top:12px">{t('speak_speed')}</div>
+      <div class="seg">{[['slow', 'speak_slow'], ['normal', 'speak_normal']].map(([id, w]) =>
+        <button class={(easy.value.rate || 'normal') === id ? 'on' : ''} onClick={() => { setEasy({ rate: id }); setTimeout(hear, 50); }}>{t(w)}</button>)}</div>
+      {list.length > 1 && (
+        <>
+          <div class="lbl" style="margin-top:12px">{t('speak_voice')}</div>
+          <div class="card voice-list">
+            <button class={`li ${!chosen ? 'on' : ''}`} onClick={() => pick(null)}>
+              <div class="grow"><div class="t">{t('speak_auto')}</div><div class="s">{voiceName(list[0])}</div></div>
+              <span class={`radio ${!chosen ? 'on' : ''}`} />
+            </button>
+            {list.slice(0, 5).map((v) => (
+              <button class={`li ${chosen === v.voiceURI ? 'on' : ''}`} onClick={() => pick(v.voiceURI)}>
+                <div class="grow"><div class="t">{voiceName(v)}</div>{isClearVoice(v) && <div class="s" style="color:var(--ok);font-weight:700">{t('speak_clear')}</div>}</div>
+                <span class={`radio ${chosen === v.voiceURI ? 'on' : ''}`} />
+              </button>))}
+          </div>
+        </>
+      )}
+      {isApple() && voiceLang === 'hi' && !clear && <div class="notice tone-accent" style="margin-top:10px;font-size:13px">{t('speak_tip_iphone')}</div>}
+    </div>
+  );
+}
+const voiceName = (v) => String(v?.name || '').replace(/\s*[-–]\s*(Hindi|English).*$/i, '').replace(/^Microsoft\s+/i, '').trim() || '—';

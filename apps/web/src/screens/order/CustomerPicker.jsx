@@ -8,7 +8,7 @@ import { forgetCatalog } from '../../lib/catalog.js';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { Icon } from '../../ui/kit.jsx';
 
-export function CustomerPicker({ open, customers, onClose, onPick }) {
+export function CustomerPicker({ open, customers, onClose, onPick, title }) {
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -25,7 +25,7 @@ export function CustomerPicker({ open, customers, onClose, onPick }) {
     if (c) { newId.current = newKey(); forgetCatalog(); customers.push(c); setAdding(false); setName(''); setPhone(''); onPick(c); }
   };
   return (
-    <Sheet open={open} onClose={onClose} title={adding ? t('new_customer') : t('choose_customer')}
+    <Sheet open={open} onClose={onClose} title={adding ? t('new_customer') : title || t('choose_customer')}
       footer={adding
         ? <button class="btn btn-accent btn-block" disabled={add.busy || !name.trim()} onClick={save}>{t('add_save')}</button>
         : can('new') && <button class="btn btn-ghost btn-block" onClick={() => { setAdding(true); setName(q); }}><Icon name="Plus" size={18} stroke={2.4} />{t('new_customer')}</button>}>

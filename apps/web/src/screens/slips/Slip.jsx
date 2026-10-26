@@ -1,5 +1,5 @@
 // One slip: items, weights, amounts, money taken — and the next step for its stage.
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { r2, calcItem } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
@@ -45,6 +45,14 @@ export function Slip({ id }) {
     if (x && (x.order_items.some((i) => i.stock_item_id) || ['estimate', 'accepted'].includes(x.status))) loadStock(true).then(setStock).catch(() => {});
   }).catch(() => setO(null));
   useEffect(() => { load(); }, [id, outboxVersion.value]);
+  // from the customer's account ("Give this advance back"): open the return / move sheet once the slip is here
+  const wantAdjust = useRef(route.value.query.adjust === '1');
+  useEffect(() => {
+    if (!o || !wantAdjust.current) return;
+    wantAdjust.current = false;
+    const ext = o.status === 'done' ? r2(o.paid - Number(o.total_amount)) : 0;
+    if (can('money') && ((['accepted', 'weighed'].includes(o.status) && o.advance > 0) || (ext > 0 && can('delete')))) setSheet('adjust');
+  }, [o]);
   const decline = useAction('declineDelete');
   const setStockOf = useAction('setItemStock');
   const done = (msg) => { setSheet(null); toast(msg || t('done_ok')); load(); };
@@ -180,7 +188,7 @@ export function Slip({ id }) {
         {justDone && can('new') && <button class="btn btn-brand btn-block" onClick={() => go('/new')}><Icon name="Plus" size={20} stroke={2.4} />{t('next_order')}</button>}
         <div class="row" style="justify-content:center;gap:18px;margin-top:6px">
           {net && ['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
-          {net && o.status === 'done' && extra > 0 && can('money') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
+          {net && o.status === 'done' && extra > 0 && can('delete') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
           {net && ['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
           {!net && !local && ['accepted', 'weighed', 'done'].includes(o.status) && <span class="faint" style="font-size:12.5px">{t('off_more_later')}</span>}
         </div>
@@ -256,7 +264,8 @@ function AdvanceSheet({ open, o, onClose, onDone }) {
 function AdjustSheet({ open, o, extra, onClose, onDone }) {
   const onlyRefund = o.status === 'done';
   const avail = onlyRefund ? extra : o.advance;
-  const [action, setAction] = useState('refund');
+  const owner = can('delete');   // giving money back is the owner's (25 Oct 2026); others can move it or keep it as credit
+  const [action, setAction] = useState(owner ? 'refund' : 'move');
   const [amt, setAmt] = useState('');
   const [where, setWhere, accs] = useWhere(open);
   const [note, setNote] = useState('');
@@ -277,7 +286,7 @@ function AdjustSheet({ open, o, extra, onClose, onDone }) {
     <Sheet open={open} onClose={onClose} title={onlyRefund ? t('act_return_extra') : t('act_adjust')}
       footer={<button class="btn btn-accent btn-block" disabled={a.busy || !ok} onClick={submit}>{t(action === 'refund' ? 'adj_refund' : action === 'move' ? 'adj_move' : 'adj_credit')} {Number(amt) > 0 ? money(amt) : ''}</button>}>
       <div class="muted" style="margin-bottom:12px">{t('adj_on_slip', money(avail))}</div>
-      {!onlyRefund && <div class="seg" style="margin-bottom:14px">{[['refund', 'adj_refund'], ['move', 'adj_move'], ['credit', 'adj_credit']].map(([id, w]) => <button class={action === id ? 'on' : ''} onClick={() => setAction(id)}>{t(w)}</button>)}</div>}
+      {!onlyRefund && <div class="seg" style="margin-bottom:14px">{[['refund', 'adj_refund'], ['move', 'adj_move'], ['credit', 'adj_credit']].filter(([id]) => id !== 'refund' || owner).map(([id, w]) => <button class={action === id ? 'on' : ''} onClick={() => setAction(id)}>{t(w)}</button>)}</div>}
       <div class="lbl">{t('amount')}</div><MoneyInput value={amt} onInput={setAmt} />
       {action === 'refund' && <><div class="lbl" style="margin-top:14px">{t('acc_from')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} single /></>}
       {action === 'move' && <><div class="lbl" style="margin-top:14px">{t('adj_which_slip')}</div>

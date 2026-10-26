@@ -5,7 +5,7 @@ import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
 import { money, shortDate } from '../../lib/format.js';
-import { go } from '../../lib/router.js';
+import { go, route, replace } from '../../lib/router.js';
 import { store } from '../../lib/store.js';
 import { loadCustomers, avatarColour, firstLetter } from '../../lib/customers.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
@@ -24,7 +24,8 @@ export function Khata() {
   const [rows, setRows] = useState(null);
   const [view, setView] = useState(store.get('khata-view') || 'owe'); // owe | all
   const [all, setAll] = useState(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(route.value.query.add === '1' && can('new'));   // from the + ("New customer")
+  useEffect(() => { if (route.value.query.add === '1') replace('/khata'); }, []);
   useEffect(() => { loadCustomers().then(setAll).catch(() => setAll([])); }, []);
   const pickView = (x) => { store.set('khata-view', x); setView(x); };
   const [bucket, setBucket] = useState(null);

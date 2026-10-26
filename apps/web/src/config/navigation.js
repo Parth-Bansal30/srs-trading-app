@@ -32,6 +32,20 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'settings', route: '/settings', word: 'nav_settings', icon: 'Settings', perm: 'settings' },
 ];
 
+// The big + in the middle (25 Oct 2026): "What do you want to add?" — everything that adds something, in this order.
+// Only what the person may do is shown; if that is just one thing, + goes straight there. Press and hold + = new order.
+// route = open that screen · pick = choose a customer first, then their account opens with that sheet.
+export const ADD = [
+  { id: 'order', word: 'add_order', hint: 'add_order_s', icon: 'ReceiptText', tone: 'accent', route: '/new', perm: 'new', big: true },
+  { id: 'pay', word: 'add_pay', hint: 'add_pay_s', icon: 'IndianRupee', tone: 'ok', pick: 'pay', perm: ['money', 'khata'] },
+  { id: 'expense', word: 'add_expense', hint: 'add_expense_s', icon: 'Receipt', tone: 'bad', route: '/expenses?add=1', perm: 'expenses' },
+  { id: 'purchase', word: 'add_purchase', hint: 'add_purchase_s', icon: 'Truck', tone: 'neutral', route: '/purchases/new', perm: 'stock' },
+  { id: 'move', word: 'add_move', hint: 'add_move_s', icon: 'ArrowRightLeft', tone: 'neutral', route: '/expenses?move=1', perm: 'expenses' },
+  { id: 'customer', word: 'add_customer', hint: 'add_customer_s', icon: 'UserPlus', tone: 'neutral', route: '/khata?add=1', perm: 'new' },
+  { id: 'giveback', word: 'add_giveback', hint: 'add_giveback_s', icon: 'Undo2', tone: 'warn', pick: 'giveback', perm: 'delete' },
+  { id: 'count', word: 'add_count', hint: 'add_count_s', icon: 'ClipboardCheck', tone: 'neutral', route: '/close-day', perm: 'today' },
+];
+
 // Today → "Needs you now". Each card shows only if the person has the permission and count > 0.
 export const NEEDS = [
   { id: 'weigh', count: 'toWeigh', word: 'need_weigh', one: 'need_weigh_1', icon: 'Scale', tone: 'accent', route: '/weigh', perm: 'weigh' },

@@ -132,3 +132,23 @@ select.field{font-weight:600;font-size:16px;appearance:auto}
 .radio.on{border-color:var(--accent)}
 .radio.on::after{content:'';position:absolute;inset:4px;border-radius:50%;background:var(--accent)}
 .voice-list .li.on{background:var(--accent-soft)}
+/* search everything (26 Oct 2026) */
+.search-top{gap:10px}
+.search-field{min-height:48px;padding:0 6px 0 12px;gap:8px}
+.search-field input{font-size:16px}
+.search-field input::-webkit-search-cancel-button{display:none}
+.search-page .chips{display:flex;flex-wrap:wrap;gap:8px}
+.empty-note{display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 16px;color:var(--ink-3);font-weight:600;text-align:center}
+.search-btn{width:44px;height:44px;border-radius:14px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.side-search{display:flex;align-items:center;gap:8px;width:100%;min-height:42px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink-3);font-weight:600;font-size:14px;padding:0 12px;margin-bottom:12px}
+.side-search kbd{margin-left:auto;font-family:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+/* smart suggestions (26 Oct 2026): same as last time, regulars, usual sizes / cut lengths */
+.same-again{margin-bottom:12px;border:1.5px solid var(--accent);background:var(--accent-soft)}
+.same-lines{margin:10px 0 12px;font-size:14px;font-weight:600;display:flex;flex-direction:column;gap:3px}
+.reg-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.reg-chip{display:flex;align-items:center;gap:8px;flex:none;max-width:200px;min-height:46px;padding:0 12px 0 6px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px}
+.cav.sm{width:32px;height:32px;border-radius:10px;font-size:14px}
+.usual{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.usual>span{font-size:12.5px;font-weight:700;margin-right:2px}
+.usual button{min-height:36px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+.usual button.on{border-color:var(--accent);background:var(--accent-soft)}

@@ -158,6 +158,14 @@ export function markCancelled(entries, payments = []) {
   });
 }
 
+/** "Remember this payer": the key the phone worked out (core.payerKey) + what it is. null when not asked / not a key. */
+function rememberOf(k, memo) {
+  if (!k || !memo) return null;
+  const key = String(k).slice(0, 120);
+  if (!/^(upi|ph|name):.{1,110}$/.test(key)) return null;
+  return { key, ...memo };
+}
+
 /** A database order (from api_order_context / api_weighing_list) in @srs/core's shape. */
 export function coreItemFromDb(i) {
   return {
@@ -741,6 +749,122 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const bal = Number(a?.balance);
       if (!Number.isFinite(bal) || Math.abs(bal) > 1e10) throw bad('Enter the balance.');
       return rpc('api_set_balance', { p_caller: caller.id, p_key: key, p_hash: hash, p_account: uuid(a?.id, 'Which account?'), p_balance: r2(bal), p_note: text(a.note, 300) });
+    },
+
+    // ---------- bank statement → khata (25 Oct 2026, owners) ----------
+    /** Keep a statement's lines (read on the phone by @srs/core): { account_id, file_name, from, to, opening, closing, adds_up, lines }. */
+    async bankSave(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      const lines = Array.isArray(a?.lines) ? a.lines : [];
+      if (!lines.length) throw bad('No lines were found in the statement.');
+      if (lines.length > 3000) throw bad('Too many lines at once (up to 3000) — upload one month at a time.');
+      const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : r2(Number(v)));
+      const clean = lines.map((l) => {
+        if (!DAY.test(String(l?.day || '')) || !(Math.abs(Number(l?.amount)) > 0) || Math.abs(Number(l.amount)) > 1e10) throw bad('A line without a date or an amount.');
+        const fp = String(l.fingerprint || '');
+        if (fp.length < 10 || fp.length > 300) throw bad('Read the statement again.');
+        return { day: l.day, amount: r2(Number(l.amount)), narration: String(l.narration || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+          ref: text(l.ref, 60), balance: num(l.balance), fingerprint: fp };
+      });
+      const day = (v) => (DAY.test(String(v || '')) ? v : null);
+      return rpc('api_bank_save', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+        account_id: uuid(a.account_id, 'Choose the bank account.'), file_name: text(a.file_name, 200), from: day(a.from), to: day(a.to),
+        opening: num(a.opening), closing: num(a.closing), adds_up: !!a.adds_up, lines: clean } });
+    },
+
+    /** A statement's lines with a suggestion for each (already in the app / customer / expense / …), and what is needed to choose. */
+    async bankData(caller, a) {
+      need(caller, 'settings', 'money');
+      const account = uuid(a?.account_id, 'Choose the bank account.');
+      const imp = a?.import_id && isUuid(a.import_id) ? a.import_id : null;
+      const [d, raw] = await Promise.all([
+        rpc('api_bank_data', { p_caller: caller.id, p_account: account, p_import: imp }),
+        rpc('api_khata_data', { p_caller: caller.id, p_customer: null }),
+      ]);
+      const k = coreKhataFromDb(raw);
+      const sides = core.visibleSides(caller.perms);
+      const dues = {};
+      for (const c of raw.customers) {
+        const l = core.customerLedger({ custId: c.id, ...k, sides, allSides: sides });
+        if (l.due > 0 || l.adv > 0) dues[c.id] = { pakka: l.bySide.pakka?.due || 0, kacha: l.bySide.kacha?.due || 0, credit: l.adv,
+          creditBySide: Object.fromEntries(sides.map((sd) => [sd, l.bySide[sd]?.adv || 0])) };
+      }
+      const suggestions = core.suggestBankLines({ lines: d.lines, moves: d.moves, customers: raw.customers, suppliers: d.suppliers,
+        payers: d.payers, dues, drawer: d.drawer });
+      return { ...d, customers: raw.customers.filter((c) => c.active !== false).map((c) => ({ id: c.id, name: c.name, phone: c.phone })), dues, suggestions };
+    },
+
+    /**
+     * Add one line as a new entry on the bank's date: { line_id, amount, action: payment | refund | expense | supplier | move,
+     * customer_id, side, category, supplier_id, paid_to, to (the other account for a move), note, method, remember_key }.
+     */
+    async bankRun(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      const line = uuid(a?.line_id, 'Which bank line?');
+      const amt = Number(a?.amount);
+      if (!Number.isFinite(amt) || amt === 0) throw bad('Which bank line?');
+      const method = BANK_METHODS.includes(a?.method) ? a.method : null;
+      const note = text(a?.note, 300);
+      let op; let args; let memo = null;
+      if (a.action === 'payment') {
+        if (!BILLS.includes(a.side)) throw bad('Choose Pakka or Kacha.');
+        if (a.side === 'kacha') need(caller, 'kacha');
+        const customer = uuid(a.customer_id, 'Choose the customer.');
+        op = 'api_record_payment';
+        args = { p_caller: caller.id, p_customer: customer, p_amount: r2(Math.abs(amt)), p_mode: 'Cash', p_side: a.side, p_note: note || 'From the bank statement' };
+        memo = { action: 'payment', customer_id: customer };
+      } else if (a.action === 'refund') {
+        need(caller, 'delete');
+        if (!BILLS.includes(a.side)) throw bad('Choose the account.');
+        if (a.side === 'kacha') need(caller, 'kacha');
+        const customer = uuid(a.customer_id, 'Choose the customer.');
+        const kd = coreKhataFromDb(await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer }));
+        const l = core.customerLedger({ custId: customer, ...kd, sides: [a.side], allSides: ['pakka', 'kacha'] });
+        op = 'api_refund_credit';
+        args = { p_caller: caller.id, p_customer: customer, p_side: a.side, p_amount: r2(Math.abs(amt)), p_mode: 'Cash',
+          p_note: note || 'Given back (bank statement)', p_available: l.bySide[a.side]?.adv ?? 0 };
+        memo = { action: 'refund', customer_id: customer };
+      } else if (a.action === 'expense') {
+        const category = core.isCategoryKey(a.category) ? a.category : 'other';
+        op = 'api_save_expense';
+        args = { kind: 'expense', category, paid_to: text(a.paid_to, 80), note, gst_bill: false, purchase_ids: [], supplier_id: null, file_key: null };
+        memo = { action: 'expense', category };
+      } else if (a.action === 'supplier') {
+        const supplier = uuid(a.supplier_id, 'Choose the supplier.');
+        op = 'api_save_expense';
+        args = { kind: 'supplier', category: 'supplier', supplier_id: supplier, paid_to: text(a.paid_to, 80), note, gst_bill: false, purchase_ids: [], file_key: null };
+        memo = { action: 'supplier', supplier_id: supplier };
+      } else if (a.action === 'move') {
+        op = 'api_save_transfer';
+        args = { other: a.to ? uuid(a.to, 'Choose the other account.') : null, note };
+        memo = { action: 'move', to: a.to || null };
+      } else {
+        throw bad('Choose what this line is.');
+      }
+      const remember = rememberOf(a.remember_key, memo);
+      return rpc('api_bank_run', { p_caller: caller.id, p_key: key, p_hash: hash, p_line: line, p_op: op, p_args: args, p_method: method, p_remember: remember });
+    },
+
+    /** The line is an entry already in the app: { line_id, src: payment | expense | transfer_in | transfer_out, ref }. */
+    async bankLink(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      if (!['payment', 'expense', 'transfer_in', 'transfer_out'].includes(a?.src)) throw bad('Which entry?');
+      return rpc('api_bank_link', { p_caller: caller.id, p_key: key, p_hash: hash, p_line: uuid(a.line_id, 'Which bank line?'), p_src: a.src,
+        p_ref: uuid(a.ref, 'Which entry?'), p_remember: null });
+    },
+
+    /** Skip a line (not shop money) — remember it if asked — or open a skipped / linked line again: { line_id, status, note, remember_key }. */
+    async bankMark(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      if (!['skipped', 'open'].includes(a?.status)) throw bad('Skip or open?');
+      return rpc('api_bank_mark', { p_caller: caller.id, p_key: key, p_hash: hash, p_line: uuid(a.line_id, 'Which bank line?'), p_status: a.status,
+        p_note: text(a.note, 300), p_remember: a.status === 'skipped' ? rememberOf(a.remember_key, { action: 'skip' }) : null });
+    },
+
+    /** The statement's closing balance becomes the bank account's balance point (at the end of its last day). */
+    async bankBalance(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      return rpc('api_bank_balance', { p_caller: caller.id, p_key: key, p_hash: hash, p_import: uuid(a?.import_id, 'Which statement?') });
     },
 
     // ---------- rates, grades, customers, settings ----------

@@ -193,6 +193,54 @@ test('a cancelled payment shows crossed out; its cancellation row is marked to l
   assert.deepEqual(markCancelled(entries, undefined), entries, 'old data without the new fields still works');
 });
 
+test('bank statement: owners only; each line becomes the right operation on the bank\'s line (25 Oct 2026)', async () => {
+  const accounts = { id: 'p-acc', company_id: 'c1', perms: core.ROLE_PRESETS.accounts() };
+  const LINE = '11111111-2222-3333-4444-555555555555';
+  const SBI = '22222222-3333-4444-5555-666666666666';
+  const { ops, last, calls } = fakeDb();
+  await rejects(ops.bankSave(accounts, { account_id: SBI, lines: [{ day: '2026-10-01', amount: 5, fingerprint: '2026-10-01|5.00||x' }] }, 'k', 'h'), 403);
+  await rejects(ops.bankRun(accounts, { line_id: LINE, amount: 100, action: 'payment', customer_id: CUST, side: 'pakka' }, 'k', 'h'), 403);
+  await rejects(ops.bankSave(owner, { account_id: SBI, lines: [] }, 'k', 'h'), 400);
+  await rejects(ops.bankSave(owner, { account_id: SBI, lines: [{ day: '1 Oct', amount: 5, fingerprint: 'xxxxxxxxxxxx' }] }, 'k', 'h'), 400);
+  assert.equal(calls.length, 0);
+  await ops.bankSave(owner, { account_id: SBI, file_name: 'sbi.xlsx', from: '2026-10-01', to: '2026-10-31', opening: '100000', closing: 125000, adds_up: true,
+    lines: [{ day: '2026-10-01', amount: '25000', narration: '  UPI/CR/1/SHARMA   ENGG ', ref: 'N1', balance: '125000', fingerprint: '2026-10-01|25000.00|125000.00|N1|sharma' }] }, 'k', 'h');
+  const sv = last('api_bank_save').p;
+  assert.deepEqual(sv.lines[0], { day: '2026-10-01', amount: 25000, narration: 'UPI/CR/1/SHARMA ENGG', ref: 'N1', balance: 125000, fingerprint: '2026-10-01|25000.00|125000.00|N1|sharma' });
+  assert.equal(sv.opening, 100000);
+
+  await ops.bankRun(owner, { line_id: LINE, amount: 25000, action: 'payment', customer_id: CUST, side: 'pakka', method: 'UPI', remember_key: 'upi:sharmaeng@okhdfcbank' }, 'k', 'h');
+  let r = last('api_bank_run');
+  assert.equal(r.p_op, 'api_record_payment');
+  assert.deepEqual(r.p_args, { p_caller: 'p-owner', p_customer: CUST, p_amount: 25000, p_mode: 'Cash', p_side: 'pakka', p_note: 'From the bank statement' });
+  assert.equal(r.p_method, 'UPI');
+  assert.deepEqual(r.p_remember, { key: 'upi:sharmaeng@okhdfcbank', action: 'payment', customer_id: CUST });
+
+  await ops.bankRun(owner, { line_id: LINE, amount: -17.7, action: 'expense', category: 'bank', remember_key: 'name:sms alert charges' }, 'k', 'h');
+  r = last('api_bank_run');
+  assert.equal(r.p_op, 'api_save_expense'); assert.equal(r.p_args.category, 'bank'); assert.equal(r.p_args.kind, 'expense');
+  assert.deepEqual(r.p_remember, { key: 'name:sms alert charges', action: 'expense', category: 'bank' });
+
+  await ops.bankRun(owner, { line_id: LINE, amount: -45000, action: 'supplier', supplier_id: SBI }, 'k', 'h');
+  r = last('api_bank_run');
+  assert.equal(r.p_args.kind, 'supplier'); assert.equal(r.p_args.supplier_id, SBI); assert.equal(r.p_remember, null, 'not remembered unless asked');
+
+  await ops.bankRun(owner, { line_id: LINE, amount: -10000, action: 'move' }, 'k', 'h');
+  assert.equal(last('api_bank_run').p_op, 'api_save_transfer');
+
+  await ops.bankRun(owner, { line_id: LINE, amount: -2000, action: 'refund', customer_id: CUST, side: 'pakka' }, 'k', 'h');
+  r = last('api_bank_run');
+  assert.equal(r.p_op, 'api_refund_credit'); assert.equal(r.p_args.p_amount, 2000); assert.equal(typeof r.p_args.p_available, 'number');
+
+  await rejects(ops.bankRun(owner, { line_id: LINE, amount: 5, action: 'gift' }, 'k', 'h'), 400);
+  await rejects(ops.bankRun(sales, { line_id: LINE, amount: 5, action: 'payment' }, 'k', 'h'), 403);
+  await ops.bankRun(owner, { line_id: LINE, amount: 5, action: 'payment', customer_id: CUST, side: 'pakka', remember_key: 'evil:<script>' }, 'k', 'h');
+  assert.equal(last('api_bank_run').p_remember, null, 'a strange key is not remembered');
+  await ops.bankMark(owner, { line_id: LINE, status: 'skipped', note: 'my own', remember_key: 'upi:me@ybl' }, 'k', 'h');
+  assert.deepEqual(last('api_bank_mark').p_remember, { key: 'upi:me@ybl', action: 'skip' });
+  await rejects(ops.bankLink(owner, { line_id: LINE, src: 'gift', ref: CUST }, 'k', 'h'), 400);
+});
+
 test('money inputs are checked before anything is saved', async () => {
   const { ops, calls } = fakeDb();
   await rejects(ops.recordPayment(owner, { customer_id: CUST, amount: 0, mode: 'Cash', side: 'pakka' }, 'k', 'h'), 400);

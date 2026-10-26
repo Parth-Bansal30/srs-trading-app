@@ -21,6 +21,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'suppliers', route: '/suppliers', word: 'nav_suppliers', icon: 'ShieldCheck', perm: 'stock' },
   { id: 'expenses', route: '/expenses', word: 'nav_expenses', icon: 'Receipt', perm: 'expenses' },
   { id: 'money', route: '/money', word: 'nav_money', icon: 'Wallet', perm: 'settings' },
+  { id: 'bank', route: '/bank', word: 'nav_bank', icon: 'FileSpreadsheet', perm: 'settings' },
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
@@ -44,6 +45,7 @@ export const ADD = [
   { id: 'customer', word: 'add_customer', hint: 'add_customer_s', icon: 'UserPlus', tone: 'neutral', route: '/khata?add=1', perm: 'new' },
   { id: 'giveback', word: 'add_giveback', hint: 'add_giveback_s', icon: 'Undo2', tone: 'warn', pick: 'giveback', perm: 'delete' },
   { id: 'count', word: 'add_count', hint: 'add_count_s', icon: 'ClipboardCheck', tone: 'neutral', route: '/close-day', perm: 'today' },
+  { id: 'bank', word: 'add_bank', hint: 'add_bank_s', icon: 'FileSpreadsheet', tone: 'neutral', route: '/bank', perm: ['settings', 'money'] },
 ];
 
 // Today → "Needs you now". Each card shows only if the person has the permission and count > 0.

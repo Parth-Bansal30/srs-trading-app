@@ -24,3 +24,4 @@ export * from './purchaseChecks.js';
 export * from './moneyOut.js';
 export * from './gstCheck.js';
 export * from './webauthn.js';
+export * from './bankStatement.js';

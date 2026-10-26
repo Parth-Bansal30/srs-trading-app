@@ -55,6 +55,11 @@ export function Balances() {
             </div>
           </div>
           {shown.some((a) => !a.known) && <div class="notice tone-warn" style="margin-top:12px;font-size:13.5px">{t('bal_some_unknown')}</div>}
+          <button class="card li" style="margin-top:12px" onClick={() => go('/bank')}>
+            <div class="iconbox tone-accent"><Icon name="FileSpreadsheet" /></div>
+            <div class="grow"><div class="t">{t('bk_from_money')}</div><div class="s">{t('bk_from_money_s')}</div></div>
+            <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
+          </button>
           <div class="sec"><h3>{t('bal_accounts')}</h3><button class="link" onClick={() => go('/settings/accounts')}>{t('bal_edit')}</button></div>
           <div class="card">{shown.map((a) => {
             const k = kindOf(a);

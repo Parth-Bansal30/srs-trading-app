@@ -13,6 +13,8 @@ import { easy } from '../lib/easy.js';
 import { Icon } from './kit.jsx';
 import { Sheet } from './Sheet.jsx';
 import { CustomerPicker } from '../screens/order/CustomerPicker.jsx';
+import { regularRows } from '../lib/habits.js';
+import { topCustomers } from '../lib/habitsMath.js';
 
 /** What this person may add (in the shop's order). */
 export const addItems = () => ADD.filter((x) => !x.perm || [].concat(x.perm).every((p) => can(p)));
@@ -41,8 +43,9 @@ export function holdable(onTap, onHold, ms = 550) {
 export function AddSheet() {
   const [pick, setPick] = useState(null);           // 'pay' | 'giveback' — choosing the customer
   const [customers, setCustomers] = useState([]);
+  const [regs, setRegs] = useState([]);
   const open = addOpen.value;
-  useEffect(() => { if (open || pick) loadCatalog().then((c) => setCustomers(c?.customers || [])).catch(() => {}); }, [open, pick]);
+  useEffect(() => { if (open || pick) { loadCatalog().then((c) => setCustomers(c?.customers || [])).catch(() => {}); regularRows().then((r) => setRegs(topCustomers(r))); } }, [open, pick]);
   const items = addItems();
   const big = items.find((x) => x.big);
   const rest = items.filter((x) => !x.big);
@@ -74,7 +77,7 @@ export function AddSheet() {
         </div>
         {big && rest.length > 0 && <div class="faint" style="font-size:12.5px;font-weight:600;text-align:center;margin-top:12px">{t('add_hold')}</div>}
       </Sheet>
-      <CustomerPicker open={!!pick} customers={customers} title={pick === 'giveback' ? t('add_giveback_who') : t('add_pay_who')}
+      <CustomerPicker open={!!pick} customers={customers} regulars={regs} title={pick === 'giveback' ? t('add_giveback_who') : t('add_pay_who')}
         onClose={() => setPick(null)}
         onPick={(c) => { const p = pick; setPick(null); go(`/customer/${c.id}?${p === 'giveback' ? 'giveback' : 'pay'}=1`); }} />
     </>

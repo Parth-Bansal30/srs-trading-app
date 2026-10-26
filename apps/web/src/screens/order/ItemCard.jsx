@@ -10,9 +10,10 @@ import { Icon, Chip } from '../../ui/kit.jsx';
 import { GradePicker } from './GradePicker.jsx';
 import { GradeInfo, InfoButton } from '../../ui/grades/GradeInfo.jsx';
 import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
+import { usualFor } from '../../lib/habitsMath.js';
 import '../stock/stock.css';
 
-export function ItemCard({ index, item, r, cat, customer, editingId, stock, onChange, onUnit, onRemove }) {
+export function ItemCard({ index, item, r, cat, customer, editingId, stock, recent = [], onChange, onUnit, onRemove }) {
   const [pickGrade, setPickGrade] = useState(false);
   const [pickStock, setPickStock] = useState(false);
   const [info, setInfo] = useState(false);
@@ -27,6 +28,13 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, onCh
   }, [m?.id, customer?.id]);
 
   const setD = (k, v) => { const d = [...item.d]; d[k] = v; onChange({ d }); };
+  // the shop's usual sizes and cut lengths for this grade + shape (26 Oct 2026)
+  const usual = m ? usualFor(recent, m.id, item.shape, item.unit, { dims: item.d }) : { sizes: [], lengths: [] };
+  const sameSize = (dims) => dims.length === sh.dims.length && dims.every((x, k) => String(item.d[k] ?? '').trim() === x);
+  const useLen = (v) => {
+    const k = item.rows.findIndex((x) => !String(x.len).trim());
+    onChange({ rows: k >= 0 ? item.rows.map((x, j) => (j === k ? { ...x, len: v } : x)) : [...item.rows, { len: v, pcs: '', cuts: '' }] });
+  };
   const setRow = (k, patch) => onChange({ rows: item.rows.map((x, j) => (j === k ? { ...x, ...patch } : x)) });
   const u = item.unit === 'in' ? t('u_in') : t('u_mm');
   const h = hint?.mine || hint?.any;
@@ -64,6 +72,10 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, onCh
         </div>
       </div>
 
+      {usual.sizes.filter((x) => x.length === sh.dims.length).length > 0 && (
+        <div class="usual"><span class="faint">{t('usual_sizes')}</span>{usual.sizes.filter((x) => x.length === sh.dims.length).map((dims) => (
+          <button class={sameSize(dims) ? 'on' : ''} onClick={() => onChange({ d: dims })}>{dims.join(' × ')}</button>))}</div>
+      )}
       <div class="lbl" style="margin-top:14px">{sh.len ? t('lengths_title') : t('pieces')}</div>
       {item.rows.map((row, k) => (
         <div class={`lenrow ${sh.len ? '' : 'nolen'}`}>
@@ -74,6 +86,9 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, onCh
           {item.rows.length > 1 ? <button class="round sm" onClick={() => onChange({ rows: item.rows.filter((_, j) => j !== k) })} aria-label={t('remove')}><Icon name="X" size={14} /></button> : <span />}
         </div>
       ))}
+      {sh.len && usual.lengths.length > 0 && (
+        <div class="usual"><span class="faint">{t('usual_lengths')}</span>{usual.lengths.map((v) => <button onClick={() => useLen(v)}>{v}</button>)}</div>
+      )}
       {sh.len && <button class="link" onClick={() => onChange({ rows: [...item.rows, { len: '', pcs: '', cuts: '' }] })}><Icon name="Plus" size={16} stroke={2.4} />{t('add_length')}</button>}
 
       {m && can('money') && (

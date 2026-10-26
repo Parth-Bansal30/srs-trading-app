@@ -24,6 +24,10 @@ import { ItemCard } from './ItemCard.jsx';
 import { loadStock } from '../../lib/stock.js';
 import { choicesFor } from '../../ui/stock/StockPick.jsx';
 import { CustomerPicker } from './CustomerPicker.jsx';
+import { lastOrder, regularRows, recentItems, forgetHabits } from '../../lib/habits.js';
+import { topCustomers, repeatItems, orderSummary } from '../../lib/habitsMath.js';
+import { shapeWord } from '../../lib/stock.js';
+import { shortDate } from '../../lib/format.js';
 import './order.css';
 
 const DRAFT = 'draft:new-order';
@@ -40,6 +44,10 @@ export function NewOrder() {
   const [advOpen, setAdvOpen] = useState(false);
   const [problem, setProblem] = useState(null);
   const [stock, setStock] = useState(null); // for "take from which stock?"
+  // smart suggestions (26 Oct 2026): the customer's last order, the regulars, each grade's usual sizes / cut lengths
+  const [last, setLast] = useState(null);
+  const [regs, setRegs] = useState([]);
+  const [recent, setRecent] = useState([]);
   const create = useAction('createOrder');
   const update = useAction('updateOrder');
   // the slip's own ids are chosen here, so a slip made without internet can be weighed and finished on this phone too
@@ -72,6 +80,8 @@ export function NewOrder() {
 
   useEffect(() => { customerRates(customer?.id).then(setSpecial); }, [customer?.id]);
   useEffect(() => { loadStock(true).then(setStock).catch(() => setStock(null)); }, []);
+  useEffect(() => { regularRows().then((r) => setRegs(topCustomers(r))); recentItems().then(setRecent); }, []);
+  useEffect(() => { setLast(null); if (customer?.id && !editId) lastOrder(customer.id).then(setLast); }, [customer?.id]);
   useEffect(() => { if (!editId && items) store.setJson(DRAFT, { customer, items }); }, [customer, items]); // survive a closed app
 
   const settings = cat?.settings || {};
@@ -160,6 +170,7 @@ export function NewOrder() {
             result: { order_id: args.order_id, slip_no: localNo, status: order.status } };
         } });
         store.set(DRAFT, null);
+        forgetHabits();
         ids.current = { order: newKey(), items: {} };
         if (accept) told(r.slip_no);
         toast(r.pending ? t('off_saved_slip', r.slip_no) : accept ? t('accepted_msg', r.slip_no) : t('saved_msg', r.slip_no));
@@ -191,8 +202,18 @@ export function NewOrder() {
           )}
         </button>
 
+        {last && !editing && items.every((x) => !x.material_id) && (
+          <div class="card pad same-again">
+            <div class="row" style="gap:10px"><div class="iconbox tone-accent"><Icon name="Repeat" size={18} /></div>
+              <div class="grow"><div class="t" style="font-weight:800">{t('same_t')}</div><div class="s faint num">#{last.slip_no} · {shortDate(last.created_at, company.value?.timezone)}</div></div></div>
+            <div class="same-lines">{orderSummary(last, (id) => matOf(id)?.code, shapeWord).slice(0, 3).map((x) => <div class="num">{x}</div>)}
+              {last.order_items.length > 3 && <div class="faint">{t('same_more', last.order_items.length - 3)}</div>}</div>
+            <button class="btn btn-brand btn-block" onClick={() => { setItems(repeatItems(last)); toast(t('same_done'), 4000); }}><Icon name="Repeat" size={18} />{t('same_btn')}</button>
+          </div>
+        )}
+
         {items.map((it, i) => (
-          <ItemCard key={it.key} index={i} item={it} r={resolved[i]} cat={cat} customer={customer} editingId={editing?.id} stock={stock}
+          <ItemCard key={it.key} index={i} item={it} r={resolved[i]} cat={cat} customer={customer} editingId={editing?.id} stock={stock} recent={recent}
             onChange={(patch) => setItem(i, patch)} onUnit={(u) => changeUnit(i, u)}
             onRemove={items.length > 1 ? () => setItems(items.filter((_, k) => k !== i)) : null} />
         ))}
@@ -214,7 +235,7 @@ export function NewOrder() {
         </div>
       </div>
 
-      <CustomerPicker open={pickCust} customers={cat.customers} onClose={() => setPickCust(false)}
+      <CustomerPicker open={pickCust} customers={cat.customers} regulars={regs} onClose={() => setPickCust(false)}
         onPick={(c) => { setCustomer(c); setPickCust(false); }} />
       <AdvanceSheet open={advOpen} busy={busy} onClose={() => setAdvOpen(false)} total={totals.plain.total}
         onAccept={(adv, label) => { setAdvOpen(false); save(true, adv, label); }} />

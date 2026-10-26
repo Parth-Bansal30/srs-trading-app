@@ -30,4 +30,4 @@ jobs:
           TZ: ${{ matrix.tz }}
         run: node --test supabase/functions/api/ops.test.mjs
       - name: App - offline entries, lock rules, voice words (unit tests)
-        run: node --test apps/web/test/overlay.test.mjs apps/web/test/autolock.test.mjs apps/web/test/speech.test.mjs
+        run: node --test apps/web/test/overlay.test.mjs apps/web/test/autolock.test.mjs apps/web/test/speech.test.mjs apps/web/test/search.test.mjs apps/web/test/habits.test.mjs

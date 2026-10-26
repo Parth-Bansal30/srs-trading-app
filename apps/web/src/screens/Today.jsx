@@ -34,6 +34,7 @@ export function Today() {
           <div class="faint" style="font-size:13px;font-weight:600">{company.value?.name} · {longDay(new Date().toISOString(), tz)}</div>
           <div class="hello">{t('greet', first)}</div>
         </div>
+        <button class="search-btn" onClick={() => go('/search')} aria-label={t('search_title')}><Icon name="Search" size={20} stroke={2.2} /></button>
         <LangPill />
         <button class="avatar" onClick={() => go('/more')} aria-label={t('nav_more')}>{first.slice(0, 1)}</button>
       </div>

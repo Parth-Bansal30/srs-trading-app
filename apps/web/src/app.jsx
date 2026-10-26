@@ -42,7 +42,9 @@ import { Compare } from './screens/grades/Compare.jsx';
 import { Evening } from './screens/evening/Evening.jsx';
 import { EveningSettings } from './screens/evening/EveningSettings.jsx';
 import { Expenses } from './screens/money/Expenses.jsx';
+import { Search } from './screens/Search.jsx';
 import { Balances, AccountBook } from './screens/money/Balances.jsx';
+import { BankStart, BankReview } from './screens/money/Bank.jsx';
 import { Suppliers } from './screens/stock/Suppliers.jsx';
 import { Waiting } from './screens/Waiting.jsx';
 import { OfflineBar } from './ui/OfflineBar.jsx';
@@ -84,8 +86,11 @@ const SCREENS = {
   '/expenses': () => <Expenses />,
   '/money': () => <Balances />,
   '/money/:id': ({ id }) => <AccountBook id={id} key={id} />,
+  '/bank': () => <BankStart />,
+  '/bank/:account/:imp': ({ account, imp }) => <BankReview account={account} imp={imp} key={`${account}/${imp}`} />,
   '/suppliers': () => <Suppliers />,
   '/waiting': () => <Waiting />,
+  '/search': () => <Search />,
 };
 function match(path) {
   for (const [pattern, render] of Object.entries(SCREENS)) {
@@ -116,6 +121,7 @@ function Sidebar({ path }) {
     <aside class="sidebar">
       <div class="row" style="padding:0 8px 22px"><div class="brandmark" style="width:34px;height:34px;border-radius:10px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-weight:800">{APP.name.slice(0, 1)}</div><div style="font-weight:800">{APP.name}</div></div>
       {can('new') && <button class="btn btn-accent" style="min-height:44px;font-size:15px;margin-bottom:10px" {...holdable(tapAdd, () => go('/new'))}><Icon name="Plus" size={18} stroke={2.6} />{t('add_btn')}</button>}
+      <button class="side-search" onClick={() => go('/search')}><Icon name="Search" size={16} />{t('search_title')}<kbd>/</kbd></button>
       {MENU.filter((m) => !m.perm || can(m.perm)).map((m) => (
         <button class={`side-item ${path === m.route ? 'on' : ''}`} onClick={() => go(m.route)}><Icon name={m.icon} size={18} stroke={2} />{t(m.word)}</button>
       ))}
@@ -182,3 +188,12 @@ function Screens() {
     </>
   );
 }
+
+// Laptop: "/" opens search (not while typing in a box)
+if (typeof addEventListener === 'function') addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+  const el = document.activeElement; const tag = el?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+  if (auth.value.step !== 'ready' || route.value.path === '/search') return;
+  e.preventDefault(); go('/search');
+});

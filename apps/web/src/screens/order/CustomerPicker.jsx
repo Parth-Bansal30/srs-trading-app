@@ -5,10 +5,11 @@ import { t } from '../../lib/i18n.js';
 import { can } from '../../lib/session.js';
 import { useAction } from '../../lib/action.js';
 import { forgetCatalog } from '../../lib/catalog.js';
+import { avatarColour, firstLetter } from '../../lib/customers.js';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { Icon } from '../../ui/kit.jsx';
 
-export function CustomerPicker({ open, customers, onClose, onPick, title }) {
+export function CustomerPicker({ open, customers, onClose, onPick, title, regulars = [] }) {
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -40,6 +41,15 @@ export function CustomerPicker({ open, customers, onClose, onPick, title }) {
       ) : (
         <>
           <div class="field" style="margin-bottom:12px"><Icon name="Search" size={18} /><input value={q} onInput={(e) => setQ(e.currentTarget.value)} placeholder={t('search_cust')} /></div>
+          {!s && regulars.length > 0 && (() => {
+            const byId = new Map(customers.map((c) => [c.id, c]));
+            const top = regulars.map((x) => byId.get(x.id)).filter((c) => c && c.active);
+            return top.length > 0 && <>
+              <div class="lbl">{t('cp_regulars')}</div>
+              <div class="reg-chips">{top.map((c) => <button class="reg-chip" onClick={() => onPick(c)}><span class="cav sm" style={`background:${avatarColour(c.id)}`}>{firstLetter(c.name)}</span><span class="ellip">{c.name}</span></button>)}</div>
+              <div class="lbl" style="margin-top:12px">{t('cp_all')}</div>
+            </>;
+          })()}
           <div class="card">
             {list.map((c) => (
               <button class="li" onClick={() => onPick(c)}>

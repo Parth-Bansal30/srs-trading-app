@@ -14,3 +14,42 @@
 .book-in{color:var(--ok)}
 .book-out{color:var(--ink)}
 .book-bal{font-size:12px;color:var(--ink-3);font-weight:600;display:block;text-align:right;margin-top:1px}
+
+/* ---------- bank statement → khata (25 Oct 2026) ---------- */
+.bk-file{min-height:64px;font-size:15.5px;border-style:dashed;border-width:2px}
+.bk-summary .bk-io{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.bk-io>div{background:var(--surface-2,var(--bg));border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.bk-io .cap{font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em}
+.bk-io b{font-size:20px;letter-spacing:-.02em}
+.bk-io .s{font-size:12.5px;color:var(--ink-3);font-weight:600}
+.bk-head{display:flex;align-items:center;gap:14px}
+.bk-count{display:flex;align-items:baseline;gap:3px}
+.bk-count b{font-size:30px;font-weight:800;letter-spacing:-.03em}
+.bk-count span{font-weight:700;color:var(--ink-3)}
+.bk-sec .sec h3{display:flex;align-items:center;gap:8px}
+.bk-sec .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.bk-sec-s{font-size:12.5px;font-weight:600;margin:-6px 0 8px}
+.link-sec{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:0;color:var(--ink);padding:0}
+.bk-line{align-items:flex-start;padding-top:12px;padding-bottom:12px}
+.bk-line .bk-txt{background:none;border:0;padding:0;text-align:left;color:var(--ink);min-width:0}
+.bk-line .bk-txt .t{font-weight:700;font-size:14.5px;word-break:break-word}
+.bk-line .bk-txt .s{font-size:12.5px;color:var(--ink-3);font-weight:600;margin-top:1px}
+.bk-amt{font-size:16px;white-space:nowrap}
+.bk-sug{display:flex;gap:8px;align-items:flex-start;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:14px;line-height:1.35}
+.bk-sug.unknown{background:var(--bad-soft);color:var(--bad);font-weight:700}
+.bk-sug svg{flex:none;margin-top:2px}
+.bk-why{display:inline-flex;align-items:center;gap:3px;margin-left:8px;font-size:11.5px;font-weight:700;color:var(--ink-3);white-space:nowrap}
+.bk-acts{gap:8px;margin-top:8px;flex-wrap:wrap}
+.bk-acts .btn{min-height:42px;padding:0 14px;font-size:14px}
+.bk-line.done{align-items:center}
+.bk-balance{margin-top:18px}
+.bk-balance.ok{border-color:var(--ok);background:var(--ok-soft)}
+.bk-narr{font-size:13px;line-height:1.4;word-break:break-word;margin-bottom:12px}
+.bk-kinds{display:flex;flex-wrap:wrap;gap:8px}
+.bk-kinds button,.bk-cats button{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px}
+.bk-kinds button.on,.bk-cats button.on{border-color:var(--accent);background:var(--accent-soft)}
+.bk-cats{display:flex;flex-wrap:wrap;gap:8px}
+.bk-pick{max-height:300px;overflow:auto;margin-top:8px}
+.bk-pick .li.on{background:var(--accent-soft)}
+.bk-remember{gap:10px;margin-top:14px;font-size:14px;font-weight:600;align-items:flex-start}
+.bk-remember input{width:22px;height:22px;flex:none;accent-color:var(--accent)}

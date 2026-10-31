@@ -30,6 +30,12 @@ export const modeIcon = (mode) => (splitMode(mode).length > 1 ? 'Split' : PAY_ME
 const LAST = 'srs:lastAccount';
 export const lastAccount = () => { try { return localStorage.getItem(LAST); } catch { return null; } };
 export const rememberAccount = (id) => { try { localStorage.setItem(LAST, id); } catch { /* private window */ } };
+// Money going OUT remembers its own account per kind of expense (26 Oct 2026: after a cheque went into the bank,
+// the next tea was quietly written as paid from the bank). Tea stays with the drawer; rent can stay with the bank.
+const OUT = 'srs:outAccount';
+const outMap = () => { try { return JSON.parse(localStorage.getItem(OUT) || '{}') || {}; } catch { return {}; } };
+export const lastOutAccount = (what) => outMap()[what || '_'] || null;
+export const rememberOutAccount = (what, id) => { try { localStorage.setItem(OUT, JSON.stringify({ ...outMap(), [what || '_']: id })); } catch { /* private window */ } };
 
 /**
  * Where-the-money-went state used by <MoneyTo>:

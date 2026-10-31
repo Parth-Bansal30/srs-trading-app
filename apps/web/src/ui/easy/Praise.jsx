@@ -1,5 +1,7 @@
 // Easy mode: after money is SAVED, a full green screen "₹45,000 मिल गए · Sharma ji" (and it is said out loud).
+import { useEffect, useRef } from 'preact/hooks';
 import { t } from '../../lib/i18n.js';
+import { route } from '../../lib/router.js';
 import { money } from '../../lib/format.js';
 import { praise, sayAgain, easy } from '../../lib/easy.js';
 import { Icon } from '../kit.jsx';
@@ -7,6 +9,16 @@ import './easy.css';
 
 export function Praise() {
   const p = praise.value;
+  // going to another screen later (or the phone's back button) closes it too (26 Oct 2026: it stayed over the next screens)
+  const at = useRef(null);
+  const path = route.value.path;
+  useEffect(() => {
+    if (!p) { at.current = null; return; }
+    if (at.current == null) { at.current = path; return; }
+    if (path === at.current) return;
+    if (Date.now() - (p.at || 0) < 2000) at.current = path;   // the screen that opens right after saving keeps it
+    else praise.value = null;
+  }, [p, path]);
   if (!p) return null;
   const close = () => { praise.value = null; };
   return (

@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // WHERE THINGS ARE — bottom bar (phone), menu (laptop), the "More" list, and the
 // "Needs you now" cards on Today. Reorder, rename (word key) or hide items here.
-// perm = who can see it (see the People screen). icon = name from lucide icons.
+// perm = who can see it (see the People screen; several = all needed), not = hidden for people with that one. icon = name from lucide icons.
 // ─────────────────────────────────────────────────────────────────────────────
 export const TABS = [                      // phone bottom bar: 4 tabs + the big + in the middle
   { id: 'today', route: '/', word: 'nav_today', icon: 'House' },
-  { id: 'slips', route: '/slips', word: 'nav_slips', icon: 'ReceiptText', perm: 'orders' },
+  { id: 'slips', route: '/slips', word: 'nav_slips', icon: 'ReceiptText', perm: ['orders', 'money'] },
+  { id: 'weigh', route: '/weigh', word: 'nav_weigh', icon: 'Scale', perm: 'weigh', not: 'money' },   // the weigher's own tab (26 Oct 2026)
   { id: 'new', route: '/new', word: 'nav_new', icon: 'Plus', perm: 'new', big: true },
   { id: 'khata', route: '/khata', word: 'nav_khata', icon: 'BookOpenText', perm: 'khata' },
   { id: 'more', route: '/more', word: 'nav_more', icon: 'LayoutGrid' },
@@ -13,7 +14,7 @@ export const TABS = [                      // phone bottom bar: 4 tabs + the big
 
 export const MENU = [                      // laptop left menu + the "More" screen
   { id: 'today', route: '/', word: 'nav_today', icon: 'LayoutDashboard' },
-  { id: 'slips', route: '/slips', word: 'nav_slips', icon: 'ReceiptText', perm: 'orders' },
+  { id: 'slips', route: '/slips', word: 'nav_slips', icon: 'ReceiptText', perm: ['orders', 'money'] },   // slips carry money: people without it see Weighing
   { id: 'weigh', route: '/weigh', word: 'nav_weigh', icon: 'Scale', perm: 'weigh', badge: 'toWeigh' },
   { id: 'khata', route: '/khata', word: 'nav_khata', icon: 'BookOpenText', perm: 'khata' },
   { id: 'stock', route: '/stock', word: 'nav_stock', icon: 'Boxes', perm: 'orders' },

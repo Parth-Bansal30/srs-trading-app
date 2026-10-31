@@ -6,3 +6,7 @@
 .done-banner .ic{width:46px;height:46px;border-radius:15px;background:var(--ok);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
 .periods{display:flex;flex-wrap:wrap;gap:8px}
 .stmt-sum{padding:6px 16px;margin-top:14px}
+/* the price message preview (26 Oct 2026) */
+.qt-preview{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.45;background:#E7F6EA;color:#1b2a1f;border-radius:12px;padding:12px 14px;border:1px solid #cfe9d5;overflow-x:auto}
+:root[data-theme="dark"] .qt-preview{background:#16271b;color:#d6f0dc;border-color:#244a30}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .qt-preview{background:#16271b;color:#d6f0dc;border-color:#244a30}}

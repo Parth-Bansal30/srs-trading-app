@@ -130,6 +130,24 @@ test('recordWeights: warns (does not block) when a weight is far from the sizes'
   assert.equal(res.warnings[0].item_id, I1);
 });
 
+test('reopenWeighing: the weigher or whoever takes money can send a weighed slip back; others cannot', async () => {
+  for (const who of [weigher, owner, sales]) {
+    const { ops, last } = fakeDb();
+    await ops.reopenWeighing(who, { order_id: ORDER }, 'k', 'h');
+    assert.deepEqual(last('api_reopen_weighing'), { p_caller: who.id, p_key: 'k', p_hash: 'h', p_order: ORDER });
+  }
+  const { ops } = fakeDb();
+  await rejects(ops.reopenWeighing(clerk, { order_id: ORDER }, 'k', 'h'), 403);
+  await rejects(ops.reopenWeighing(owner, { order_id: 'nope' }, 'k', 'h'), 400);
+});
+
+test('weighedList: only for the weigher', async () => {
+  const { ops, last } = fakeDb();
+  await ops.weighedList(weigher, {});
+  assert.deepEqual(last('api_weighed_list'), { p_caller: weigher.id });
+  await rejects(ops.weighedList(sales, {}), 403);
+});
+
 test('weighingList: expected weight added, never a rate or amount', async () => {
   const { ops } = fakeDb();
   const list = await ops.weighingList(weigher, {});

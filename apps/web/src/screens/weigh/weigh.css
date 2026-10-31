@@ -14,3 +14,13 @@
 .wbox.batch{background:var(--accent-soft);border-color:var(--accent)}
 .together{border:2px solid var(--accent);margin-top:4px}
 .witem .exp{flex:0 0 92px}
+/* weight check (26 Oct 2026) */
+.wbox.near{border-color:var(--warn)}
+.wbox.far{background:var(--bad-soft);border-color:var(--bad)}
+.wbox.far span{color:var(--bad)}
+.wcheck{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13.5px;font-weight:700;line-height:1.35}
+.wcheck.near{color:var(--warn)}
+.wcheck.far{color:var(--bad)}
+.wcheck .pill{min-height:34px}
+.wsure .li{align-items:flex-start}
+.weighed-row .s{font-size:13px}

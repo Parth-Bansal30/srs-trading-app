@@ -77,6 +77,10 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, rece
           <button class={sameSize(dims) ? 'on' : ''} onClick={() => onChange({ d: dims })}>{dims.join(' × ')}</button>))}</div>
       )}
       <div class="lbl" style="margin-top:14px">{sh.len ? t('lengths_title') : t('pieces')}</div>
+      {/* what each box is (26 Oct 2026: the cuts box had no name) */}
+      <div class={`lenrow lenhead ${sh.len ? '' : 'nolen'}`}>
+        {sh.len && <span>{t('cut_len')}</span>}{sh.len && <span />}<span>{t('pieces')}</span><span>{t('cuts')}</span><span />
+      </div>
       {item.rows.map((row, k) => (
         <div class={`lenrow ${sh.len ? '' : 'nolen'}`}>
           {sh.len && <div class="field num"><input inputmode="decimal" value={row.len} onInput={(e) => setRow(k, { len: e.currentTarget.value })} placeholder={t('cut_len')} /><span class="faint unit">{u}</span></div>}
@@ -122,7 +126,7 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, rece
       <div class="itemfoot">
         {r.calc ? (
           <>
-            <span class="muted">≈ <b class="num" style="color:var(--ink)">{kg(r.calc.est)}</b> · {r.calc.cuts} {t('cuts_word')}</span>
+            <span class="muted">≈ <b class="num" style="color:var(--ink)">{kg(r.calc.est)}</b> · {r.calc.cuts} {t(r.calc.cuts === 1 ? 'cut_word' : 'cuts_word')}</span>
             {can('money') && <span class="num" style="font-weight:800">{money(r.calc.total, true)}</span>}
           </>
         ) : <span class="faint">{t('fill_hint')}</span>}

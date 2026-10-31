@@ -6,7 +6,7 @@ import { checkGstin, GST_STATES, normalizeIndianMobile } from '@srs/core';
 import { t, lang } from '../../lib/i18n.js';
 import { registerCompany, reconfirmNumber, logOut } from '../../lib/session.js';
 import { store } from '../../lib/store.js';
-import { money } from '../../lib/format.js';
+import { money, phoneText } from '../../lib/format.js';
 import { Icon, LangPill } from '../../ui/kit.jsx';
 import { TRADES, PLANS, TEAM_ROLES } from '../../config/options.js';
 import { Avatar, PinSetter } from './Login.jsx';
@@ -125,7 +125,7 @@ function Trade({ f, up }) {
       <h1 class="login-title">{t('reg_trade_t')}</h1>
       <p class="login-sub">{t('reg_trade_s')}</p>
       <div class="trade-grid">
-        {TRADES.map((x) => (
+        {TRADES.filter((x) => x.ready).map((x) => (
           <button class={`trade ${f.trade === x.id ? 'on' : ''}`} disabled={!x.ready} onClick={() => up({ trade: x.id })}>
             <Icon name={x.icon} size={22} stroke={2} />
             <div class="grow"><div class="t">{t(x.word)}</div><div class="s">{x.ready ? t(x.sub) : t('soon')}</div></div>
@@ -133,6 +133,8 @@ function Trade({ f, up }) {
           </button>
         ))}
       </div>
+      {/* the others in one quiet line instead of seven greyed-out tiles (26 Oct 2026) */}
+      <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:8px;line-height:1.45">{t('reg_trade_more', TRADES.filter((x) => !x.ready).map((x) => t(x.word)).join(', '))}</div>
       <div class="card" style="margin-top:14px">
         <div class="li">
           <div class="grow"><div class="t">{t('reg_slip')}</div><div class="s">{t('reg_slip_s')}</div></div>
@@ -169,7 +171,7 @@ function Team({ f, up }) {
       <div class="card">
         <div class="li"><Avatar name={f.owner_name || '?'} size={42} /><div class="grow"><div class="t">{f.owner_name}</div><div class="s">{t('role_owner')} · {t('role_s_owner')}</div></div><span class="chip tone-neutral">{t('reg_you_chip')}</span></div>
         {f.team.map((x, i) => (
-          <div class="li"><Avatar name={x.name} size={42} /><div class="grow"><div class="t">{x.name}</div><div class="s">{t(`role_${x.role}`)} · {t(`role_s_${x.role}`)} · <span class="num">{x.phone.slice(3)}</span></div></div>
+          <div class="li"><Avatar name={x.name} size={42} /><div class="grow"><div class="t">{x.name}</div><div class="s">{t(`role_${x.role}`)} · {t(`role_s_${x.role}`)} · <span class="num">{phoneText(x.phone)}</span></div></div>
             <button class="round" style="width:36px;height:36px" aria-label="remove" onClick={() => up({ team: f.team.filter((_, k) => k !== i) })}><Icon name="X" size={16} /></button></div>
         ))}
       </div>

@@ -6,7 +6,7 @@ import { me, can } from '../../lib/session.js';
 import { db } from '../../lib/backend.js';
 import { staff } from '../../lib/staff.js';
 import { call } from '../../lib/api.js';
-import { shortDate } from '../../lib/format.js';
+import { shortDate, phoneText } from '../../lib/format.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
@@ -30,7 +30,7 @@ export function People() {
           {!rows ? <div class="pad"><Skeleton h={18} /></div> : rows.map((p) => (
             <button class="li" onClick={() => can('people') && setOpen(p)} style={p.active ? '' : 'opacity:.55'}>
               <div class="avatar-sm tone-neutral" style="width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800">{p.display_name.slice(0, 1)}</div>
-              <div class="grow"><div class="t">{p.display_name}{p.id === me.value?.id ? ` (${t('you')})` : ''}</div><div class="s num">{p.phone || ''}</div></div>
+              <div class="grow"><div class="t">{p.display_name}{p.id === me.value?.id ? ` (${t('you')})` : ''}</div><div class="s num">{phoneText(p.phone)}</div></div>
               {p.active ? <Chip tone="neutral">{t(roleWord(p.role))}</Chip> : <Chip tone="bad">{t('inactive')}</Chip>}
             </button>
           ))}

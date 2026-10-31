@@ -3,6 +3,7 @@ import { signal } from '@preact/signals';
 import { WORDS } from '../content/words.js';
 import { APP } from '../config/app.js';
 import { store } from './store.js';
+import { one } from './words-fix.js';
 
 const INDEX = { en: 0, hi: 1, hn: 2 };
 export const lang = signal(store.get('lang') || APP.defaultLanguage);
@@ -27,5 +28,6 @@ export function tIn(l, key, ...args) {
   }
   let s = v[INDEX[l] ?? 0] ?? v[0];
   args.forEach((a, i) => { s = s.split(`{${i}}`).join(String(a)); });
-  return s;
+  return l === 'hi' ? s : one(s);
 }
+

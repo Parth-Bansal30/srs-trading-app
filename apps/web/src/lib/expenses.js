@@ -20,6 +20,15 @@ export const catWord = (e) => t(catOf(e).word);
 
 /** Today in the shop's calendar ('YYYY-MM-DD'). */
 export const shopToday = () => businessDate(new Date().toISOString(), company.value?.timezone || 'Asia/Kolkata');
+/** "Wrong account?" is offered for today's and yesterday's payments only: older days were already counted and ticked,
+ *  so moving money on today's date would make today's drawer look wrong. */
+export const canFixDay = (at) => !!at && businessDate(at, company.value?.timezone || 'Asia/Kolkata') >= addDays(shopToday(), -1);
+/** "Wrong account?" (26 Oct 2026): the move that puts a payment into the right account — same amount, same day. */
+export function fixPreset({ amount, at, from = null, label = '' }) {
+  const tz = company.value?.timezone || 'Asia/Kolkata';
+  const d = at ? businessDate(at, tz) : shopToday();
+  return { fix: true, from, amount: Math.abs(Number(amount)), day: d === addDays(shopToday(), -1) ? 'yesterday' : 'today', note: t('fix_acc_note', label) };
+}
 /** First and last day of the month that `day` is in. */
 export function monthOf(day) {
   const [y, m] = day.split('-').map(Number);

@@ -26,6 +26,8 @@ export const me = computed(() => auth.value.status?.person || null);
 export const company = computed(() => auth.value.status?.company || null);
 /** Permission check for the screens. A business that makes no estimates never sees that choice. */
 export const can = (perm) => (perm === 'kacha' && company.value?.estimates === false ? false : !!me.value?.perms?.[perm]);
+/** May this person see a menu / tab / + entry? perm = one or several (all needed); not = hidden for people who have it. */
+export const allowed = (x) => (!x.perm || [].concat(x.perm).every((p) => can(p))) && !(x.not && can(x.not));
 
 const set = (patch) => {
   const next = { ...auth.value, error: null, ...patch };

@@ -48,6 +48,8 @@ Authorization: Bearer <the person's login token>
 | `addAdvance` | money | advance on an accepted/weighed order |
 | `weighingList` | weigh | orders waiting to be weighed, with sizes, pieces and **expected weight — never rates or amounts** |
 | `recordWeights` | weigh | `{order_id, weights:[{item_id, weight}], batches:[{total_weight, item_ids}], submit}`. Weigh-together split by `@srs/core` — **always adds up exactly** to the scale reading. Warns (never blocks) when a weight is more than the set % from the sizes |
+| `reopenWeighing` | weigh **or** money | `{order_id}` — **Weigh again** (26 Oct 2026): a weighed slip that is not finished goes back to "to weigh"; the weights stay to be corrected, the stock taken for it comes back (taken again at the new weight). The app also asks before finishing a weight that is far (> 25 %) from the sizes (`core.weightCheck`) |
+| `weighedList` | weigh | what was weighed today and yesterday (sizes and weights, never money) — the weigher's own list, as slips with money are not readable for him |
 | `finalizeOrder` | money (+kacha for kacha) | `{order_id, bill, pay_mode, paid?, pay_method, note?}` → totals by `@srs/core finishCalc`, GST/kacha % from settings, pickup payment, khata flag. If weights, advance or % changed meanwhile → `409 changed` |
 | `recordPayment` | money + khata (+kacha) | khata payment `{customer_id, amount, mode, side, note}` |
 | `reversePayment` | money + khata + **delete** (owner, 25 Oct 2026) | cancel a payment with the exact opposite entry (reason required, once only). A finished slip it was paid on moves into the khata. `khata` marks the payment `cancelled: {reason, by, at}` and its opposite entry `reversal: true` (left out on screen) |

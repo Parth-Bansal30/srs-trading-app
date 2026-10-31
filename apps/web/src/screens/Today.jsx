@@ -8,10 +8,27 @@ import { go } from '../lib/router.js';
 import { NEEDS } from '../config/navigation.js';
 import { STAGES, BILLS } from '../config/options.js';
 import { Icon, Chip, LangPill, Skeleton } from '../ui/kit.jsx';
-import { startDone } from './start/Start.jsx';
+import { startDone, useStartSteps } from './start/Start.jsx';
 import { easy } from '../lib/easy.js';
 import { EasyToday } from './EasyToday.jsx';
 import './today.css';
+
+/** The hour now in the shop's time zone (rule 4: the shop's clock, not the phone's). */
+const shopHour = (tz) => Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: 'numeric', hour12: false }).format(new Date())) % 24;
+
+/** "Start in 3 small steps" until they are done — shows what is left, then goes away by itself (26 Oct 2026). */
+function StartCard() {
+  const st = useStartSteps();
+  if (!st.d || st.done === 3) return null;
+  const left = [!st.ratesSeen && t('ready_rates'), !st.teamDone && t('ready_team'), !st.slipDone && t('ready_slip')].filter(Boolean);
+  return (
+    <button class="card li" style="margin-bottom:12px;border:1.5px solid var(--accent)" onClick={() => go('/start')}>
+      <div class="iconbox tone-accent"><Icon name="PartyPopper" /></div>
+      <div class="grow"><div class="t">{t('ready_steps')} <span class="faint num" style="font-weight:700">· {t('ready_of', st.done, 3)}</span></div><div class="s">{left.join(' · ')}</div></div>
+      <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
+    </button>
+  );
+}
 
 export function Today() {
   const [d, setD] = useState(null);
@@ -46,13 +63,7 @@ export function Today() {
         </div>
       )}
 
-      {can('people') && company.value?.trial_ends_at && !startDone() && (
-        <button class="card li" style="margin-bottom:12px;border:1.5px solid var(--accent)" onClick={() => go('/start')}>
-          <div class="iconbox tone-accent"><Icon name="PartyPopper" /></div>
-          <div class="grow"><div class="t">{t('ready_steps')}</div><div class="s">{t('ready_rates')} · {t('ready_team')} · {t('ready_slip')}</div></div>
-          <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
-        </button>
-      )}
+      {can('people') && company.value?.trial_ends_at && !startDone() && <StartCard />}
 
       {can('money') && (
         <div class="hero">
@@ -62,8 +73,8 @@ export function Today() {
           </div>
           <div class="hero-num num">{d?.sales ? money(d.sales.total, false) : <Skeleton h={40} w={180} style="opacity:.2" />}</div>
           <div class="hero-row">
-            <div class="hero-box"><div class="cap">{t('bills_n', t('gst_bills'), d?.sales?.nPakka ?? '–')}</div><div class="num v">{d?.sales ? money(d.sales.pakka, false) : '–'}</div></div>
-            {can('kacha') && <div class="hero-box"><div class="cap">{t('bills_n', t('no_bills'), d?.sales?.nKacha ?? '–')}</div><div class="num v">{d?.sales ? money(d.sales.kacha, false) : '–'}</div></div>}
+            <div class="hero-box"><div class="cap">{t('gst_bills')} <span class="n">{d?.sales?.nPakka ?? ''}</span></div><div class="num v">{d?.sales ? money(d.sales.pakka, false) : '–'}</div></div>
+            {can('kacha') && <div class="hero-box"><div class="cap">{t('no_bills')} <span class="n">{d?.sales?.nKacha ?? ''}</span></div><div class="num v">{d?.sales ? money(d.sales.kacha, false) : '–'}</div></div>}
             {can('today') && <div class="hero-box"><div class="cap">{t('in_drawer')}</div><div class="num v">{d?.cash != null ? money(d.cash, false) : '–'}</div></div>}
           </div>
         </div>
@@ -77,7 +88,7 @@ export function Today() {
         </button>
       )}
 
-      {can('money') && new Date().getHours() >= 17 && (
+      {can('money') && shopHour(tz) >= 17 && (
         <button class="card li" style="margin-top:12px" onClick={() => go('/evening')}>
           <div class="iconbox tone-brand-soft"><Icon name="Moon" /></div>
           <div class="grow"><div class="t">{t('eve_card')}</div><div class="s">{t('eve_where')}</div></div>

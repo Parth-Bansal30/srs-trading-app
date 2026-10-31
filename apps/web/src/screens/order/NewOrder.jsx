@@ -10,7 +10,7 @@ import { useAction } from '../../lib/action.js';
 import { call, newKey } from '../../lib/api.js';
 import { nextLocalNo } from '../../lib/offline/outbox.js';
 import { localOrderShape, usesOf, modeOfArgs } from '../../lib/offline/local.js';
-import { accountsCache } from '../../lib/accounts.js';
+import { accountsCache, loadAccounts } from '../../lib/accounts.js';
 import { store } from '../../lib/store.js';
 import { money, kg } from '../../lib/format.js';
 import { go, route } from '../../lib/router.js';
@@ -81,6 +81,8 @@ export function NewOrder() {
   useEffect(() => { customerRates(customer?.id).then(setSpecial); }, [customer?.id]);
   useEffect(() => { loadStock(true).then(setStock).catch(() => setStock(null)); }, []);
   useEffect(() => { regularRows().then((r) => setRegs(topCustomers(r))); recentItems().then(setRecent); }, []);
+  // the accounts list ready before "Accept order" opens (26 Oct 2026: it loaded a second late and a quick tap kept Shop cash)
+  useEffect(() => { if (can('money')) loadAccounts().catch(() => {}); }, []);
   useEffect(() => { setLast(null); if (customer?.id && !editId) lastOrder(customer.id).then(setLast); }, [customer?.id]);
   useEffect(() => { if (!editId && items) store.setJson(DRAFT, { customer, items }); }, [customer, items]); // survive a closed app
 

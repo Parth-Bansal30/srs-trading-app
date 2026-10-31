@@ -1,7 +1,7 @@
 // More — every other screen, plus language, appearance and log out.
 import { t, lang, setLang } from '../lib/i18n.js';
 import { useEffect, useState } from 'preact/hooks';
-import { me, company, can, lock, logOut, switchPerson, fingerOn, switchOffFinger, pinJustNow, prepareFinger, lockAfter, setLockAfter } from '../lib/session.js';
+import { me, company, can, allowed, lock, logOut, switchPerson, fingerOn, switchOffFinger, pinJustNow, prepareFinger, lockAfter, setLockAfter } from '../lib/session.js';
 import { LOCK_CHOICES } from '../lib/autolock.js';
 import { passkeyReady, bt, bioIcon, bioName } from '../lib/passkey.js';
 import { outbox } from '../lib/offline/outbox.js';
@@ -22,7 +22,7 @@ import { isApple } from '../lib/passkey.js';
 export function More() {
   const c = company.value;
   const trialLeft = c?.plan === 'trial' && c?.trial_ends_at ? Math.max(0, Math.ceil((new Date(c.trial_ends_at) - Date.now()) / 86400000)) : null;
-  const items = MENU.filter((m) => m.id !== 'today' && (!m.perm || can(m.perm)));
+  const items = MENU.filter((m) => m.id !== 'today' && allowed(m));
   const [sure, setSure] = useState(false);
   // entries not sent yet would be lost: ask once ("tap again"), and show how many
   const outLater = () => { if (outbox.value.length && !sure) { setSure(true); toast(t('off_logout_q', outbox.value.length), 6000); return; } logOut(); };
@@ -30,7 +30,7 @@ export function More() {
     <>
       <TopBar title={t('nav_more')} sub={`${me.value?.name} · ${company.value?.name}`} onBack={null} />
       <div class="page">
-        {trialLeft != null && (
+        {trialLeft != null && can('settings') && (   // the plan is the owner's business, not the staff's (26 Oct 2026)
           <button class="card li" style="margin-bottom:12px" onClick={() => can('people') && go('/start')}>
             <div class="iconbox tone-accent"><Icon name="Gift" /></div>
             <div class="grow"><div class="t">{t('trial_left', trialLeft)}</div><div class="s">{t('trial_ends', longDay(company.value.trial_ends_at, company.value.timezone))}</div></div>

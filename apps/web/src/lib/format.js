@@ -13,6 +13,7 @@ export function money(n, paise = 'auto') {
   const s = paise === true || (paise === 'auto' && Math.round(a * 100) % 100 !== 0) ? fmt2.format(a) : fmt0.format(Math.round(a));
   return `${neg}₹${s}`;
 }
+export { phoneText } from './words-fix.js';
 export const kg = (n, d = 2) => `${(Number(n) || 0).toLocaleString(APP.moneyLocale, { maximumFractionDigits: d })} kg`;
 
 const parts = (iso, tz) => Object.fromEntries(new Intl.DateTimeFormat('en-GB', {

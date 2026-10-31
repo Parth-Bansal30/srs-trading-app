@@ -31,3 +31,5 @@
 .quote-row .num{font-weight:700;font-size:16px}
 .quote-row .num.big{font-weight:800;font-size:18px}
 @media (min-width:1024px){.quotebar{left:236px}}
+.lenrow.lenhead{margin:-2px 0 4px;font-size:11.5px;font-weight:700;color:var(--ink-3);letter-spacing:.02em}
+.lenrow.lenhead span{padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

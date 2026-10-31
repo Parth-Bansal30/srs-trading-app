@@ -14,7 +14,9 @@ import { Sheet } from '../Sheet.jsx';
 import { AccountPick } from './AccountPick.jsx';
 import './money.css';
 
-export function TransferSheet({ open, onClose, onDone, from: startFrom = null }) {
+/** preset (26 Oct 2026, "wrong account?"): { from, amount, note, day, fix } — a payment written in the wrong account is put right
+ *  by moving the same amount between the two accounts (payments themselves are never edited). */
+export function TransferSheet({ open, onClose, onDone, from: startFrom = null, preset = null }) {
   const [accounts, setAccounts] = useState(accountsCache.value);
   const [from, setFrom] = useState(null);
   const [to, setTo] = useState(null);
@@ -27,17 +29,18 @@ export function TransferSheet({ open, onClose, onDone, from: startFrom = null })
 
   useEffect(() => {
     if (!open) return;
-    save.setError(null); setAmount(''); setMethod(null); setNote(''); setDay('today'); setTo(null);
+    save.setError(null); setAmount(preset?.amount ? String(preset.amount) : ''); setMethod(null); setNote(preset?.note || ''); setDay(preset?.day || 'today'); setTo(null);
+    const first = preset?.from || startFrom;
     loadAccounts().then((l) => {
       setAccounts(l);
       const usable = l.filter((a) => a.usable !== false);
-      setFrom(startFrom && usable.some((a) => a.id === startFrom) ? startFrom : usable.find((a) => a.is_drawer)?.id || usable[0]?.id || null);
+      setFrom(first && usable.some((a) => a.id === first) ? first : usable.find((a) => a.is_drawer)?.id || usable[0]?.id || null);
     }).catch(() => setAccounts(accountsCache.value || []));
   }, [open]);
 
   const list = (accounts || []).filter((a) => a.usable !== false);
   const A = list.find((a) => a.id === from); const B = list.find((a) => a.id === to);
-  const reason = moveReason(A, B);
+  const reason = preset?.fix ? 'move' : moveReason(A, B);
   const problem = transferProblem({ from, to, amount: Number(amount) });
   const bank = (A && isBankLike(A)) || (B && isBankLike(B));
   const submit = () => !problem && save.run({ from_account: from, to_account: to, amount: r2(Number(amount)), reason, method: bank ? method || undefined : undefined,
@@ -47,20 +50,20 @@ export function TransferSheet({ open, onClose, onDone, from: startFrom = null })
   }).then((r) => onDone?.(r)).catch(() => {});
 
   return (
-    <Sheet open={open} onClose={onClose} title={t('tr_title')}
+    <Sheet open={open} onClose={onClose} title={preset?.fix ? t('fix_acc_t') : t('tr_title')}
       footer={<>
         {save.error && <div class="error" style="margin:0 0 8px">{save.error.message}</div>}
         <button class="btn btn-brand btn-block" disabled={!!problem || save.busy} onClick={submit}><Icon name="ArrowRightLeft" size={19} stroke={2.3} />
           {save.busy ? '…' : problem && Number(amount) > 0 && from && to ? t(problem) : t('tr_save', Number(amount) > 0 ? money(Number(amount)) : '')}</button>
       </>}>
-      <div class="muted" style="font-size:13.5px;margin:-6px 0 12px">{t('tr_title_s')}</div>
+      <div class="muted" style="font-size:13.5px;margin:-6px 0 12px">{preset?.fix ? t('fix_acc_s') : t('tr_title_s')}</div>
       {!accounts ? <Skeleton h={160} /> : list.length < 2 ? <div class="notice tone-warn">{t('tr_need_two')}</div> : <>
         <div class="lbl">{t('tr_from')}</div>
         <AccountPick accounts={accounts} value={from} onChange={(id) => { setFrom(id); if (id === to) setTo(null); }} showMethods={false} />
         <div class="row" style="justify-content:center;margin:8px 0;color:var(--ink-3)"><Icon name="ArrowDown" size={22} stroke={2.4} /></div>
         <div class="lbl">{t('tr_to')}</div>
         <AccountPick accounts={accounts} value={to} onChange={setTo} hide={from} method={method} onMethod={setMethod} />
-        {from && to && <div class="chip tone-accent" style="margin-top:10px">{moveWord(reason)}</div>}
+        {from && to && !preset?.fix && <div class="chip tone-accent" style="margin-top:10px">{moveWord(reason)}</div>}
         <div class="lbl" style="margin-top:16px">{t('tr_amount')}</div>
         <div class="field num exp-amount"><span class="faint">₹</span>
           <input inputmode="decimal" value={amount} placeholder="0" onInput={(e) => setAmount(e.currentTarget.value.replace(/[^\d.]/g, ''))} /></div>

@@ -546,6 +546,18 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return { ...res, warnings };
     },
 
+    /** Weigh again (26 Oct 2026): a weighed slip, not finished yet, goes back to "to weigh" — the weigher, or whoever takes money at pickup. */
+    async reopenWeighing(caller, a, key, hash) {
+      if (!core.can(caller.perms, 'weigh') && !core.can(caller.perms, 'money')) throw forbidden('weigh');
+      return rpc('api_reopen_weighing', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?') });
+    },
+
+    /** What was weighed today and yesterday, for the weigher (sizes and weights, never money). */
+    async weighedList(caller) {
+      need(caller, 'weigh');
+      return rpc('api_weighed_list', { p_caller: caller.id });
+    },
+
     // ---------- finishing at pickup ----------
     async finalizeOrder(caller, a, key, hash) {
       need(caller, 'money');
@@ -1724,7 +1736,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['accounts', 'weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

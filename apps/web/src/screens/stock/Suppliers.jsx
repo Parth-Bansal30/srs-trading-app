@@ -28,7 +28,8 @@ export function Suppliers() {
   const unchecked = (d?.suppliers || []).filter((s) => s.gstin && !s.gst_status);
   return (
     <>
-      <TopBar title={t('nav_suppliers')} sub={t('sup_title_s')} />
+      <TopBar title={t('nav_suppliers')} sub={t('sup_title_s')}
+        right={<button class="pill" onClick={() => go('/purchases/new')}><Icon name="Plus" size={16} stroke={2.4} />{t('sup_add')}</button>} />
       <div class="page" style="padding-bottom:calc(var(--tabbar-h) + 40px)">
         {err && <div class="error">{err}</div>}
         {!d ? <><Skeleton h={90} /><Skeleton h={240} style="margin-top:12px" /></> : <>

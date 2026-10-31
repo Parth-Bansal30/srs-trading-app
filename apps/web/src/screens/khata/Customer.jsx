@@ -21,6 +21,10 @@ import { whereArgs, whereProblem, modeText, modeIcon, whereLabel } from '../../l
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { ReminderSheet } from './Reminders.jsx';
+import { TransferSheet } from '../../ui/money/TransferSheet.jsx';
+import { fixPreset, shopToday, canFixDay } from '../../lib/expenses.js';
+import { db } from '../../lib/backend.js';
+import { online } from '../../lib/net.js';
 import { daysSince } from './Khata.jsx';
 import './khata.css';
 
@@ -84,8 +88,8 @@ export function Customer({ id }) {
           {waiting.length > 0 && <div class="notice tone-accent row" style="gap:8px;font-size:13.5px"><Icon name="CloudUpload" size={16} />
             {t('off_pay_waiting', money(waiting.reduce((x, p) => x + p.amount, 0), false))}</div>}
           <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:12px">
-            {r.due > 0 && <Chip tone={days >= 30 ? 'bad' : days >= 10 ? 'warn' : 'ok'}>{t('oldest_days_chip', days)}</Chip>}
-            {r.credit > 0 && r.due > 0 && <Chip tone="ok">{t('credit_chip', money(r.credit, false))}</Chip>}
+            {r.due > 0 && <Chip tone={days >= 30 ? 'bad' : days >= 10 ? 'warn' : 'ok'}>{days > 0 ? t('oldest_days_chip', days) : t('oldest_today_chip')}</Chip>}
+            {r.due > 0 && r.credit - (r.pending_advance || 0) > 0.009 && <Chip tone="ok">{t('credit_chip', money(r.credit - (r.pending_advance || 0), false))}</Chip>}
             {r.pending_advance > 0 && <Chip tone="neutral">{t('pending_adv')} {money(r.pending_advance, false)}</Chip>}
           </div>
         </div>
@@ -132,9 +136,9 @@ export function Customer({ id }) {
         </div>
       </div>
 
-      <PaySheet open={sheet === 'pay'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
+      <PaySheet open={sheet === 'pay'} c={c} sides={sides} dues={r.by_side} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
       <GiveBackSheet open={sheet === 'giveback'} c={c} r={r} entries={entries} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('gb_done', money(amt))); load(); }} />
-      <PaymentSheet e={payOpen} slips={r.slips || {}} tz={tz} onClose={() => setPayOpen(null)} onDone={() => { setPayOpen(null); toast(t('pc_done')); load(); }} />
+      <PaymentSheet e={payOpen} name={c.name} slips={r.slips || {}} tz={tz} onClose={() => setPayOpen(null)} onDone={() => { setPayOpen(null); toast(t('pc_done')); load(); }} />
       <OldDueSheet open={sheet === 'old'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={() => { setSheet(null); toast(t('done_ok')); load(); }} />
       <CustomerEdit open={sheet === 'edit'} c={c} onClose={() => setSheet(null)} onSaved={() => { setSheet(null); toast(t('cust_saved')); loadInfo(); load(); }} />
       {can('khata') && <StatementSheet open={sheet === 'statement'} c={c} sides={sides} onClose={() => setSheet(null)} />}
@@ -143,14 +147,21 @@ export function Customer({ id }) {
   );
 }
 
-function SideSeg({ sides, side, setSide }) {
+function SideSeg({ sides, side, setSide, dues }) {
   if (sides.length < 2) return null;
+  const due = (sd) => (dues?.[sd]?.due > 0 ? ` · ${money(dues[sd].due, false)}` : '');
   return <><div class="lbl" style="margin-top:14px">{t('which_account')}</div>
-    <div class="seg"><button class={side === 'pakka' ? 'on' : ''} onClick={() => setSide('pakka')}>{t('bill_gst_short')}</button><button class={side === 'kacha' ? 'on' : ''} onClick={() => setSide('kacha')}>{t('bill_none_short')}</button></div></>;
+    <div class="seg"><button class={side === 'pakka' ? 'on' : ''} onClick={() => setSide('pakka')}>{t('bill_gst_short')}{due('pakka')}</button><button class={side === 'kacha' ? 'on' : ''} onClick={() => setSide('kacha')}>{t('bill_none_short')}{due('kacha')}</button></div></>;
 }
+/** The account a payment most likely belongs to: the one with money due (the older one when both are). (26 Oct 2026) */
+const likelySide = (dues) => {
+  const p = dues?.pakka?.due > 0; const k = dues?.kacha?.due > 0;
+  return k && !p ? 'kacha' : 'pakka';
+};
 
-function PaySheet({ open, c, sides, onClose, onDone }) {
+function PaySheet({ open, c, sides, dues, onClose, onDone }) {
   const [amt, setAmt] = useState(''); const [note, setNote] = useState(''); const [side, setSide] = useState('pakka');
+  useEffect(() => { if (open) setSide(likelySide(dues)); }, [open]);
   const [where, setWhere, accs] = useWhere(open);
   const a = useAction('recordPayment');
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
@@ -161,7 +172,7 @@ function PaySheet({ open, c, sides, onClose, onDone }) {
       }).then(() => { moneySaved({ amount: Number(amt), customer: c.name, account: whereLabel(where, accs) }); onDone(amt); }).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('amount')}</div>
       <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
-      <SideSeg sides={sides} side={side} setSide={setSide} />
+      <SideSeg sides={sides} side={side} setSide={setSide} dues={dues} />
       <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
       <MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
@@ -172,7 +183,7 @@ function PaySheet({ open, c, sides, onClose, onDone }) {
 }
 
 function OldDueSheet({ open, c, sides, onClose, onDone }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = shopToday();   // the shop's date (rule 4) — the phone's UTC date was yesterday before 5:30 am
   const [kind, setKind] = useState('lump'); const [amt, setAmt] = useState(''); const [ref, setRef] = useState('');
   const [date, setDate] = useState(today); const [side, setSide] = useState('pakka'); const [note, setNote] = useState('');
   const a = useAction('addOldDue');
@@ -246,12 +257,16 @@ function GiveBackSheet({ open, c, r, entries, sides, onClose, onDone }) {
 }
 
 /** One payment: what, when, how — and for the owner: cancel it (a mistake) with a reason. Nothing is erased: it shows crossed out. */
-function PaymentSheet({ e, slips, tz, onClose, onDone }) {
+function PaymentSheet({ e, slips, tz, onClose, onDone, name }) {
   const [why, setWhy] = useState('');
   const [asking, setAsking] = useState(false);
+  const [fix, setFix] = useState(null);   // "wrong account?" (26 Oct 2026)
   const a = useAction('reversePayment');
-  useEffect(() => { setWhy(''); setAsking(false); a.setError(null); }, [e?.pid]);
+  useEffect(() => { setWhy(''); setAsking(false); setFix(null); a.setError(null); }, [e?.pid]);
   if (!e) return null;
+  const openFix = () => db.from('payment_parts').select('account_id').eq('payment_id', e.pid).then(({ data }) => setFix(fixPreset({
+    amount: e.amt, at: e.date, from: data?.length === 1 ? data[0].account_id : null,
+    label: `${t(KIND_WORD[e.kind] || 'payment')}${e.oid && slips[e.oid] ? ` #${slips[e.oid]}` : ''} · ${name || ''} · ${money(e.amt)}` }))).catch(() => setFix(fixPreset({ amount: e.amt, at: e.date })));
   const slipNo = e.oid ? slips[e.oid] : null;
   const owner = can('delete');
   return (
@@ -267,6 +282,8 @@ function PaymentSheet({ e, slips, tz, onClose, onDone }) {
         {e.note && <div class="li"><div class="iconbox tone-neutral"><Icon name="StickyNote" size={18} /></div><div class="grow"><div class="s" style="color:var(--ink)">{e.note}</div></div></div>}
       </div>
       {owner && e.pending && !e.cancelled && <button class="btn btn-ghost btn-block" style="margin-top:12px" onClick={() => go(`/slip/${e.oid}?adjust=1`)}><Icon name="Undo2" size={18} />{t('pc_adv_back')}</button>}
+      {can('expenses') && !e.cancelled && e.amt > 0 && e.mode && e.mode !== 'Adjust' && online.value && canFixDay(e.date) && <button class="btn btn-ghost btn-block" style="margin-top:12px" onClick={openFix}><Icon name="ArrowRightLeft" size={18} />{t('fix_acc_q')}</button>}
+      {fix && <TransferSheet open={!!fix} preset={fix} onClose={() => setFix(null)} onDone={() => { setFix(null); toast(t('fix_acc_done')); onClose(); }} />}
       {owner && asking && (
         <>
           <div class="notice tone-bad" style="margin-top:12px;font-size:13.5px">{slipNo && !e.pending ? t('pc_warn_slip', slipNo, money(e.amt)) : t('pc_warn')}</div>

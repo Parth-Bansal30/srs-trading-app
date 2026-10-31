@@ -4,19 +4,16 @@ import { calcItem, r2, modeAmounts } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company, me } from '../../lib/session.js';
 import { db } from '../../lib/backend.js';
-import { useAction } from '../../lib/action.js';
 import { money, kg, time, dayStartISO, longDay } from '../../lib/format.js';
-import { toast } from '../../ui/toast.js';
 import { PAY_METHODS } from '../../config/options.js';
-import { TopBar, Skeleton } from '../../ui/kit.jsx';
+import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
+import { go } from '../../lib/router.js';
 
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
 
 export function Summary() {
   const tz = company.value?.timezone || 'Asia/Kolkata';
   const [d, setD] = useState(null);
-  const [counted, setCounted] = useState('');
-  const cash = useAction('saveCashCount');
   const load = async () => {
     const since = dayStartISO(tz);
     const [done, pays, closes, weighed] = await Promise.all([
@@ -51,7 +48,6 @@ export function Summary() {
 
   if (!d) return <><TopBar title={t('tile_today')} /><div class="page"><Skeleton h={160} /><Skeleton h={160} style="margin-top:12px" /></div></>;
   if (d.error) return <><TopBar title={t('tile_today')} /><div class="page muted">{t('err_generic')}</div></>;
-  const diff = counted === '' ? null : r2(Number(counted) - d.cashExpected);
   const L = ({ a, s, b, strong }) => <div class="li"><div class="grow"><div class={strong ? 't' : ''}>{a}</div>{s && <div class="s">{s}</div>}</div><div class="num" style={`font-weight:${strong ? 800 : 700}`}>{b}</div></div>;
 
   return (
@@ -85,17 +81,14 @@ export function Summary() {
         {can('today') && (
           <>
             <div class="sec"><h3>{t('cash_close_title')}</h3></div>
-            <div class="card pad">
-              <div class="row" style="justify-content:space-between"><span class="muted">{t('cash_expected')}</span><b class="num" style="font-size:20px">{money(d.cashExpected)}</b></div>
-              <div class="lbl" style="margin-top:14px">{t('cash_counted')}</div>
-              <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={counted} onInput={(e) => setCounted(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
-              {diff != null && <div class="row" style="justify-content:space-between;margin-top:10px"><span class="muted">{t('cash_diff')}</span>
-                <b class="num" style={`color:${diff === 0 ? 'var(--ok)' : 'var(--bad)'}`}>{diff > 0 ? '+' : ''}{money(diff)}</b></div>}
-              <button class="btn btn-brand btn-block" style="margin-top:14px" disabled={cash.busy || counted === ''}
-                onClick={() => cash.run({ counted: Number(counted) }).then(() => { toast(t('cash_saved')); setCounted(''); load(); }).catch(() => {})}>{t('cash_save')}</button>
-              {d.last && <div class="faint" style="font-size:13px;margin-top:10px">{t('cash_saved_at', time(d.last.closed_at, tz), money(d.last.counted_cash), d.last.people?.display_name || me.value?.name)}</div>}
-              {cash.error && <div class="error">{cash.error.message}</div>}
-            </div>
+            {/* the count is done in one place — Close the day — which knows the cash that went out too (26 Oct 2026:
+                this screen expected ₹2,199 while Close the day rightly expected ₹699 after a deposit) */}
+            <button class="card li" onClick={() => go('/close-day')}>
+              <div class="iconbox tone-neutral"><Icon name="ClipboardCheck" size={18} /></div>
+              <div class="grow"><div class="t">{t('close_title')}</div>
+                <div class="s">{d.last ? t('cash_saved_at', time(d.last.closed_at, tz), money(d.last.counted_cash), d.last.people?.display_name || me.value?.name) : t('sum_count_there')}</div></div>
+              <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
+            </button>
           </>
         )}
 

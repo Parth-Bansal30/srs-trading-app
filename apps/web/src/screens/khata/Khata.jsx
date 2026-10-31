@@ -73,8 +73,8 @@ export function Khata() {
         </div>
 
         <div class="row" style="margin:12px 0">
-          <div class="field grow" style="background:var(--surface);min-height:46px"><Icon name="Search" size={18} /><input value={q} onInput={(e) => setQ(e.currentTarget.value)} placeholder={t('search_cust')} /></div>
-          <div class="seg" style="width:auto"><button class={sort === 'oldest' ? 'on' : ''} onClick={() => setSort('oldest')}><Icon name="Clock" size={16} /></button><button class={sort === 'big' ? 'on' : ''} onClick={() => setSort('big')}>₹</button></div>
+          <div class="field grow" style="background:var(--surface);min-height:46px;min-width:0"><Icon name="Search" size={18} /><input value={q} onInput={(e) => setQ(e.currentTarget.value)} placeholder={t('search_cust')} /></div>
+          <div class="seg" style="width:auto;flex:none" aria-label="sort"><button style="min-width:44px" class={sort === 'oldest' ? 'on' : ''} onClick={() => setSort('oldest')}><Icon name="Clock" size={16} /></button><button style="min-width:44px" class={sort === 'big' ? 'on' : ''} onClick={() => setSort('big')}>₹</button></div>
         </div>
 
         <div class="card">
@@ -84,7 +84,7 @@ export function Khata() {
                 <button class="li" onClick={() => go(`/customer/${r.customer.id}`)}>
                   <div class="grow">
                     <div class="t ellip">{r.customer.name}</div>
-                    <div class="s">{r.due > 0 ? t('oldest_bill', r.days) : t('advance_held')}</div>
+                    <div class="s">{r.due > 0 ? (r.days > 0 ? t('oldest_bill', r.days) : t('oldest_today')) : t('advance_held')}</div>
                   </div>
                   <div style="text-align:right">
                     <div class="num" style={`font-weight:800;color:${r.due > 0 ? 'var(--ink)' : 'var(--ok)'}`}>{money(r.due > 0 ? r.due : r.credit, false)}</div>

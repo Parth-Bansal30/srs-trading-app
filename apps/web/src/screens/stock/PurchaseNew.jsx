@@ -250,7 +250,9 @@ export function PurchaseNew() {
       round_off: isBill ? Number(f.round_off || 0) : 0, total: calc.tot.total, pay_status: f.pay_status, note: f.note || null,
       file_key: f.file_key, read_by_ai: f.read_by_ai,
       lines: f.lines.map((l, i) => ({ description: l.description.trim() || `${matOf(l.material_id)?.code || ''} ${l.shape || ''}`.trim(),
-        hsn: cleanHsn(l.hsn), qty_kg: calc.lines[i].kg, rate: calc.lines[i].rateKg, amount: calc.lines[i].amount, material_id: l.material_id, shape: l.shape, label: l.label || null })),
+        hsn: cleanHsn(l.hsn), qty_kg: calc.lines[i].kg, rate: calc.lines[i].rateKg, amount: calc.lines[i].amount, material_id: l.material_id, shape: l.shape,
+        // a new stock item is called what the bill calls it, unless the shop gave its own name (26 Oct 2026: it showed only "Bought at ₹68/kg")
+        label: l.label || (!calc.lines[i].match && l.description.trim() ? l.description.trim().slice(0, 60) : null) })),
     };
     try {
       const r = await save.run({ bill, accept_diff: acceptDiff || undefined });

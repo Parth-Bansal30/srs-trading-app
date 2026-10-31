@@ -1,7 +1,7 @@
 // Slips and statements for the CUSTOMER: the backend builds each one from the saved figures and
 // keeps a copy behind a secret link (#/d/<token>). This file makes the link, the WhatsApp message,
 // the UPI payment link and the PDF file name. Words come from content/words.js in the doc's language.
-import { whatsappLink } from '@srs/core';
+import { whatsappLink, calcItem, orderTotals } from '@srs/core';
 import { call } from './api.js';
 import { db } from './backend.js';
 import { tIn } from './i18n.js';
@@ -168,4 +168,41 @@ export function pdfCaption(doc, url) {
   const l = doc.lang;
   if (doc.kind === 'slip') return [tIn(l, 'tx_cap_slip', doc.slip.no, money(doc.slip.total, true), money(doc.slip.balance, true)), doc.shop.name, url].filter(Boolean).join('\n');
   return [tIn(l, 'tx_cap_stmt', `${fmtDay(doc.period.from, false)} – ${fmtDay(doc.period.to, false)}`, money(Math.max(0, doc.closing), true)), doc.shop.name, url].filter(Boolean).join('\n');
+}
+
+/**
+ * The price of an estimate / open order as a WhatsApp message (26 Oct 2026 walkthrough: a customer phones for a price and the
+ * shop had no way to send it). Same rules as the slip: items, sizes, pieces, the weight from the sizes, material, cutting,
+ * GST on a GST bill and the total — never a rate per kg, never the word "kacha". bill = 'pakka' | 'kacha'.
+ */
+export function quoteText(o, { bill = 'pakka', lang = 'en', shop = '', gstPct = 18, kachaPct = 10, tz = 'Asia/Kolkata' } = {}) {
+  const l = lang;
+  const minInch = o.pricing_rules?.min_inch ?? 1;
+  const unit = (u) => (u === 'in' ? '"' : ' mm');
+  const core = (it) => ({ shape: it.shape, unit: it.unit, d: it.dims, rows: (it.order_item_lengths || []).map((r) => ({ len: r.len ?? '', pcs: r.pcs, cuts: r.cuts ?? '' })),
+    rate: Number(it.sell_rate), cutRate: Number(it.cut_rate), density: Number(it.density), aw: null });
+  const items = o.order_items.map(core);
+  const T = orderTotals({ items }, 'est', { bill, gstPct, kachaPct, minInch });
+  const rows = o.order_items.flatMap((it, k) => {
+    const c = calcItem(items[k], 'est', { minInch });
+    const size = `${it.shape === 'round' ? 'Ø' : ''}${(it.dims || []).filter((x) => x !== '' && x != null).join('×')}${unit(it.unit)}`;
+    const ls = it.order_item_lengths || [];
+    const lens = ls.length && ls[0].len != null && ls[0].len !== '' ? ls.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ') : `${ls.reduce((a, r) => a + Number(r.pcs), 0)} ${tIn(l, 'pcs')}`;
+    return [`${it.grade_code} ${size}`, line(` ${lens}`, c ? `≈${c.est.toFixed(2)} kg` : '')];
+  });
+  const day = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  return [
+    shop ? `*${shop}*` : null,
+    tIn(l, 'qt_head', o.customers?.name || '', o.slip_no, fmtDay(day)),
+    '```',
+    ...rows,
+    ...(o.order_items.length > 1 ? [line(tIn(l, 'qt_weight'), `≈${Number(T.wt).toFixed(2)} kg`)] : []),
+    '```',
+    `${tIn(l, 'material')}: ${money(T.matK, true)}`,
+    `${tIn(l, 'cutting')}: ${money(T.cutK, true)}`,
+    bill === 'pakka' ? `${tIn(l, 'gst_line', T.pct)}: ${money(T.gst, true)}` : null,
+    `*${tIn(l, bill === 'pakka' ? 'qt_total_gst' : 'total')}: ${money(T.total, true)}*`,
+    `_${tIn(l, 'qt_note')}_`,
+    tIn(l, 'thanks'),
+  ].filter(Boolean).join('\n');
 }

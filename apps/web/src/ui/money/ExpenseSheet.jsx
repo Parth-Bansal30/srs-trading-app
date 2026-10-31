@@ -11,7 +11,7 @@ import { online } from '../../lib/net.js';
 import { money } from '../../lib/format.js';
 import { fmtDay } from '../../lib/docs.js';
 import { addDays } from '../../lib/evening.js';
-import { loadAccounts, accountsCache, lastAccount, rememberAccount } from '../../lib/accounts.js';
+import { loadAccounts, accountsCache, lastOutAccount, rememberOutAccount } from '../../lib/accounts.js';
 import { shopToday, catOf } from '../../lib/expenses.js';
 import { fileToData } from '../../lib/files.js';
 import { EXPENSE_CATEGORIES } from '../../config/options.js';
@@ -20,8 +20,10 @@ import { Sheet } from '../Sheet.jsx';
 import { AccountPick } from './AccountPick.jsx';
 import './money.css';
 
-const blank = () => ({ kind: 'expense', category: null, amount: '', accountId: null, method: null, paidTo: '', note: '', day: 'today', date: '',
+const blank = () => ({ kind: 'expense', category: null, amount: '', accountId: null, accPicked: false, method: null, paidTo: '', note: '', day: 'today', date: '',
   gstBill: false, gstAmount: '', billNo: '', sellerGstin: '', fileKey: null, supplierId: null, bills: [], more: false });
+/** The account an expense starts with: the one used last for this kind of expense, else the cash drawer. */
+const startAccount = (list, what) => (list || []).find((a) => a.id === lastOutAccount(what) && a.usable !== false) || (list || []).find((a) => a.is_drawer) || (list || [])[0];
 
 /** Which kinds this person may enter. */
 export const expenseKinds = () => [
@@ -39,15 +41,17 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   const [accounts, setAccounts] = useState(accountsCache.value);
   const [upBusy, setUpBusy] = useState(false);
   const [upErr, setUpErr] = useState(null);
+  const [allCats, setAllCats] = useState(false);   // the 8 usual kinds first, the rest behind "More kinds" (26 Oct 2026)
   const save = useAction('saveExpense');
   const photo = useRef(null);
+  const amountIn = useRef(null);
   const kinds = expenseKinds();
   const today = shopToday();
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
 
   useEffect(() => {
     if (!open) return;
-    save.setError(null); setUpErr(null);
+    save.setError(null); setUpErr(null); setAllCats(false);
     const base = blank();
     if (edit) {
       Object.assign(base, { kind: edit.kind, category: edit.category, amount: String(Number(edit.amount)), accountId: edit.account_id, method: edit.method || null,
@@ -58,7 +62,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
     setF(base);
     loadAccounts().then((l) => {
       setAccounts(l);
-      setF((x) => (x.accountId && l.some((a) => a.id === x.accountId) ? x : { ...x, accountId: (l.find((a) => a.id === lastAccount() && a.usable !== false) || l.find((a) => a.is_drawer) || l[0])?.id || null }));
+      setF((x) => (x.accountId && l.some((a) => a.id === x.accountId) ? x : { ...x, accountId: startAccount(l, x.kind === 'expense' ? x.category : x.kind)?.id || null }));
     }).catch(() => setAccounts(accountsCache.value || []));
   }, [open, edit?.id]);
 
@@ -78,7 +82,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   };
   const submit = () => {
     if (problem) return;
-    rememberAccount(f.accountId);
+    rememberOutAccount(f.kind === 'expense' ? f.category : f.kind, f.accountId);
     save.run({
       kind: f.kind, category: f.kind === 'expense' ? f.category : undefined, amount: r2(amount), account_id: f.accountId, method: f.method || undefined,
       day: dayArg || undefined, paid_to: f.paidTo.trim() || undefined, note: f.note.trim() || undefined,
@@ -105,18 +109,22 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
       </>}>
       {kinds.length > 1 && (
         <div class="seg exp-kinds" style="margin-bottom:14px">{kinds.map((k) => (
-          <button class={f.kind === k ? 'on' : ''} disabled={!!edit} onClick={() => set({ kind: k, bills: [], supplierId: null })}>{t(`exp_k_${k}`)}</button>
+          <button class={f.kind === k ? 'on' : ''} disabled={!!edit} onClick={() => set({ kind: k, bills: [], supplierId: null, ...(f.accPicked ? {} : { accountId: startAccount(accounts, k === 'expense' ? f.category : k)?.id || f.accountId }) })}>{t(`exp_k_${k}`)}</button>
         ))}</div>
       )}
 
       {f.kind === 'expense' && <>
         <div class="lbl">{t('exp_what')}</div>
-        <div class="exp-cats">{EXPENSE_CATEGORIES.map((c) => (
-          <button class={`exp-cat ${f.category === c.id ? 'on' : ''}`} onClick={() => set({ category: c.id })} aria-pressed={f.category === c.id}>
+        <div class="exp-cats">{EXPENSE_CATEGORIES.filter((c, k) => allCats || k < 8 || c.id === f.category).map((c) => (
+          <button class={`exp-cat ${f.category === c.id ? 'on' : ''}`} aria-pressed={f.category === c.id}
+            onClick={() => { set({ category: c.id, ...(f.accPicked || edit ? {} : { accountId: startAccount(accounts, c.id)?.id || f.accountId, method: null }) }); if (!f.amount) amountIn.current?.focus(); }}>
             <span class="exp-cat-ic" style={`background:${c.tone}`}><Icon name={c.icon} size={20} stroke={2.2} /></span>
             <span class="exp-cat-w">{t(c.word)}</span>
           </button>
-        ))}</div>
+        ))}
+        {!allCats && <button class="exp-cat" onClick={() => setAllCats(true)}>
+          <span class="exp-cat-ic" style="background:var(--ink-3)"><Icon name="ChevronDown" size={20} stroke={2.4} /></span>
+          <span class="exp-cat-w">{t('exp_more_kinds')}</span></button>}</div>
       </>}
 
       {f.kind === 'supplier' && <>
@@ -147,11 +155,11 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
 
       <div class="lbl" style="margin-top:16px">{t('exp_amount')}</div>
       <div class="field num exp-amount"><span class="faint">₹</span>
-        <input inputmode="decimal" value={f.amount} placeholder="0" autofocus={!edit}
+        <input ref={amountIn} inputmode="decimal" value={f.amount} placeholder="0" autofocus={!edit && f.kind !== 'expense'}
           onInput={(e) => set({ amount: e.currentTarget.value.replace(/[^\d.]/g, '') })} /></div>
 
       <div class="lbl" style="margin-top:16px">{t('exp_from')}</div>
-      <AccountPick accounts={accounts} value={f.accountId} onChange={(id) => set({ accountId: id, method: null })} method={f.method} onMethod={(m) => set({ method: m })} />
+      <AccountPick accounts={accounts} value={f.accountId} onChange={(id) => set({ accountId: id, accPicked: true, method: null })} method={f.method} onMethod={(m) => set({ method: m })} />
 
       <div class="lbl" style="margin-top:16px">{t('exp_day')}</div>
       <div class="seg">

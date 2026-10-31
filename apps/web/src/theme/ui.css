@@ -152,3 +152,4 @@ select.field{font-weight:600;font-size:16px;appearance:auto}
 .usual>span{font-size:12.5px;font-weight:700;margin-right:2px}
 .usual button{min-height:36px;padding:0 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
 .usual button.on{border-color:var(--accent);background:var(--accent-soft)}
+.hero-box .cap .n{opacity:.8;font-weight:800;margin-left:2px}

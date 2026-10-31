@@ -5,6 +5,7 @@ import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { loadCatalog, forgetCatalog } from '../../lib/catalog.js';
 import { db } from '../../lib/backend.js';
+import { store } from '../../lib/store.js';
 import { useAction } from '../../lib/action.js';
 import { money, shortDate } from '../../lib/format.js';
 import { toast } from '../../ui/toast.js';
@@ -20,7 +21,7 @@ export function Rates() {
   const [open, setOpen] = useState(null);
   const [adding, setAdding] = useState(false);
   const load = () => { forgetCatalog(); return loadCatalog(true).then(setCat); };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); store.set('start_rates', '1'); }, []);   // opening Rates counts as "checked your rates"
   return (
     <>
       <TopBar title={t('nav_rates')} right={can('rates') && <button class="pill" onClick={() => setAdding(true)}><Icon name="Plus" size={16} stroke={2.4} />{t('add_material')}</button>} />
@@ -98,6 +99,7 @@ function GradeSheet({ m, cat, onClose, onDone }) {
 
       <div class="sec"><h3>{t('rate_history')}</h3></div>
       <div class="card">
+        {hist && hist.length === 0 && <div class="li muted">{t('rate_hist_none')}</div>}
         {(hist || []).map((h) => (
           <div class="li"><div class="grow"><div class="t num">{money(h.sell_rate)}/kg · {t('cutting')} {money(h.cut_rate)}</div>{h.note && <div class="s">{h.note}</div>}</div>
             <span class="faint" style="font-size:13px">{shortDate(h.effective_from, tz)}</span></div>

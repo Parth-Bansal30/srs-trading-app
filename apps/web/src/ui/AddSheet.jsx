@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { t } from '../lib/i18n.js';
-import { can } from '../lib/session.js';
+import { can, allowed } from '../lib/session.js';
 import { go } from '../lib/router.js';
 import { loadCatalog } from '../lib/catalog.js';
 import { ADD } from '../config/navigation.js';
@@ -17,7 +17,7 @@ import { regularRows } from '../lib/habits.js';
 import { topCustomers } from '../lib/habitsMath.js';
 
 /** What this person may add (in the shop's order). */
-export const addItems = () => ADD.filter((x) => !x.perm || [].concat(x.perm).every((p) => can(p)));
+export const addItems = () => ADD.filter(allowed);
 
 export const addOpen = signal(false);
 

@@ -1,9 +1,9 @@
 // Pickup: GST bill or No bill (both amounts shown), advance taken off, how it's paid → finish → send slip.
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { finishCalc, finishProblem } from '@srs/core';
+import { finishCalc, finishProblem, calcItem, weightCheck } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
-import { loadOrderAny } from '../../lib/orders.js';
+import { loadOrderAny, dimText, shapeName } from '../../lib/orders.js';
 import { usesOf, payPatch } from '../../lib/offline/local.js';
 import { loadCatalog } from '../../lib/catalog.js';
 import { useAction } from '../../lib/action.js';
@@ -14,6 +14,8 @@ import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
 import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
+import { WeighAgainSheet } from '../weigh/Weigh.jsx';
+import { online } from '../../lib/net.js';
 import './pickup.css';
 
 const coreItem = (i) => ({ shape: i.shape, unit: i.unit, d: i.dims, rows: i.order_item_lengths.map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
@@ -27,6 +29,7 @@ export function Pickup({ id }) {
   const [paid, setPaid] = useState('');
   const [where, setWhere, accs] = useWhere(true);
   const [note, setNote] = useState('');
+  const [again, setAgain] = useState(false);
   const fin = useAction('finalizeOrder');
   const tz = company.value?.timezone;
   const load = () => Promise.all([loadOrderAny(id), loadCatalog(true)]).then(([x, c]) => { setO(x); setCat(c); }).catch(() => setO(null));
@@ -73,6 +76,7 @@ export function Pickup({ id }) {
     <div>
       <TopBar title={t('pickup_title')} sub={`#${o.slip_no} · ${o.customers?.name} · ${kg(o.order_items.reduce((a, i) => a + Number(i.actual_weight || 0), 0))}`} />
       <div class="page" style="padding-bottom:130px">
+        <Weighed o={o} onAgain={() => setAgain(true)} />
         <div class="q">{t('bill_q')}</div>
         <div class="row" style="gap:10px;align-items:stretch">
           <Opt id="pakka" label={t('bill_gst_short')} sub={t('incl_gst', Number(cat.settings.gst_pct))} c={calc.pakka} />
@@ -108,6 +112,7 @@ export function Pickup({ id }) {
         )}
         {fin.error && fin.error.code !== 'changed' && <div class="error">{fin.error.message}</div>}
       </div>
+      <WeighAgainSheet o={again ? o : null} onClose={() => setAgain(false)} onDone={() => { setAgain(false); go(`/slip/${o.id}`); }} />
       <div class="dock">
         {problem || placeBad ? <button class="btn btn-block btn-ghost" disabled>{t(placeBad || (problem === 'need_part' ? 'need_part' : 'choose_bill'))}</button> : (
           <div class="row">
@@ -116,6 +121,29 @@ export function Pickup({ id }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** What was weighed, item by item — a weight far from its size is red, with "Weigh again" (26 Oct 2026). */
+function Weighed({ o, onAgain }) {
+  const rows = o.order_items.map((i) => {
+    const est = calcItem({ ...coreItem(i), aw: null }, 'est', { minInch: o.pricing_rules?.min_inch ?? 1 })?.est;
+    return { i, est, far: weightCheck(est, Number(i.actual_weight))?.level === 'far' };
+  });
+  const anyFar = rows.some((r) => r.far);
+  return (
+    <div class={`card pu-weighed ${anyFar ? 'far' : ''}`}>
+      <div class="lbl" style="margin:0 0 4px">{t('pu_items_t')}</div>
+      {rows.map(({ i, est, far }) => (
+        <div class="pu-w-row">
+          <span class="grow">{i.grade_code} · {shapeName(i.shape)} <span class="num">{dimText(i)}</span>
+            {far && <span class="pu-w-far"><Icon name="TriangleAlert" size={14} stroke={2.4} /> {t('pu_far', kg(est, 1))}</span>}</span>
+          <b class="num" style={far ? 'color:var(--bad)' : ''}>{kg(i.actual_weight)}</b>
+        </div>
+      ))}
+      {online.value && <button class="link" style={`margin-top:4px;${anyFar ? 'color:var(--bad)' : ''}`} onClick={onAgain}>
+        <Icon name="RotateCcw" size={15} />{t('weigh_again_q')} {t('weigh_again')}</button>}
     </div>
   );
 }

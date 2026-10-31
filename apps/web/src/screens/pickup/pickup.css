@@ -12,3 +12,9 @@
 .b-pakka .radio.on{background:var(--pakka);border-color:var(--pakka)}.b-kacha .radio.on{background:var(--kacha);border-color:var(--kacha)}
 .collect{justify-content:space-between;padding:14px 0 12px;border-top:1px dashed var(--line-2);font-weight:800;font-size:16px}
 .collect .num{font-size:30px;letter-spacing:-.03em}
+/* what was weighed (26 Oct 2026) */
+.pu-weighed{padding:10px 16px 8px;margin-bottom:14px}
+.pu-weighed.far{border:1.5px solid var(--bad);background:var(--bad-soft)}
+.pu-w-row{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line);font-size:14.5px;font-weight:600}
+.pu-weighed .lbl + .pu-w-row{border-top:none}
+.pu-w-far{display:block;color:var(--bad);font-size:12.5px;font-weight:700;margin-top:2px}

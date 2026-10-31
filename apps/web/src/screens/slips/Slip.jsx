@@ -1,6 +1,6 @@
 // One slip: items, weights, amounts, money taken — and the next step for its stage.
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { r2, calcItem } from '@srs/core';
+import { r2, calcItem, weightCheck } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { loadOrderAny, dimText, lengthsText, shapeName, totalPcs } from '../../lib/orders.js';
@@ -16,6 +16,7 @@ import { STAGES, BILLS } from '../../config/options.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { GiveSlip } from '../docs/GiveSlip.jsx';
+import { QuoteSheet } from '../docs/QuoteSheet.jsx';
 import { call } from '../../lib/api.js';
 import { DeleteSheet, AskDeleteSheet } from './DeleteSheet.jsx';
 import { loadStock, forgetStock } from '../../lib/stock.js';
@@ -23,6 +24,9 @@ import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, modeText, modeIcon, accName, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
+import { WeighAgainSheet } from '../weigh/Weigh.jsx';
+import { TransferSheet } from '../../ui/money/TransferSheet.jsx';
+import { fixPreset, canFixDay } from '../../lib/expenses.js';
 import '../docs/docs-screens.css';
 import './slips.css';
 
@@ -35,6 +39,7 @@ export function Slip({ id }) {
   const [deleter, setDeleter] = useState('');
   const [stock, setStock] = useState(null);      // to show / change which stock each item comes from
   const [pickFor, setPickFor] = useState(null);  // item whose stock is being changed
+  const [fix, setFix] = useState(null);          // "wrong account?" for a payment
   const tz = company.value?.timezone;
   const load = () => loadOrderAny(id).then((x) => {
     setO(x);
@@ -75,6 +80,9 @@ export function Slip({ id }) {
       rate: 0, cutRate: 0, density: Number(it.density) }, 'est', { minInch: o.pricing_rules?.min_inch ?? 1 });
     return { materialId: it.material_id, shape: it.shape, kg: Number(it.actual_weight) || (c ? c.est : 0) };
   };
+  // a weight very different from the item's size (26 Oct 2026: 180 typed for 18.0)
+  const farOf = (it) => it.actual_weight != null && weightCheck(needOf({ ...it, actual_weight: null }).kg, Number(it.actual_weight))?.level === 'far';
+  const reweigh = net && o.status === 'weighed' && (can('weigh') || can('money'));
   const pickItem = pickFor && o.order_items.find((i) => i.id === pickFor);
   const due = o.status === 'done' ? Math.max(0, r2(Number(o.total_amount) - o.paid)) : 0;
 
@@ -133,15 +141,22 @@ export function Slip({ id }) {
                 <div class="s num">{lengthsText(it)} · {totalPcs(it)} {t('pcs')}</div>
               </div>
               <div style="text-align:right">
-                {it.actual_weight ? <div class="num" style="font-weight:700">{kg(it.actual_weight)}</div> : <span class="faint" style="font-size:13px">{t('waiting_weight')}</span>}
+                {it.actual_weight ? <div class="num" style={`font-weight:700${farOf(it) ? ';color:var(--bad)' : ''}`}>{kg(it.actual_weight)}</div> : <span class="faint" style="font-size:13px">{t('waiting_weight')}</span>}
                 {can('money') && <div class="faint num" style="font-size:12px">{money(it.sell_rate)}/kg{it.special_rate ? ' ★' : ''}</div>}
               </div>
+              {farOf(it) && o.status === 'weighed' && <div class="wcheck far" style="flex-basis:100%;padding-left:52px;margin-top:4px">
+                <Icon name="TriangleAlert" size={16} stroke={2.4} /><span class="grow">{t('pu_far', kg(needOf({ ...it, actual_weight: null }).kg, 1))}</span></div>}
               {stock && (it.stock_item_id || stockOpen) && <div style="flex-basis:100%;padding-left:52px">
                 <StockLine stock={stock} value={it.stock_item_id || null} need={needOf(it)} sellRate={it.sell_rate}
                   readOnly={!stockOpen} onOpen={() => setPickFor(it.id)} /></div>}
             </div>
           ))}
         </div>
+
+        {can('money') && ['estimate', 'accepted'].includes(o.status) && !local && (
+          <button class={`btn ${o.status === 'estimate' ? 'btn-wa' : 'btn-ghost'} btn-block`} style="margin-top:12px" onClick={() => setSheet('quote')}>
+            <Icon name="MessageCircle" size={19} stroke={2.4} />{t('qt_btn')}</button>
+        )}
 
         {can('money') && billed && (
           <div class="card" style="margin-top:12px;padding:6px 16px">
@@ -163,7 +178,10 @@ export function Slip({ id }) {
                   <div class={`iconbox tone-${Number(p.amount) < 0 ? 'bad' : 'ok'}`}><Icon name={p.mode === 'Adjust' ? 'RefreshCw' : modeIcon(p.mode)} size={18} /></div>
                   <div class="grow"><div class="t">{t(KIND_WORD[p.kind] || p.kind)} · {p.mode === 'Adjust' ? '—' : modeText(p.mode)}{p.pending && <span class="faint" style="font-weight:600"> · <Icon name="CloudUpload" size={12} /> {t('off_waiting')}</span>}</div>
                     {p.payment_parts?.length > 0 && <div class="s">{p.payment_parts.map((x) => `${accName({ ...x.money_accounts })}${p.payment_parts.length > 1 ? ` ${money(Math.abs(x.amount))}` : ''}${x.method ? ` (${x.method})` : ''}`).join(' · ')}</div>}
-                    <div class="s">{shortDate(p.received_at, tz)} · {time(p.received_at, tz)}{p.note ? ` · ${p.note}` : ''}</div></div>
+                    <div class="s">{shortDate(p.received_at, tz)} · {time(p.received_at, tz)}{p.note ? ` · ${p.note}` : ''}</div>
+                    {net && can('expenses') && !p.reversed && Number(p.amount) > 0 && p.payment_parts?.length === 1 && canFixDay(p.received_at) && (
+                      <button class="link" style="min-height:30px;font-size:13px" onClick={() => setFix(fixPreset({ amount: p.amount, at: p.received_at, from: p.payment_parts[0].account_id,
+                        label: `${t(KIND_WORD[p.kind] || p.kind)} #${o.slip_no} · ${o.customers?.name} · ${money(p.amount)}` }))}>{t('fix_acc_q')}</button>)}</div>
                   <div class="num" style={`font-weight:700;color:${Number(p.amount) < 0 ? 'var(--bad)' : 'var(--ok)'}`}>{money(p.amount)}</div>
                 </div>
               ))}
@@ -189,11 +207,15 @@ export function Slip({ id }) {
         <div class="row" style="justify-content:center;gap:18px;margin-top:6px">
           {net && ['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
           {net && o.status === 'done' && extra > 0 && can('delete') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
+          {reweigh && <button class="link" onClick={() => setSheet('reweigh')}><Icon name="RotateCcw" size={15} />{t('weigh_again')}</button>}
           {net && ['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
           {!net && !local && ['accepted', 'weighed', 'done'].includes(o.status) && <span class="faint" style="font-size:12.5px">{t('off_more_later')}</span>}
         </div>
       </div>}
 
+      {fix && <TransferSheet open={!!fix} preset={fix} onClose={() => setFix(null)} onDone={() => { setFix(null); toast(t('fix_acc_done')); }} />}
+      {sheet === 'quote' && <QuoteSheet o={o} onClose={() => setSheet(null)} />}
+      <WeighAgainSheet o={sheet === 'reweigh' ? o : null} onClose={() => setSheet(null)} onDone={() => { setSheet(null); can('weigh') ? go(`/weigh/${o.id}`) : load(); }} />
       <AcceptSheet open={sheet === 'accept'} o={o} onClose={() => setSheet(null)} onDone={() => done(t('accepted_msg', o.slip_no))} />
       <AdvanceSheet open={sheet === 'advance'} o={o} onClose={() => setSheet(null)} onDone={() => done()} />
       <AdjustSheet open={sheet === 'adjust'} o={o} extra={extra} onClose={() => setSheet(null)} onDone={() => done()} />

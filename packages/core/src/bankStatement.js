@@ -332,7 +332,7 @@ export function csvRows(text) {
 const BANK_WORDS = new Set(('upi cr dr neft imps rtgs ach nach ecs mmt p2a p2m pay payment paid transfer trf tfr to from by inb ib mob '
   + 'bank hdfc icici sbi axis kotak pnb canara bob yes idbi indusind federal union boi iob paytm phonepe gpay google ybl okaxis oksbi okhdfcbank okicici '
   + 'ibl axl apl upi/cr credit debit ref chq cheque clg clearing deposit dep inward outward rev reversal txn imps/p2a').split(' '));
-const NAME_SKIP = /^(mr|mrs|ms|m\/s|ms\.|shri|sri|smt)$/i;
+const NAME_SKIP = /^(mr|mrs|ms|m\/s|ms\.|shri|sri|smt|rrn|utr|ref|txn|na|xx+\d*)$/i;
 export const normWords = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9@]+/g, ' ').replace(/\s+/g, ' ').trim();
 const nameWords = (s) => normWords(s).split(' ').filter((w) => w.length >= 2 && !/^\d+$/.test(w) && !BANK_WORDS.has(w) && !NAME_SKIP.test(w)
   && !/^[a-z]{4}0[a-z0-9]{6}$/.test(w)       // not an IFSC

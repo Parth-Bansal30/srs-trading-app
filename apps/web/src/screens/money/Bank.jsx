@@ -241,7 +241,7 @@ export function BankReview({ account, imp }) {
           </section>
         )}
 
-        {closing != null && (
+        {closing != null && !(d.start && d.import?.to && d.import.to < d.start) && (   /* a statement from before the app: no balance point then */
           <div class={`card pad bk-balance ${diff === 0 ? 'ok' : ''}`}>
             <div class="row" style="gap:10px"><Icon name={diff === 0 ? 'CircleCheck' : 'Scale'} size={22} style={`color:${diff === 0 ? 'var(--ok)' : 'var(--ink-2)'}`} />
               <div class="grow"><div class="t" style="font-weight:800">{diff === 0 ? t('bk_bal_match') : t('bk_bal_title')}</div>

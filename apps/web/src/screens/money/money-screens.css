@@ -38,7 +38,8 @@
 .bk-sug{display:flex;gap:8px;align-items:flex-start;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:14px;line-height:1.35}
 .bk-sug.unknown{background:var(--bad-soft);color:var(--bad);font-weight:700}
 .bk-sug svg{flex:none;margin-top:2px}
-.bk-why{display:inline-flex;align-items:center;gap:3px;margin-left:8px;font-size:11.5px;font-weight:700;color:var(--ink-3);white-space:nowrap}
+.bk-why{display:inline-flex;align-items:center;gap:3px;margin-left:8px;font-size:11.5px;font-weight:700;color:var(--ink-3);white-space:normal;overflow-wrap:anywhere}
+.bk-why svg{flex:none}
 .bk-acts{gap:8px;margin-top:8px;flex-wrap:wrap}
 .bk-acts .btn{min-height:42px;padding:0 14px;font-size:14px}
 .bk-line.done{align-items:center}

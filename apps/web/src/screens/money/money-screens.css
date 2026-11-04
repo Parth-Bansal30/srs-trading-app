@@ -58,3 +58,4 @@
 /* a statement that covers days uploaded before / days before the app (3 Nov 2026) */
 .bk-twice { display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; }
 .bk-twice svg { flex: none; margin-top: 1px; }
+.bk-reopen{display:flex;gap:5px;align-items:center;font-size:12px;font-weight:700;color:var(--warn);margin-top:3px}

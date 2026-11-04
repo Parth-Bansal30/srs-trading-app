@@ -4,6 +4,8 @@
  * Use it while writing a migration; `npm run db:migrate` applies it for real once it is right.
  *
  *   node scripts/db-try.mjs 15        pending migrations + tests whose name contains "15"
+ *   node scripts/db-try.mjs --undo 15 also proves each pending migration can be undone: up → its supabase/rollbacks/
+ *                                     <name>.down.sql → up again → the tests (all inside the same rolled-back transaction)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +13,8 @@ import { query, ROOT } from './lib/supabase.mjs';
 
 const migDir = path.join(ROOT, 'supabase/migrations');
 const testDir = path.join(ROOT, 'supabase/tests');
-const filter = process.argv[2] || '';
+const undo = process.argv.includes('--undo');
+const filter = process.argv.slice(2).find((a) => !a.startsWith('--')) || '';
 const applied = new Set((await query('select version from supabase_migrations.schema_migrations')).map((r) => r.version));
 const pending = fs.readdirSync(migDir).filter((f) => /^\d{14}_[a-z0-9_]+\.sql$/.test(f) && !applied.has(f.slice(0, 14))).sort();
 const tests = fs.readdirSync(testDir).filter((f) => f.endsWith('.sql') && !f.startsWith('00_') && f.includes(filter)).sort();
@@ -24,7 +27,16 @@ for (const f of tests) {
     const names = fx[1].trim().split(/\s+/).filter(Boolean);
     sql = (names.length ? names : ['fixtures']).map((n) => fs.readFileSync(path.join(testDir, `00_${n}.sql`), 'utf8')).join('\n') + '\n' + sql;
   }
-  const mig = pending.map((m) => fs.readFileSync(path.join(migDir, m), 'utf8')).join('\n;\n');
+  const up = pending.map((m) => fs.readFileSync(path.join(migDir, m), 'utf8')).join('\n;\n');
+  let mig = up;
+  if (undo) {
+    const downs = pending.slice().reverse().map((m) => {
+      const f2 = path.join(ROOT, 'supabase/rollbacks', m.replace(/\.sql$/, '.down.sql'));
+      if (!fs.existsSync(f2)) throw new Error(`no undo script for ${m} (supabase/rollbacks/${path.basename(f2)})`);
+      return fs.readFileSync(f2, 'utf8');
+    });
+    mig = `${up}\n;\n${downs.join('\n;\n')}\n;\n${up}`;
+  }
   const t0 = Date.now();
   try {
     await query(`begin;\n${mig}\n;\n${sql}\n;rollback;`);

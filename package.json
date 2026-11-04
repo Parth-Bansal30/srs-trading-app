@@ -30,6 +30,7 @@
     "web:single": "cd apps/web && npx vite build --mode single",
     "evening:setup": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/evening-setup.mjs",
     "money:e2e": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/money-e2e.mjs",
-    "db:try": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-try.mjs"
+    "db:try": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-try.mjs",
+    "db:snapshot": "NODE_USE_ENV_PROXY=1 NODE_NO_WARNINGS=1 node scripts/db-snapshot.mjs"
   }
 }

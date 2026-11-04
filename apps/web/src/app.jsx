@@ -45,6 +45,7 @@ import { Expenses } from './screens/money/Expenses.jsx';
 import { Search } from './screens/Search.jsx';
 import { Balances, AccountBook } from './screens/money/Balances.jsx';
 import { BankStart, BankReview } from './screens/money/Bank.jsx';
+import { Review } from './screens/review/Review.jsx';
 import { Suppliers } from './screens/stock/Suppliers.jsx';
 import { Waiting } from './screens/Waiting.jsx';
 import { OfflineBar } from './ui/OfflineBar.jsx';
@@ -87,6 +88,7 @@ const SCREENS = {
   '/money': () => <Balances />,
   '/money/:id': ({ id }) => <AccountBook id={id} key={id} />,
   '/bank': () => <BankStart />,
+  '/review': () => <Review />,
   '/bank/:account/:imp': ({ account, imp }) => <BankReview account={account} imp={imp} key={`${account}/${imp}`} />,
   '/suppliers': () => <Suppliers />,
   '/waiting': () => <Waiting />,

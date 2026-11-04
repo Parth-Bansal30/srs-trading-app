@@ -38,6 +38,7 @@ export async function loadToday({ perms, tz }) {
     const day = businessDate(new Date().toISOString(), tz);
     jobs.push(call('expenses', { from: day, to: day }).then((x) => { out.expenses = x.totals; }));
   }
+  if (perms.money) jobs.push(call('reviewList', {}).then((x) => { out.counts.review = x.open; }));
   if (perms.weigh) jobs.push(call('weighingList', {}).then((list) => { out.counts.toWeigh = list.length; out.weighing = list; }));
   if (perms.money && perms.khata) {
     jobs.push(call('reminderList', {}).then((list) => {

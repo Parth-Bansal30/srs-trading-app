@@ -11,3 +11,4 @@ supabase/functions/_shared/core/
 apps/web/dist-single/
 !apps/web/.env.development
 !apps/web/.env.single
+backups/

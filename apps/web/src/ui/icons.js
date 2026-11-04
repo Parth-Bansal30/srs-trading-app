@@ -26,3 +26,7 @@ export const ICONS = {
   Wallet, Split, EyeOff, ArrowUp, ArrowDown, Shuffle, CircleDashed, CircleAlert, RotateCcw, Volume2,
   Fingerprint, Vault, Coffee, HardHat, Fuel, Zap, Building, Flame, HandCoins, ScanFace, CloudOff, CloudUpload, ArrowRightLeft, Receipt, ShieldAlert, ShieldX, Cog, Wrench, CircleEllipsis, HandHeart, Paperclip, CloudCheck, Wifi, LoaderCircle, BanknoteArrowDown, BanknoteArrowUp, Scissors, Hourglass, ExternalLink, ImageUp, History, CircleX, ListTodo, UtensilsCrossed, ChevronUp, ChevronDown, Image, ShieldQuestion, TimerReset, Ban, SearchX, Repeat, FileCheck2, CheckCheck, SkipForward, Brain, Equal, Link, Percent, CircleHelp, FileSpreadsheet,
 };
+
+// 4 Nov 2026 (plan v2): review list, cheques, overdraft, suppliers, joining customers, GST / Tally, Day book
+import { CornerDownRight, GitMerge, Gauge, BookCheck, CalendarDays, Link2, Unlink, ScanText, UserRoundSearch } from 'lucide-preact';
+Object.assign(ICONS, { CornerDownRight, GitMerge, Gauge, BookCheck, CalendarDays, Link2, Unlink, ScanText, UserRoundSearch });

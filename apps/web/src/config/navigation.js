@@ -23,6 +23,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'expenses', route: '/expenses', word: 'nav_expenses', icon: 'Receipt', perm: 'expenses' },
   { id: 'money', route: '/money', word: 'nav_money', icon: 'Wallet', perm: 'settings' },
   { id: 'bank', route: '/bank', word: 'nav_bank', icon: 'FileSpreadsheet', perm: 'settings' },
+  { id: 'review', route: '/review', word: 'nav_review', icon: 'ListChecks', perm: 'money' },
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
@@ -51,6 +52,7 @@ export const ADD = [
 
 // Today → "Needs you now". Each card shows only if the person has the permission and count > 0.
 export const NEEDS = [
+  { id: 'review', count: 'review', word: 'need_review', one: 'need_review_1', icon: 'ListChecks', tone: 'warn', route: '/review', perm: 'money' },
   { id: 'weigh', count: 'toWeigh', word: 'need_weigh', one: 'need_weigh_1', icon: 'Scale', tone: 'accent', route: '/weigh', perm: 'weigh' },
   { id: 'pickup', count: 'readyForPickup', word: 'need_pickup', icon: 'PackageCheck', tone: 'ok', route: '/slips?stage=weighed', perm: 'money' },
   { id: 'remind', count: 'reminders', word: 'need_remind', icon: 'BellRing', tone: 'bad', route: '/reminders', perm: 'khata' },

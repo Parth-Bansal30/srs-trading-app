@@ -873,6 +873,22 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     },
 
     /** Skip a line (not shop money) — remember it if asked — or open a skipped / linked line again: { line_id, status, note, remember_key }. */
+    // ---------- the review list (4 Nov 2026): possible double payments, cash-rule cases, maybe-same customers, GST doubts…
+    async reviewList(caller, a) {
+      need(caller, 'money');
+      return rpc('api_review_list', { p_caller: caller.id, p_all: a?.all === true });
+    },
+    async reviewAnswer(caller, a, key, hash) {
+      need(caller, 'money');
+      if (!['done', 'open'].includes(a?.status)) throw bad('Done or open again?');
+      return rpc('api_review_answer', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a.id, 'Which card?'), p_status: a.status, p_answer: text(a.answer, 300) });
+    },
+    /** The person saving saw the possible double payment and said it is a different payment. */
+    async paymentTwinSeen(caller, a, key, hash) {
+      need(caller, 'money');
+      return rpc('api_payment_twin_seen', { p_caller: caller.id, p_key: key, p_hash: hash, p_payment: uuid(a?.payment_id, 'Which payment?') });
+    },
+
     async bankMark(caller, a, key, hash) {
       need(caller, 'settings', 'money');
       if (!['skipped', 'open'].includes(a?.status)) throw bad('Skip or open?');
@@ -1743,7 +1759,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

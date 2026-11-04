@@ -275,6 +275,7 @@ function LineRow({ r, text, busy, onOk, onChange, onSkip, own }) {
         <div class="row" style="gap:8px;align-items:flex-start">
           <button class="grow bk-txt" onClick={() => setMore(!more)}>
             <div class="t">{more ? l.narration : shortNarration(l.narration, own)}</div>
+            {l.status === 'open' && l.note && <div class="bk-reopen"><Icon name="Undo2" size={13} />{t('bk_reopened')} {l.note}</div>}
             <div class="s">{fmtDay(l.day, false)}{l.ref ? ` · ${l.ref}` : ''}</div>
           </button>
           <b class="num bk-amt" style={`color:${l.amount > 0 ? 'var(--ok)' : 'var(--bad)'}`}>{l.amount > 0 ? '+' : '−'}{money(Math.abs(l.amount), false)}</b>

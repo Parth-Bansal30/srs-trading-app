@@ -1,6 +1,6 @@
 // One customer's account: how much, how old, every slip and payment — record a payment, remind, old balances.
 import { useEffect, useState } from 'preact/hooks';
-import { whatsappLink, periodDates } from '@srs/core';
+import { whatsappLink, periodDates, paymentTwins } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -8,7 +8,7 @@ import { useAction } from '../../lib/action.js';
 import { usesOf, payPatch } from '../../lib/offline/local.js';
 import { outbox, outboxVersion } from '../../lib/offline/outbox.js';
 import { pendingPayments } from '../../lib/offline/overlay.js';
-import { money, shortDate, kg, dayStartISO } from '../../lib/format.js';
+import { money, shortDate, kg, dayStartISO, longDay, time } from '../../lib/format.js';
 import { loadCustomer, boughtSince, specialRates, sentSlips, avatarColour, firstLetter } from '../../lib/customers.js';
 import { fmtDay } from '../../lib/docs.js';
 import { CustomerEdit } from './CustomerEdit.jsx';
@@ -19,6 +19,7 @@ import { toast } from '../../ui/toast.js';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, modeText, modeIcon, whereLabel } from '../../lib/accounts.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
+import '../review/review.css';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { ReminderSheet } from './Reminders.jsx';
 import { TransferSheet } from '../../ui/money/TransferSheet.jsx';
@@ -136,7 +137,7 @@ export function Customer({ id }) {
         </div>
       </div>
 
-      <PaySheet open={sheet === 'pay'} c={c} sides={sides} dues={r.by_side} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
+      <PaySheet open={sheet === 'pay'} c={c} sides={sides} dues={r.by_side} entries={entries} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
       <GiveBackSheet open={sheet === 'giveback'} c={c} r={r} entries={entries} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('gb_done', money(amt))); load(); }} />
       <PaymentSheet e={payOpen} name={c.name} slips={r.slips || {}} tz={tz} onClose={() => setPayOpen(null)} onDone={() => { setPayOpen(null); toast(t('pc_done')); load(); }} />
       <OldDueSheet open={sheet === 'old'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={() => { setSheet(null); toast(t('done_ok')); load(); }} />
@@ -159,17 +160,40 @@ const likelySide = (dues) => {
   return k && !p ? 'kacha' : 'pakka';
 };
 
-function PaySheet({ open, c, sides, dues, onClose, onDone }) {
+function PaySheet({ open, c, sides, dues, entries, onClose, onDone }) {
   const [amt, setAmt] = useState(''); const [note, setNote] = useState(''); const [side, setSide] = useState('pakka');
-  useEffect(() => { if (open) setSide(likelySide(dues)); }, [open]);
+  const [twins, setTwins] = useState(null);   // possible double payment (4 Nov 2026): shown before saving, the person decides
+  useEffect(() => { if (open) { setSide(likelySide(dues)); setTwins(null); } }, [open]);
+  useEffect(() => setTwins(null), [amt]);
   const [where, setWhere, accs] = useWhere(open);
   const a = useAction('recordPayment');
+  const seen = useAction('paymentTwinSeen');
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
+  const save = (checked) => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }, {
+    local: { meta: { uses: usesOf(c.id), customer: c.name, payment: { customer: c.name, ...payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
+  }).then((x) => {
+    if (checked && x?.payment_id) seen.run({ payment_id: x.payment_id }).catch(() => {});
+    moneySaved({ amount: Number(amt), customer: c.name, account: whereLabel(where, accs) }); onDone(amt);
+  }).catch(() => {});
+  const trySave = () => {
+    const tw = paymentTwins(entries, Number(amt));
+    if (tw.length && !twins) { setTwins(tw); return; }
+    save(!!tw.length);
+  };
   return (
     <Sheet open={open} onClose={onClose} title={t('add_payment')}
-      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }, {
-        local: { meta: { uses: usesOf(c.id), customer: c.name, payment: { customer: c.name, ...payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
-      }).then(() => { moneySaved({ amount: Number(amt), customer: c.name, account: whereLabel(where, accs) }); onDone(amt); }).catch(() => {})}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      footer={!twins && <button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={trySave}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      {twins && (
+        <div class="twin-box">
+          <div class="t"><Icon name="Copy" size={16} /> {t('twin_t')}</div>
+          <div class="s" style="font-size:13.5px;margin-top:4px">{t('twin_s', money(Number(amt)))}</div>
+          {twins.map((x) => <div class="li"><div class="grow"><div class="t" style="color:var(--ink);font-size:14px">{longDay(x.date, company.value?.timezone)} · {time(x.date, company.value?.timezone)}</div>
+            <div class="s">{[x.mode && x.mode !== 'Adjust' ? modeText(x.mode) : null, x.kind && x.kind !== 'khata' ? t(KIND_WORD[x.kind] || 'payment') : null, x.note].filter(Boolean).join(' · ')}</div></div><b class="num">{money(x.amt)}</b></div>)}
+          <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{t('twin_note')}</div>
+          <div class="row"><button class="btn btn-ghost" onClick={onClose}>{t('twin_same')}</button>
+            <button class="btn btn-brand" disabled={a.busy} onClick={() => save(true)}>{t('twin_diff')}</button></div>
+        </div>
+      )}
       <div class="lbl">{t('amount')}</div>
       <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
       <SideSeg sides={sides} side={side} setSide={setSide} dues={dues} />

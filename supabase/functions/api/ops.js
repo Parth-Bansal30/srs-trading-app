@@ -734,6 +734,16 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     },
 
     /** Owners: every account with what should be in it now. */
+    /** Owner: an OD / CC bank account and its sanctioned limit (kind null = a normal account again). */
+    async accountCredit(caller, a, key, hash) {
+      need(caller, 'settings');
+      const kind = a?.kind == null ? null : String(a.kind);
+      if (kind !== null && !['od', 'cc'].includes(kind)) throw bad('Overdraft or cash credit?');
+      const limit = kind === null ? null : Number(a?.limit);
+      if (kind !== null && !(limit > 0)) throw bad('Enter the sanctioned limit.');
+      return rpc('api_account_credit', { p_caller: caller.id, p_key: key, p_hash: hash, p_account: uuid(a?.account_id, 'Which account?'), p_kind: kind, p_limit: limit });
+    },
+
     async accountBalances(caller) {
       need(caller, 'settings', 'money');
       return rpc('api_account_balances', { p_caller: caller.id });

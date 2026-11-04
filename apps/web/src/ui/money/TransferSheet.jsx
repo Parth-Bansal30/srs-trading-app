@@ -7,7 +7,7 @@ import { can } from '../../lib/session.js';
 import { useAction } from '../../lib/action.js';
 import { money } from '../../lib/format.js';
 import { addDays } from '../../lib/evening.js';
-import { loadAccounts, accountsCache, isBankLike } from '../../lib/accounts.js';
+import { loadAccounts, accountsCache, isBankLike, useCreditWarn } from '../../lib/accounts.js';
 import { shopToday, moveReason, moveWord } from '../../lib/expenses.js';
 import { Icon, Skeleton } from '../kit.jsx';
 import { Sheet } from '../Sheet.jsx';
@@ -21,6 +21,7 @@ export function TransferSheet({ open, onClose, onDone, from: startFrom = null, p
   const [from, setFrom] = useState(null);
   const [to, setTo] = useState(null);
   const [amount, setAmount] = useState('');
+  const credWarn = useCreditWarn(from, amount);   // OD / CC: past the limit? (owners, estimate)
   const [method, setMethod] = useState(null);
   const [note, setNote] = useState('');
   const [day, setDay] = useState('today');
@@ -52,6 +53,7 @@ export function TransferSheet({ open, onClose, onDone, from: startFrom = null, p
   return (
     <Sheet open={open} onClose={onClose} title={preset?.fix ? t('fix_acc_t') : t('tr_title')}
       footer={<>
+        {credWarn && <div class="notice tone-warn" style="margin:0 0 8px;font-size:13.5px">{credWarn}</div>}
         {save.error && <div class="error" style="margin:0 0 8px">{save.error.message}</div>}
         <button class="btn btn-brand btn-block" disabled={!!problem || save.busy} onClick={submit}><Icon name="ArrowRightLeft" size={19} stroke={2.3} />
           {save.busy ? '…' : problem && Number(amount) > 0 && from && to ? t(problem) : t('tr_save', Number(amount) > 0 ? money(Number(amount)) : '')}</button>

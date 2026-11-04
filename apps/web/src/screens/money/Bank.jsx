@@ -14,7 +14,7 @@ import { fmtDay } from '../../lib/docs.js';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { online } from '../../lib/net.js';
-import { loadAccounts, kindOf, accName, accSub, forgetAccounts } from '../../lib/accounts.js';
+import { loadAccounts, kindOf, accName, accSub, forgetAccounts, balWords } from '../../lib/accounts.js';
 import { catOf } from '../../lib/expenses.js';
 import { readStatementFile } from '../../lib/bankfile.js';
 import { EXPENSE_CATEGORIES } from '../../config/options.js';
@@ -125,7 +125,7 @@ export function BankStart() {
                 <div><span class="cap">{t('bk_in')}</span><b class="num" style="color:var(--ok)">{money(sum(ins), false)}</b><span class="s">{t('bk_n_lines', ins.length)}</span></div>
                 <div><span class="cap">{t('bk_out')}</span><b class="num" style="color:var(--bad)">{money(sum(outs), false)}</b><span class="s">{t('bk_n_lines', outs.length)}</span></div>
               </div>
-              {read.opening != null && read.closing != null && <div class="muted num" style="font-size:13.5px;margin-top:8px">{t('bk_open_close', money(read.opening, false), money(read.closing, false))}</div>}
+              {read.opening != null && read.closing != null && <div class="muted num" style="font-size:13.5px;margin-top:8px">{t('bk_open_close', balWords(account, read.opening), balWords(account, read.closing))}</div>}
               <div style="margin-top:10px">{read.adds_up
                 ? <Chip tone="ok"><Icon name="CircleCheck" size={14} />{t('bk_adds_up')}</Chip>
                 : <div class="notice tone-warn" style="font-size:13px">{read.problems?.length ? t('bk_not_adds', read.problems.length) : t('bk_no_balance')}</div>}</div>
@@ -245,11 +245,11 @@ export function BankReview({ account, imp }) {
           <div class={`card pad bk-balance ${diff === 0 ? 'ok' : ''}`}>
             <div class="row" style="gap:10px"><Icon name={diff === 0 ? 'CircleCheck' : 'Scale'} size={22} style={`color:${diff === 0 ? 'var(--ok)' : 'var(--ink-2)'}`} />
               <div class="grow"><div class="t" style="font-weight:800">{diff === 0 ? t('bk_bal_match') : t('bk_bal_title')}</div>
-                <div class="muted num" style="font-size:13px">{t('bk_bal_line', fmtDay(d.import.to, false), money(Number(closing), false), appBal?.known || appBal?.balance != null ? money(Number(appBal.balance), false) : '—')}</div></div></div>
+                <div class="muted num" style="font-size:13px">{t('bk_bal_line', fmtDay(d.import.to, false), balWords(accById.get(d.account.id), closing), appBal?.known || appBal?.balance != null ? balWords(accById.get(d.account.id), appBal.balance) : '—')}</div></div></div>
             {diff !== 0 && <>
               <div class="muted" style="font-size:13px;margin-top:8px">{open.length ? t('bk_bal_finish', open.length) : t('bk_bal_diff', money(Math.abs(diff ?? 0), false))}</div>
               {d.import?.adds_up && <button class="btn btn-ghost btn-block" style="margin-top:10px" disabled={bal.busy} onClick={() => bal.run({ import_id: d.import.id }).then(() => { forgetAccounts(); toast(t('bk_bal_set')); load(); }).catch(() => {})}>
-                <Icon name="Scale" size={18} />{t('bk_bal_set_btn', d.account.name, money(Number(closing), false))}</button>}
+                <Icon name="Scale" size={18} />{t('bk_bal_set_btn', d.account.name, balWords(accById.get(d.account.id), closing))}</button>}
             </>}
           </div>
         )}

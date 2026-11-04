@@ -3,7 +3,7 @@
 // "Check with passbook / app" sets a balance point; from then on the app keeps the balance.
 // Addresses: #/money   #/money/<account id>
 import { useEffect, useState } from 'preact/hooks';
-import { r2 } from '@srs/core';
+import { r2, creditStatus } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -14,7 +14,7 @@ import { go } from '../../lib/router.js';
 import { addDays } from '../../lib/evening.js';
 import { toast } from '../../ui/toast.js';
 import { online } from '../../lib/net.js';
-import { kindOf, accName, accSub, forgetAccounts } from '../../lib/accounts.js';
+import { kindOf, accName, accSub, forgetAccounts, balWords, creditBasis, loadAccounts, shopDayOf } from '../../lib/accounts.js';
 import { catWord, shopToday, monthOf, prevMonth, moveWord } from '../../lib/expenses.js';
 import { outboxVersion } from '../../lib/offline/outbox.js';
 import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
@@ -37,8 +37,11 @@ export function Balances() {
   // a hidden account shows only while it still holds money (as far as the app knows)
   const shown = (list || []).filter((a) => !a.hidden || (a.known && Number(a.balance) !== 0));
   const known = shown.filter((a) => a.known);
-  const firm = r2(known.filter((a) => a.owner !== 'personal').reduce((s, a) => s + Number(a.balance), 0));
-  const personal = r2(known.filter((a) => a.owner === 'personal').reduce((s, a) => s + Number(a.balance), 0));
+  // money used from an OD / CC limit is not money the shop has: shown on its own line (4 Nov 2026)
+  const has = (a) => (a.credit_kind && Number(a.balance) < 0 ? 0 : Number(a.balance));
+  const firm = r2(known.filter((a) => a.owner !== 'personal').reduce((s, a) => s + has(a), 0));
+  const personal = r2(known.filter((a) => a.owner === 'personal').reduce((s, a) => s + has(a), 0));
+  const limitUsed = r2(known.filter((a) => a.credit_kind && Number(a.balance) < 0).reduce((s, a) => s - Number(a.balance), 0));
   return (
     <>
       <TopBar title={t('nav_money')} sub={t('bal_title_s')} />
@@ -53,6 +56,7 @@ export function Balances() {
               <div class="hero-box"><div class="cap">{t('acc_firm')}</div><div class="v num">{money(firm, false)}</div></div>
               <div class="hero-box"><div class="cap">{t('acc_personal')}</div><div class="v num">{money(personal, false)}</div></div>
             </div>
+            {limitUsed > 0 && <div class="cr-hero-used"><span>{t('cr_firm_used')}</span><b class="num">{money(limitUsed, false)}</b></div>}
           </div>
           {shown.some((a) => !a.known) && <div class="notice tone-warn" style="margin-top:12px;font-size:13.5px">{t('bal_some_unknown')}</div>}
           <button class="card li" style="margin-top:12px" onClick={() => go('/bank')}>
@@ -63,14 +67,18 @@ export function Balances() {
           <div class="sec"><h3>{t('bal_accounts')}</h3><button class="link" onClick={() => go('/settings/accounts')}>{t('bal_edit')}</button></div>
           <div class="card">{shown.map((a) => {
             const k = kindOf(a);
+            const cr = creditStatus(a);
             return (
               <button class={`li bal-row ${a.hidden ? 'acc-hidden' : ''}`} onClick={() => go(`/money/${a.id}`)}>
                 <span class="acc-ic" style={`background:${k.tone}`}><Icon name={k.icon} size={18} stroke={2.2} /></span>
                 <span class="grow" style="min-width:0">
                   <span class="t ellip" style="display:block">{accName(a)}{a.owner === 'personal' && <span class="acc-own">{t('acc_personal')}</span>}</span>
-                  <span class="s ellip" style="display:block">{a.known && a.since ? t('bal_checked', fmtDay(String(a.since).slice(0, 10), false)) : accSub(a)}</span>
+                  <span class="s ellip" style="display:block">{cr ? `${t(cr.kind === 'cc' ? 'cr_cc' : 'cr_od')} · ${t('cr_limit')} ${money(cr.limit, false)}` : a.known && a.since ? t('bal_checked', fmtDay(shopDayOf(a.since), false)) : accSub(a)}</span>
+                  {cr && <span class="cr-bar"><i class={cr.over > 0 ? 'over' : cr.pct > 85 ? 'near' : ''} style={`width:${cr.pct}%`} /></span>}
                 </span>
-                {a.known ? (
+                {cr && a.known ? (
+                  <span class="bal-amt"><b class={`num ${cr.used > 0 ? 'bal-neg' : ''}`}>{balWords(a, a.balance)}</b><span>{cr.over > 0 ? t('cr_over', money(cr.over, false)) : t('cr_left', money(cr.available, false))}</span></span>
+                ) : a.known ? (
                   <span class="bal-amt"><b class={`num ${Number(a.balance) < 0 ? 'bal-neg' : ''}`}>{money(Number(a.balance), false)}</b><span>{t('bal_now')}</span></span>
                 ) : (
                   <span class="link" style="min-height:0" onClick={(e) => { e.stopPropagation(); setSetting(a); }}>{t('bal_unknown')}</span>
@@ -149,6 +157,9 @@ export function AccountBook({ id }) {
 
   const a = d?.account;
   const now = d?.now;
+  const [credit, setCredit] = useState(null);   // OD / CC facts of this account (4 Nov 2026)
+  useEffect(() => { loadAccounts().then((l) => setCredit((l || []).find((x) => x.id === id && x.credit_kind) || null)).catch(() => {}); }, [id]);
+  const cr = credit && now ? creditStatus({ ...credit, ...now }) : null;
   // the drawer before its first count has no balance yet (every day started at zero)
   const known = !!now?.known;
   const showBal = known || !!d?.opening?.known;
@@ -165,7 +176,11 @@ export function AccountBook({ id }) {
           <div class="hero">
             <div class="hero-glow" />
             <div class="hero-cap">{t('bal_now')}</div>
-            <div class="hero-num num">{known ? money(Number(now.balance), true) : '—'}</div>
+            <div class="hero-num num">{known ? (cr ? balWords(credit, now.balance, true) : money(Number(now.balance), true)) : '—'}</div>
+            {cr && <div class="cr-box"><div class="cr-bar"><i class={cr.over > 0 ? 'over' : cr.pct > 85 ? 'near' : ''} style={`width:${cr.pct}%`} /></div>
+              <div class="row" style="justify-content:space-between;margin-top:6px"><span>{t('cr_limit')} <b class="num">{money(cr.limit, false)}</b></span>
+                <b class="num">{cr.over > 0 ? t('cr_over', money(cr.over, false)) : t('cr_left', money(cr.available, false))}</b></div>
+              <div class="cr-est">{creditBasis(cr)}</div></div>}
             {known && now.since && <div style="font-size:13px;opacity:.75;font-weight:600;position:relative">{t('bal_checked', `${fmtDay(new Date(now.since).toLocaleDateString('en-CA', { timeZone: tz }), false)} · ${time(now.since, tz)}`)}</div>}
             {!known && <div style="font-size:13px;opacity:.8;font-weight:600;position:relative">{a.is_drawer ? t('bal_drawer_first') : t('bal_start_s')}</div>}
           </div>

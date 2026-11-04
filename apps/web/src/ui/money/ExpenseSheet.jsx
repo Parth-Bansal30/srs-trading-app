@@ -11,7 +11,7 @@ import { online } from '../../lib/net.js';
 import { money } from '../../lib/format.js';
 import { fmtDay } from '../../lib/docs.js';
 import { addDays } from '../../lib/evening.js';
-import { loadAccounts, accountsCache, lastOutAccount, rememberOutAccount } from '../../lib/accounts.js';
+import { loadAccounts, accountsCache, lastOutAccount, rememberOutAccount, useCreditWarn } from '../../lib/accounts.js';
 import { shopToday, catOf } from '../../lib/expenses.js';
 import { fileToData } from '../../lib/files.js';
 import { EXPENSE_CATEGORIES } from '../../config/options.js';
@@ -39,6 +39,7 @@ export const expenseKinds = () => [
 export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [], startKind = 'expense' }) {
   const [f, setF] = useState(blank());
   const [accounts, setAccounts] = useState(accountsCache.value);
+  const credWarn = useCreditWarn(f.accountId, f.amount);   // OD / CC: past the limit? (owners, estimate)
   const [upBusy, setUpBusy] = useState(false);
   const [upErr, setUpErr] = useState(null);
   const [allCats, setAllCats] = useState(false);   // the 8 usual kinds first, the rest behind "More kinds" (26 Oct 2026)
@@ -160,6 +161,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
 
       <div class="lbl" style="margin-top:16px">{t('exp_from')}</div>
       <AccountPick accounts={accounts} value={f.accountId} onChange={(id) => set({ accountId: id, accPicked: true, method: null })} method={f.method} onMethod={(m) => set({ method: m })} />
+      {credWarn && <div class="notice tone-warn cr-warn">{credWarn}</div>}
 
       <div class="lbl" style="margin-top:16px">{t('exp_day')}</div>
       <div class="seg">

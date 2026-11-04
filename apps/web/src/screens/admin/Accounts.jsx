@@ -47,7 +47,7 @@ export function Accounts() {
           <span class="acc-ic" style={`background:${k.tone}`}><Icon name={k.icon} size={18} stroke={2.2} /></span>
           <span class="grow" style="min-width:0">
             <span class="acc-name">{accName(a)}</span>
-            <span class="acc-sub">{a.is_drawer ? t('acc_k_cash') : [t(k.word), maskNumber(a.number), a.staff_can ? null : t('acc_owners_only')].filter(Boolean).join(' · ')}</span>
+            <span class="acc-sub">{a.is_drawer ? t('acc_k_cash') : [t(k.word), a.credit_kind ? t(a.credit_kind === 'cc' ? 'cr_cc' : 'cr_od') : null, maskNumber(a.number), a.staff_can ? null : t('acc_owners_only')].filter(Boolean).join(' · ')}</span>
           </span>
           <span class={`chip ${a.owner === 'personal' ? 'tone-warn' : 'tone-pakka'}`} style="flex:none">{a.hidden ? t('acc_hidden') : t(a.owner === 'personal' ? 'acc_personal' : 'acc_firm')}</span>
         </button>
@@ -89,11 +89,14 @@ function AccountSheet({ open, a, onClose, onDone }) {
   const [number, setNumber] = useState('');
   const [staff, setStaff] = useState(true);
   const save = useAction('saveAccount');
+  const credit = useAction('accountCredit');
+  const [ck, setCk] = useState(null); const [limit, setLimit] = useState('');
   const drawer = !!a.is_drawer;
   useEffect(() => {
     if (!open) return;
     setName(a.id ? a.name : ''); setKind(a.kind && a.kind !== 'cash' ? a.kind : 'bank'); setOwner(a.owner || 'firm');
     setNumber(a.number || ''); setStaff(a.staff_can !== false); save.setError(null);
+    setCk(a.credit_kind || null); setLimit(a.credit_limit ? String(Number(a.credit_limit)) : ''); credit.setError(null);
   }, [open, a.id]);
   const run = (extra = {}) => save.run({ account: { id: a.id || null, name: name.trim(), kind: drawer ? 'cash' : kind, owner, number: number.trim() || null, staff_can: staff, ...extra } })
     .then(() => onDone()).catch(() => {});
@@ -111,6 +114,20 @@ function AccountSheet({ open, a, onClose, onDone }) {
         <div class="field"><input value={number} maxLength={60} autocapitalize="off" autocorrect="off" spellcheck={false} onInput={(e) => setNumber(e.currentTarget.value)} /><span class="faint" style="font-size:12px">{t('acc_optional')}</span></div>
         <div class="lbl" style="margin-top:14px">{t('acc_staff')}</div>
         <div class="seg"><button class={staff ? 'on' : ''} onClick={() => setStaff(true)}>{t('acc_staff_yes')}</button><button class={!staff ? 'on' : ''} onClick={() => setStaff(false)}>{t('acc_staff_no')}</button></div>
+        {a.id && a.kind === 'bank' && kind === 'bank' && (
+          <div class="card pad" style="margin-top:16px;background:var(--surface-2)">
+            <div class="t" style="font-weight:800">{t('cr_kind_t')}</div>
+            <div class="muted" style="font-size:13px;margin-top:2px;line-height:1.4">{t('cr_kind_s')}</div>
+            <div class="seg" style="margin-top:10px"><button class={!ck ? 'on' : ''} onClick={() => setCk(null)}>{t('cr_normal')}</button>
+              <button class={ck === 'od' ? 'on' : ''} onClick={() => setCk('od')}>{t('cr_od')}</button><button class={ck === 'cc' ? 'on' : ''} onClick={() => setCk('cc')}>{t('cr_cc')}</button></div>
+            {ck && <><div class="lbl" style="margin-top:12px">{t('cr_limit')}</div>
+              <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={limit} onInput={(e) => setLimit(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="1500000" /></div></>}
+            {(ck || null) !== (a.credit_kind || null) || (ck && Number(limit) !== Number(a.credit_limit || 0)) ? (
+              <button class="btn btn-brand btn-block" style="margin-top:12px" disabled={credit.busy || (ck && !(Number(limit) > 0))}
+                onClick={() => credit.run({ account_id: a.id, kind: ck, limit: ck ? Number(limit) : null }).then(() => { toast(t('cr_saved')); onDone(); }).catch(() => {})}>{t('cr_save')}</button>) : null}
+            {credit.error && <div class="error" style="margin-top:8px">{credit.error.message}</div>}
+          </div>
+        )}
         {a.id && <button class="link" style={`margin-top:14px;${a.hidden ? '' : 'color:var(--bad)'}`} disabled={save.busy} onClick={() => run({ hidden: !a.hidden })}>
           <Icon name={a.hidden ? 'Eye' : 'EyeOff'} size={16} />{a.hidden ? t('acc_show') : t('acc_hide')}</button>}
       </>}

@@ -1,7 +1,11 @@
+import { money } from './format.js';
+import { fmtDay } from './docs.js';
 // Money accounts: where money goes (Shop cash + the shop's own bank / UPI / Paytm accounts).
 // Loaded through the api; every change goes through useAction / call.
 import { signal } from '@preact/signals';
-import { checkSplit, splitMode, maskNumber } from '@srs/core';
+import { checkSplit, splitMode, maskNumber, creditOver } from '@srs/core';
+import { useEffect, useState } from 'preact/hooks';
+import { can, company } from './session.js';
 import { call } from './api.js';
 import { t } from './i18n.js';
 import { ACCOUNT_KINDS, ACCOUNT_DRAWER, PAY_METHODS } from '../config/options.js';
@@ -71,4 +75,34 @@ export function whereLabel(w, accounts) {
   const names = w.ids.map((id) => accName((accounts || []).find((a) => a.id === id))).filter(Boolean);
   if (names.length === 1 && w.methods?.[w.ids[0]]) return `${names[0]} · ${w.methods[w.ids[0]]}`;
   return names.join(' + ');
+}
+
+// ---------- overdraft / cash credit accounts (4 Nov 2026) ----------
+/** A balance in words: for an OD / CC account "₹11,23,088 used" or "₹79,572 in credit"; otherwise the amount. */
+export const balWords = (a, balance, paise = false) => {
+  const b = Number(balance) || 0;
+  if (!a?.credit_kind) return money(b, paise);
+  return b < 0 ? t('cr_used_amt', money(-b, paise)) : t('cr_in_credit_amt', money(b, paise));
+};
+/** "Estimate: statement of 31 Oct + 3 entries since" — what an OD / CC figure is based on. */
+export const creditBasis = (s) => (!s?.known ? t('cr_est_none')
+  : t(s.source === 'passbook' || s.source === 'start' ? 'cr_est_point' : 'cr_est_count', fmtDay(shopDayOf(s.since), false), s.entries));
+/** The shop's own date of a moment (not the UTC date: 12:48 am in India is still yesterday in UTC). */
+export const shopDayOf = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: company.value?.timezone || 'Asia/Kolkata' });
+
+/** Owners: "This goes ₹24,000 over the HDFC CC limit (estimate)" while paying out of an OD / CC account (never a block). */
+let balCache = { at: 0, list: null };
+export function useCreditWarn(accountId, amount) {
+  const [list, setList] = useState(balCache.list);
+  const acc = (accountsCache.value || []).find((a) => a.id === accountId);
+  const isCredit = !!acc?.credit_kind && can('settings');
+  useEffect(() => {
+    if (!isCredit || Date.now() - balCache.at < 60000) return;
+    call('accountBalances', {}).then((l) => { balCache = { at: Date.now(), list: l }; setList(l); }).catch(() => {});
+  }, [accountId, isCredit]);
+  if (!isCredit || !(Number(amount) > 0)) return null;
+  const b = (list || balCache.list || []).find((a) => a.id === accountId);
+  if (!b?.known) return null;
+  const over = creditOver(b, amount);
+  return over > 0 ? t('cr_warn', money(over, false), accName(acc)) : null;
 }

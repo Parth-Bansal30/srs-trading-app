@@ -59,3 +59,11 @@
 .bk-twice { display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; }
 .bk-twice svg { flex: none; margin-top: 1px; }
 .bk-reopen{display:flex;gap:5px;align-items:center;font-size:12px;font-weight:700;color:var(--warn);margin-top:3px}
+.cr-hero-used{position:relative;display:flex;justify-content:space-between;margin-top:10px;font-size:13.5px;font-weight:700;color:#f5a397}
+.cr-bar{display:block;height:6px;border-radius:4px;background:var(--sunk);overflow:hidden;margin-top:6px}
+.cr-bar i{display:block;height:100%;background:var(--pakka);border-radius:4px}
+.cr-bar i.near{background:var(--warn)} .cr-bar i.over{background:var(--bad)}
+.hero .cr-bar{background:#ffffff26} .hero .cr-bar i{background:#fff}
+.cr-box{position:relative;margin-top:10px;font-size:13.5px;font-weight:600}
+.cr-est{font-size:12.5px;opacity:.8;margin-top:6px;line-height:1.4}
+.cr-warn{margin-top:10px;font-size:13.5px}

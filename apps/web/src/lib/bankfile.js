@@ -3,6 +3,8 @@
 // go to @srs/core (readStatementRows / readStatementText); the file itself never leaves the phone.
 // The PDF and Excel readers load only when a statement is opened (they are big).
 import { readStatementRows, readStatementText, csvRows } from '@srs/core';
+import { xlsSheets } from './xls.js';
+import { company } from './session.js';
 
 export class StatementError extends Error {
   constructor(code, message) { super(message || code); this.code = code; }
@@ -10,23 +12,44 @@ export class StatementError extends Error {
 
 const ext = (name) => (String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || '';
 
-/** Read a statement file → { lines, opening, closing, from, to, adds_up, checked, problems, kind }. password: for a locked PDF. */
-export async function readStatementFile(file, password = null) {
+/**
+ * Read a statement file → { lines, opening, closing, from, to, adds_up, checked, problems, kind, layout, dateStyle,
+ * unreadable, file_hash }. password: for a locked PDF. dateStyle: 'dmy' | 'mdy' once the owner has chosen (a file whose
+ * dates read both ways). Old Excel (.xls, 97–2003) is read here on the phone too (4 Nov 2026) — every sheet is tried and
+ * the one that reads as a statement best is used.
+ */
+export async function readStatementFile(file, password = null, { dateStyle = null } = {}) {
   const e = ext(file.name);
   const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   const isPdf = head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46;   // %PDF
   const isZip = head[0] === 0x50 && head[1] === 0x4b;                                            // PK (xlsx)
   const isOle = head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;   // old Excel (.xls)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: company.value?.timezone || 'Asia/Kolkata' });
+  const opts = dateStyle ? { dateStyle, today } : { today };
   let r;
   if (isPdf || e === 'pdf') r = { ...readStatementText(await pdfLines(file, password)), kind: 'pdf' };
-  else if (isZip || e === 'xlsx') r = { ...readStatementRows(await xlsxRows(file)), kind: 'xlsx' };
-  else if (isOle) throw new StatementError('xls_old');
-  else {
+  else if (isZip || e === 'xlsx') r = { ...readStatementRows(await xlsxRows(file), opts), kind: 'xlsx' };
+  else if (isOle) {
+    let sheets;
+    try { sheets = xlsSheets(new Uint8Array(await file.arrayBuffer())); } catch { throw new StatementError('xls_bad'); }
+    const best = sheets.map((sh) => readStatementRows(sh.rows, opts)).sort((a, b) => (b.checked - a.checked) || (b.lines.length - a.lines.length))[0];
+    if (!best) throw new StatementError('xls_bad');
+    r = { ...best, kind: 'xls' };
+  } else {
     const text = await file.text();
-    r = /^\s*</.test(text) ? { ...readStatementRows(htmlRows(text)), kind: 'html' } : { ...readStatementRows(csvRows(text)), kind: 'csv' };
+    r = /^\s*</.test(text) ? { ...readStatementRows(htmlRows(text), opts), kind: 'html' } : { ...readStatementRows(csvRows(text), opts), kind: 'csv' };
   }
-  if (!r.lines.length) throw new StatementError(r.problems?.includes('no_header') ? 'no_header' : 'no_lines');
+  if (!r.lines.length && !(r.unreadable || []).length) throw new StatementError(r.problems?.includes('no_header') ? 'no_header' : 'no_lines');
+  r.file_hash = await fileHash(file);
   return r;
+}
+
+/** The file's own fingerprint: the exact same file uploaded again is recognised. */
+async function fileHash(file) {
+  try {
+    const d = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');
+  } catch { return null; }
 }
 
 // ---------- PDF ----------

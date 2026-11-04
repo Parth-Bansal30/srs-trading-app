@@ -3,7 +3,7 @@
 /** "1 items", "1 slips", "1 customers"… → "1 item". English and Hinglish words only; Hindi has no plural -s. Used by t(). */
 const ONE = /(^|[^\d.,])1 (item|slip|customer|cut|payment|estimate|bill|piece|day|entry|account|line|reminder|grade|supplier)s\b/g;
 export const one = (s) => s.replace(ONE, '$11 $2').replace(/(^|[^\d.,])1 people\b/g, '$11 person')
-  .replace(/(^|[^\d.,])1 (payment|GST) (reminder|bill)s\b/g, '$11 $2 $3');
+  .replace(/(^|[^\d.,])1 (payment|GST) (reminder|bill)s\b/g, '$11 $2 $3').replace(/(^|[^\d.,])1 entries\b/g, '$11 entry');
 
 /** An Indian mobile as people say it: "+919000000013" → "90000 00013". Anything else stays as written. */
 export function phoneText(p) {

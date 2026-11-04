@@ -118,3 +118,12 @@ test('a UPI payment written in "Shop UPI" is found in the bank statement (the mo
   const [one] = suggestBankLines({ lines, moves, customers: [{ id: 'sonu', name: 'Sonu Kumar' }] });
   assert.equal(one.action, 'link'); assert.equal(one.reason, 'already_via'); assert.equal(one.via, 'Shop UPI');
 });
+
+test('a line with a doubt is never ready, even when it matches something in the app', () => {
+  const lines = [{ id: 'x', day: '2026-08-31', amount: 1200, narration: 'UPI-SONU KUMAR-9000000111@YBL', status: 'open', doubts: ['direction'] },
+    { id: 'y', day: '2026-08-31', amount: -17.7, narration: 'SMS ALERT CHARGES', status: 'open', doubts: ['date_style'] }];
+  const moves = [{ src: 'payment', ref: 'p1', amount: 1200, day: '2026-08-31', label: 'Sonu Kumar', linked: false }];
+  const s = suggestBankLines({ lines, moves, customers: [] });
+  assert.equal(s[0].action, 'link'); assert.equal(s[0].confidence, 'unknown'); assert.deepEqual(s[0].doubt, ['direction']);
+  assert.equal(s[1].action, 'expense'); assert.equal(s[1].confidence, 'unknown');
+});

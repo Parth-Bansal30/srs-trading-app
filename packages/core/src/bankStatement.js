@@ -18,7 +18,7 @@ const validDay = (y, m, d) => {
 const year4 = (y) => (y < 100 ? 2000 + y : y);
 
 /** A bank date → 'YYYY-MM-DD' (Indian banks write the day first). Excel day numbers work too. null if it isn't a date. */
-export function bankDay(v) {
+export function bankDay(v, style = 'dmy') {
   if (v == null || v === '') return null;
   if (typeof v === 'number' || /^\d{5}(\.\d+)?$/.test(String(v).trim())) {
     const n = Number(v);
@@ -32,7 +32,7 @@ export function bankDay(v) {
   let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T].*)?$/);                       // 2026-10-01
   if (m) return validDay(+m[1], +m[2], +m[3]);
   m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})(?:\s.*)?$/);                         // 01/10/2026, 01-10-26
-  if (m) return validDay(year4(+m[3]), +m[2], +m[1]);
+  if (m) return style === 'mdy' ? validDay(year4(+m[3]), +m[1], +m[2]) : validDay(year4(+m[3]), +m[2], +m[1]);
   m = s.match(/^(\d{1,2})[-/. ]?([A-Za-z]{3,4})[A-Za-z]*[-/., ]*(\d{2}|\d{4})(?:\s.*)?$/);    // 01-Oct-2026, 1 Oct 26, 01Oct2026
   if (m && MONTHS[m[2].toLowerCase()]) return validDay(year4(+m[3]), MONTHS[m[2].toLowerCase()], +m[1]);
   m = s.match(/^([A-Za-z]{3,4})[A-Za-z]* (\d{1,2}),? (\d{4})$/);                                // Oct 1, 2026
@@ -126,17 +126,118 @@ function settleSigns(raw) {
  * Rows of cells (Excel, CSV, an HTML table) → { lines, opening, closing, from, to, checked, problems, columns }.
  * Lines are in date order (oldest first). amount: + money in, − money out.
  */
-export function readStatementRows(rows) {
+export function readStatementRows(rows, opts = {}) {
   const list = (rows || []).filter((r) => Array.isArray(r));
-  let at = -1; let col = null;
+  let at = -1; let col = null; let layout = 'words';
   for (let i = 0; i < Math.min(list.length, 60); i++) { const c = statementColumns(list[i]); if (c) { at = i; col = c; break; } }
+  // a layout the app doesn't know by its words: worked out from what is IN the columns (4 Nov 2026)
+  if (!col) { const inf = inferColumns(list); if (inf) { at = inf.at; col = inf.col; layout = 'content'; } }
   if (!col) return { lines: [], opening: null, closing: null, problems: ['no_header'], checked: 0 };
+  const ds = opts.dateStyle ? { style: opts.dateStyle, sure: true, chosen: true } : dateStyleOf(list.slice(at + 1).map((r) => (col.date >= 0 ? r[col.date] : null)), opts.today);
+  let res = readRowsWith(list, at, col, ds.style);
+  // content layouts must be proved by the running balance — and debit / credit may be the other way round
+  if (layout === 'content' && col.debit >= 0 && col.credit >= 0) {
+    const sw = { ...col, debit: col.credit, credit: col.debit };
+    const r2nd = readRowsWith(list, at, sw, ds.style);
+    if (r2nd.checked > res.checked) { res = r2nd; col = sw; }
+  }
+  const withBal = res.lines.filter((l) => l.balance != null).length;
+  const layoutSure = layout === 'words' || (withBal > 0 && res.checked >= Math.max(1, Math.floor(withBal * 0.9)));
+  for (const l of res.lines) {
+    if (!ds.sure) l.doubts = [...(l.doubts || []), 'date_style'];
+    if (!layoutSure) l.doubts = [...(l.doubts || []), 'layout'];
+  }
+  return { ...res, layout, dateStyle: ds, adds_up: res.adds_up && ds.sure && layoutSure };
+}
+
+/** Which way round the dates are written in THIS file (Indian banks: day first). Proof: a part over 12, else the order. */
+export function dateStyleOf(values, today = null) {
+  let dmy = 0; let mdy = 0; const nums = [];
+  for (const v of values || []) {
+    const m = String(v ?? '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})/);
+    if (!m) continue;
+    nums.push(v);
+    if (+m[1] > 12 && +m[2] <= 12) dmy++;
+    if (+m[2] > 12 && +m[1] <= 12) mdy++;
+  }
+  if (!nums.length) return { style: 'dmy', sure: true };
+  if (dmy && !mdy) return { style: 'dmy', sure: true };
+  if (mdy && !dmy) return { style: 'mdy', sure: true };
+  if (dmy && mdy) return { style: 'dmy', sure: false, why: 'mixed', sample: nums[0] };
+  // no part over 12: the reading that keeps the dates in order wins; both in order → ask
+  const ordered = (st) => { const d = nums.map((v) => bankDay(v, st)).filter(Boolean); const up = d.every((x, i) => i === 0 || x >= d[i - 1]); const down = d.every((x, i) => i === 0 || x <= d[i - 1]); return d.length === nums.length && (up || down); };
+  const a = ordered('dmy'); const b = ordered('mdy');
+  if (a && !b) return { style: 'dmy', sure: true };
+  if (b && !a) return { style: 'mdy', sure: true };
+  // in order both ways: a statement's lines sit in one or two months, so the part that hardly changes is the month
+  const parts = nums.map((v) => String(v).trim().match(/^(\d{1,2})[-/.](\d{1,2})/));
+  const first = new Set(parts.map((m) => m[1])).size; const second = new Set(parts.map((m) => m[2])).size;
+  if (a && second === 1 && first >= 2) return { style: 'dmy', sure: true };
+  if (b && first === 1 && second >= 2) return { style: 'mdy', sure: true };
+  // today's date: a reading that puts a line in the future is impossible; a statement is usually fetched soon after its last day
+  if (today) {
+    const last = (st) => nums.map((v) => bankDay(v, st)).filter(Boolean).sort().pop();
+    const dayNo = (d) => Math.round(Date.parse(`${d}T00:00:00Z`) / 86400000);
+    const la = last('dmy'); const lb = last('mdy'); const tn = dayNo(today);
+    const futA = la && dayNo(la) > tn + 1; const futB = lb && dayNo(lb) > tn + 1;
+    if (futB && !futA) return { style: 'dmy', sure: true };
+    if (futA && !futB) return { style: 'mdy', sure: true };
+    const recA = la && tn - dayNo(la) <= 45; const recB = lb && tn - dayNo(lb) <= 45;
+    if (recA && !recB) return { style: 'dmy', sure: true };
+    if (recB && !recA) return { style: 'mdy', sure: true };
+  }
+  return { style: 'dmy', sure: false, why: 'both', sample: nums.find((v) => { const m = String(v).match(/^(\d{1,2})[-/.](\d{1,2})/); return m && m[1] !== m[2]; }) || nums[0] };
+}
+
+/** Find the columns from their contents: the date column, the money columns, the text (narration), Dr/Cr, the balance. */
+function inferColumns(list) {
+  // a number is a date only in a column of whole numbers that all look like Excel day numbers (1995–2064)
+  const serialCol = (vals) => vals.length > 0 && vals.every((v) => typeof v === 'number' && Number.isInteger(v) && v >= 34700 && v <= 60300);
+  for (let at = 0; at < Math.min(list.length, 40); at++) {
+    const body = list.slice(at + 1, at + 41).filter((r) => r.some((c) => String(c ?? '').trim()));
+    if (body.length < 3) continue;
+    const width = Math.max(...body.map((r) => r.length));
+    const st = [];
+    for (let c = 0; c < width; c++) {
+      const vals = body.map((r) => r[c]).filter((v) => String(v ?? '').trim() !== '');
+      const ser = serialCol(vals.filter((v) => typeof v === 'number'));
+      const isDate = (v) => (typeof v === 'number' ? ser : !!(bankDay(v) || bankDay(v, 'mdy')));
+      const money = vals.filter((v) => !isDate(v) && bankAmount(v).value != null);
+      st.push({ c, n: vals.length, dates: vals.filter(isDate).length, money: money.length,
+        drcr: vals.filter((v) => /^(dr|cr|d|c)\.?$/i.test(String(v).trim())).length,
+        text: vals.reduce((s, v) => s + (typeof v === 'string' && !isDate(v) && bankAmount(v).value == null ? v.length : 0), 0) / Math.max(1, vals.length) });
+      st[st.length - 1].isDate = isDate;
+    }
+    const total = body.length;
+    const dateC = st.filter((x) => x.dates >= 0.7 * total).sort((a, b) => b.dates - a.dates)[0];
+    if (!dateC) continue;
+    const moneyC = st.filter((x) => x.c !== dateC.c && x.money >= 0.3 * total && x.money >= 0.8 * x.n);
+    const textC = st.filter((x) => x.c !== dateC.c && !moneyC.includes(x) && x.drcr < 0.5 * total).sort((a, b) => b.text - a.text)[0];
+    if (!moneyC.length || !textC || textC.text < 3) continue;
+    const col = { date: dateC.c, valueDate: -1, narration: textC.c, ref: -1, debit: -1, credit: -1, amount: -1, drcr: -1, balance: -1 };
+    const drcrC = st.find((x) => x.drcr >= 0.7 * total);
+    const full = moneyC.filter((x) => x.money >= 0.9 * total);
+    const bal = full.length ? full[full.length - 1] : null;             // the running balance: filled on every line, usually the last
+    const rest = moneyC.filter((x) => x !== bal);
+    if (drcrC) { col.drcr = drcrC.c; col.amount = (rest[0] || bal).c; if (rest.length && bal) col.balance = bal.c; }
+    else if (rest.length >= 2) { col.debit = rest[0].c; col.credit = rest[1].c; if (bal) col.balance = bal.c; }
+    else if (rest.length === 1) { col.amount = rest[0].c; if (bal) col.balance = bal.c; }
+    else { col.amount = bal.c; }
+    return { at, col };
+  }
+  return null;
+}
+
+/** One reading of the rows with these columns and date style. */
+function readRowsWith(list, at, col, style) {
   const cell = (r, i) => (i >= 0 ? r[i] : null);
-  const raw = [];
+  const raw = []; const unreadable = [];
   let opening = null; let closing = null;
+  // a single amount column: when some amounts carry a minus, the others are money in (the bank's own way of writing it)
+  const signed = col.amount >= 0 && col.drcr < 0 && list.slice(at + 1).some((r) => { const a = bankAmount(cell(r, col.amount)); return a.value != null && a.value < 0; });
   for (const r of list.slice(at + 1)) {
     const narr = String(cell(r, col.narration) ?? '').trim().replace(/\s+/g, ' ');
-    const day = bankDay(cell(r, col.date));
+    const day = bankDay(cell(r, col.date), style);
     if (!day) {
       const all = r.map((c) => String(c ?? '')).join(' ');
       const so = stated(all, OPEN_AMT); const sc = stated(all, CLOSE_AMT);
@@ -152,15 +253,21 @@ export function readStatementRows(rows) {
     }
     if (OPENING.test(narr)) { const b = amountOf(cell(r, col.balance)); if (b != null) opening = b; continue; }
     let amount = null; let side = null; let dr = null; let cr = null;
+    const filled = (i) => i >= 0 && String(cell(r, i) ?? '').trim() !== '' && !/^[-–—0.]*$/.test(String(cell(r, i)).trim());
     if (col.debit >= 0 && col.credit >= 0) {
       dr = bankAmount(cell(r, col.debit)).value; cr = bankAmount(cell(r, col.credit)).value;
-      if (!dr && !cr) continue;
+      if (!dr && !cr) {
+        // a date and something in the money columns that isn't a number: shown to the owner, never dropped quietly
+        if ((filled(col.debit) && dr == null) || (filled(col.credit) && cr == null)) unreadable.push({ day, text: r.map((c) => String(c ?? '').trim()).filter(Boolean).join(' · ').slice(0, 200) });
+        continue;
+      }
       amount = cr || dr; side = 'col';
     } else {
       const a = bankAmount(cell(r, col.amount));
       const t = String(cell(r, col.drcr) ?? '').trim();
-      side = /^c/i.test(t) ? 'cr' : /^d/i.test(t) ? 'dr' : a.side || (a.value < 0 ? 'dr' : null);
+      side = /^c/i.test(t) ? 'cr' : /^d/i.test(t) ? 'dr' : a.side || (a.value < 0 ? 'dr' : signed && a.value > 0 ? 'cr' : null);
       if (a.value != null && a.value !== 0) amount = side === 'dr' ? -Math.abs(a.value) : side === 'cr' ? Math.abs(a.value) : a.value;
+      else if (filled(col.amount) && a.value == null) unreadable.push({ day, text: r.map((c) => String(c ?? '').trim()).filter(Boolean).join(' · ').slice(0, 200) });
     }
     if (amount == null || amount === 0) continue;
     const bal = bankAmount(cell(r, col.balance));
@@ -168,7 +275,8 @@ export function readStatementRows(rows) {
     raw.push({ day, amount: r2(amount), sure: !!side, narration: narr, ref: String(cell(r, col.ref) ?? '').trim() || null, balance, more: 0,
       ...(side === 'col' ? { dr, cr } : {}) });
   }
-  return finish(settleSigns(raw), opening, col, closing);
+  const res = finish(settleSigns(raw), opening, col, closing);
+  return { ...res, unreadable, adds_up: res.adds_up && unreadable.length === 0 };
 }
 
 /** Order, signs from the running balance, opening / closing, and how many lines the balance proves. */
@@ -186,8 +294,8 @@ function finish(raw, opening0, columns = null, closing0 = null) {
     if (l.sure || l.balance == null) continue;
     const prevBal = k > 0 ? lines[k - 1].balance : opening0;
     if (prevBal == null) continue;
-    if (Math.abs(r2(prevBal + Math.abs(l.amount)) - l.balance) < 0.011) l.amount = Math.abs(l.amount);
-    else if (Math.abs(r2(prevBal - Math.abs(l.amount)) - l.balance) < 0.011) l.amount = -Math.abs(l.amount);
+    if (Math.abs(r2(prevBal + Math.abs(l.amount)) - l.balance) < 0.011) { l.amount = Math.abs(l.amount); l.sure = true; }
+    else if (Math.abs(r2(prevBal - Math.abs(l.amount)) - l.balance) < 0.011) { l.amount = -Math.abs(l.amount); l.sure = true; }
   }
   const withBal = lines.filter((l) => l.balance != null);
   const opening = opening0 != null ? opening0 : withBal.length && lines[0].balance != null ? r2(lines[0].balance - lines[0].amount) : null;
@@ -195,9 +303,10 @@ function finish(raw, opening0, columns = null, closing0 = null) {
   const problems = [];
   let checked = 0; let prev = opening;
   for (const l of lines) {
+    l.doubts = l.sure ? [] : ['direction'];   // money in or out could not be proved: the owner decides
     if (l.balance != null && prev != null) {
       if (Math.abs(r2(prev + l.amount) - l.balance) < 0.011) checked++;
-      else problems.push({ day: l.day, amount: l.amount, expected: r2(prev + l.amount), balance: l.balance });
+      else { problems.push({ day: l.day, amount: l.amount, expected: r2(prev + l.amount), balance: l.balance }); l.doubts.push('balance'); }
     }
     if (l.balance != null) prev = l.balance; else if (prev != null) prev = r2(prev + l.amount);
   }
@@ -553,6 +662,8 @@ export function suggestBankLines({ lines = [], moves = [], customers = [], suppl
     }
     out.push({ ...base, action: null, confidence: 'unknown', reason: 'unknown', method: n.method, name: n.name });
   });
+  // a line the reader could not prove (in / out, balance, date style, columns, photo) is never ready: the owner decides
+  out.forEach((o, i) => { const d = lines[i]?.doubts; if (d && d.length && o.confidence !== 'done') { o.doubt = d; o.confidence = 'unknown'; } });
   return out;
 }
 

@@ -224,7 +224,7 @@ test('bank statement: owners only; each line becomes the right operation on the 
   await ops.bankSave(owner, { account_id: SBI, file_name: 'sbi.xlsx', from: '2026-10-01', to: '2026-10-31', opening: '100000', closing: 125000, adds_up: true,
     lines: [{ day: '2026-10-01', amount: '25000', narration: '  UPI/CR/1/SHARMA   ENGG ', ref: 'N1', balance: '125000', fingerprint: '2026-10-01|25000.00|125000.00|N1|sharma' }] }, 'k', 'h');
   const sv = last('api_bank_save').p;
-  assert.deepEqual(sv.lines[0], { day: '2026-10-01', amount: 25000, narration: 'UPI/CR/1/SHARMA ENGG', ref: 'N1', balance: 125000, fingerprint: '2026-10-01|25000.00|125000.00|N1|sharma' });
+  assert.deepEqual(sv.lines[0], { day: '2026-10-01', amount: 25000, narration: 'UPI/CR/1/SHARMA ENGG', ref: 'N1', balance: 125000, fingerprint: '2026-10-01|25000.00|125000.00|N1|sharma', doubts: [] });
   assert.equal(sv.opening, 100000);
 
   await ops.bankRun(owner, { line_id: LINE, amount: 25000, action: 'payment', customer_id: CUST, side: 'pakka', method: 'UPI', remember_key: 'upi:sharmaeng@okhdfcbank' }, 'k', 'h');

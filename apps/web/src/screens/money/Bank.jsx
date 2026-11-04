@@ -4,7 +4,7 @@
 // owes, bank charges), ALREADY IN THE APP (nothing new is added), PLEASE CHECK (a name or phone in the bank text), NEEDS YOU.
 // Nothing is saved until the owner taps. Choosing once teaches the app ("SHARMA ENGG" → Sharma Engineering).
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { shortNarration, payerKey, readNarration } from '@srs/core';
+import { shortNarration, payerKey, readNarration, bankDay } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -28,6 +28,9 @@ const owner = () => can('settings') && can('money');
 const LAST = 'bank:last_account';
 const bankLike = (a) => a && !a.is_drawer && a.kind !== 'cash' && a.kind !== 'safe';
 
+/** How a sample date reads one way or the other ("05/06/2026" → "5 Jun 2026"). */
+const dsShow = (v, style) => { const d = bankDay(v, style); return d ? fmtDay(d) : String(v || ''); };
+
 // ================================================================ 1. the file
 export function BankStart() {
   const [accs, setAccs] = useState(null);
@@ -47,10 +50,10 @@ export function BankStart() {
     if (acc && online.value) call('bankData', { account_id: acc }).then((d) => setWaiting(d)).catch(() => {});
   }, [acc]);
 
-  const open = async (f, password = null) => {
+  const open = async (f, password = null, dateStyle = null) => {
     setErr(null); setRead(null); setBusy(true);
     try {
-      const r = await readStatementFile(f, password);
+      const r = await readStatementFile(f, password, { dateStyle });
       setRead(r); setNeedPw(false);
     } catch (e) {
       if (e.code === 'password' || e.code === 'password_wrong') { setNeedPw(true); setErr(e.code === 'password_wrong' ? t('bk_pw_wrong') : null); }
@@ -62,7 +65,7 @@ export function BankStart() {
   const outs = read ? read.lines.filter((l) => l.amount < 0) : [];
   const sum = (ls) => ls.reduce((s, l) => s + Math.abs(l.amount), 0);
   const go2 = () => save.run({ account_id: acc, file_name: file?.name, from: read.from, to: read.to, opening: read.opening, closing: read.closing,
-    adds_up: read.adds_up, lines: read.lines }).then((r) => { store.set(LAST, acc); go(`/bank/${acc}/${r.import_id}`); }).catch(() => {});
+    adds_up: read.adds_up, file_hash: read.file_hash, lines: read.lines }).then((r) => { store.set(LAST, acc); go(`/bank/${acc}/${r.import_id}`); }).catch(() => {});
   const account = accs?.find((a) => a.id === acc);
   const openLines = (waiting?.lines || []).length;
   // a statement that covers days uploaded before: those entries are not saved again
@@ -71,6 +74,10 @@ export function BankStart() {
   const overlapFrom = before.length ? maxOf([read.from, minOf(before.map((i) => i.from))]) : null;
   const overlapTo = before.length ? minOf([read.to, maxOf(before.map((i) => i.to))]) : null;
   const oldFrom = read?.from && waiting?.start && read.from < waiting.start ? waiting.start : null;
+  // what the reader could not prove (4 Nov 2026): the owner sees it before anything is saved
+  const doubtful = read ? read.lines.filter((l) => l.doubts?.length).length : 0;
+  const askDates = read && read.dateStyle && !read.dateStyle.sure && !read.dateStyle.chosen;
+  const sameFile = read?.file_hash ? (waiting?.imports || []).find((i) => i.file_hash === read.file_hash) : null;
 
   return (
     <>
@@ -131,13 +138,27 @@ export function BankStart() {
                 : <div class="notice tone-warn" style="font-size:13px">{read.problems?.length ? t('bk_not_adds', read.problems.length) : t('bk_no_balance')}</div>}</div>
               {before.length > 0 && <div class="notice tone-ok bk-twice" style="font-size:13px;margin-top:8px"><Icon name="ShieldCheck" size={16} />
                 <span>{t('bk_overlap', `${fmtDay(overlapFrom, false)} – ${fmtDay(overlapTo)}`)}</span></div>}
+              {sameFile && <div class="notice tone-ok bk-twice" style="font-size:13px;margin-top:8px"><Icon name="ShieldCheck" size={16} />
+                <span>{t('bk_same_file', fmtDay(String(sameFile.at).slice(0, 10)))}</span></div>}
+              {askDates && (
+                <div class="notice tone-warn" style="font-size:13.5px;margin-top:8px">
+                  <b>{t('bk_ds_t')}</b><div style="margin-top:4px;font-weight:600">{t('bk_ds_s', String(read.dateStyle.sample || ''))}</div>
+                  <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+                    <button class="btn btn-ghost grow" onClick={() => open(file, pw || null, 'dmy')}>{t('bk_ds_dmy', dsShow(read.dateStyle.sample, 'dmy'))}</button>
+                    <button class="btn btn-ghost grow" onClick={() => open(file, pw || null, 'mdy')}>{t('bk_ds_mdy', dsShow(read.dateStyle.sample, 'mdy'))}</button></div>
+                </div>)}
+              {doubtful > 0 && !askDates && <div class="notice tone-warn bk-twice" style="font-size:13px;margin-top:8px"><Icon name="CircleHelp" size={16} /><span>{t('bk_doubts', doubtful)}</span></div>}
+              {(read.unreadable || []).length > 0 && (
+                <div class="notice tone-bad" style="font-size:13px;margin-top:8px"><b>{t('bk_unreadable_t', read.unreadable.length)}</b>
+                  <div style="margin-top:4px;font-weight:600">{t('bk_unreadable_s')}</div>
+                  {read.unreadable.slice(0, 5).map((u) => <div class="num" style="margin-top:4px;font-weight:600;opacity:.9">{u.day ? `${fmtDay(u.day, false)} · ` : ''}{u.text}</div>)}</div>)}
               {oldFrom && <div class="notice tone-warn bk-twice" style="font-size:13px;margin-top:8px"><Icon name="History" size={16} />
                 <span>{read.to < oldFrom ? t('bk_all_old', fmtDay(oldFrom)) : t('bk_some_old', fmtDay(oldFrom))}</span></div>}
             </div>
           )}
         </>}
       </div>
-      {read && <div class="actionbar"><button class="btn btn-brand btn-block" disabled={save.busy || !online.value} onClick={go2}><Icon name="Sparkles" size={20} />{save.busy ? t('bk_matching') : t('bk_match')}</button></div>}
+      {read && <div class="actionbar"><button class="btn btn-brand btn-block" disabled={save.busy || !online.value || askDates || !read.lines.length} onClick={go2}><Icon name="Sparkles" size={20} />{save.busy ? t('bk_matching') : t('bk_match')}</button></div>}
       {save.error && <div class="error" style="position:fixed;bottom:calc(var(--tabbar-h) + 84px);left:16px;right:16px">{save.error.message}</div>}
     </>
   );
@@ -161,6 +182,7 @@ export function BankReview({ account, imp }) {
   const run = useAction('bankRun');
   const link = useAction('bankLink');
   const mark = useAction('bankMark');
+  const dir = useAction('bankDirection');
   const bal = useAction('bankBalance');
   const load = () => call('bankData', { account_id: account, import_id: imp === 'open' ? null : imp }).then((x) => { setD(x); setErr(null); }).catch((e) => setErr(e.message || t('err_generic')));
   useEffect(() => { if (!owner()) { go('/'); return; } load(); loadAccounts().then(setAccs).catch(() => {}); }, [account, imp]);
@@ -173,7 +195,7 @@ export function BankReview({ account, imp }) {
 
   const rows = d.lines.map((l, i) => ({ l, s: d.suggestions[i] }));
   const open = rows.filter((r) => r.l.status === 'open');
-  const groupOf = (r) => (r.s.action === 'link' ? 'link' : r.s.confidence === 'sure' ? 'sure' : r.s.confidence === 'likely' ? 'likely' : 'unknown');
+  const groupOf = (r) => (r.s.doubt ? 'unknown' : r.s.action === 'link' ? 'link' : r.s.confidence === 'sure' ? 'sure' : r.s.confidence === 'likely' ? 'likely' : 'unknown');
   const by = Object.fromEntries(GROUPS.map((g) => [g.id, open.filter((r) => groupOf(r) === g.id)]));
   const done = rows.filter((r) => r.l.status === 'added' || r.l.status === 'linked');
   const skipped = rows.filter((r) => r.l.status === 'skipped');
@@ -220,7 +242,8 @@ export function BankReview({ account, imp }) {
             <div class="sec"><h3><span class={`dot tone-${g.tone}`} />{t(g.word)} <span class="faint">({by[g.id].length})</span></h3></div>
             <div class="faint bk-sec-s">{t(`${g.word}_s`)}</div>
             <div class="card">{by[g.id].map((r) => (
-              <LineRow r={r} own={d.own} text={describe(r.s, r.l)} busy={run.busy || link.busy || mark.busy || !!bulk}
+              <LineRow r={r} own={d.own} text={describe(r.s, r.l)} busy={run.busy || link.busy || mark.busy || dir.busy || !!bulk}
+                onDir={(isIn) => dir.run({ line_id: r.l.id, money_in: isIn }).then(load).catch(() => {})}
                 onOk={r.s.action ? () => one(r) : null} onChange={() => setEdit(r)}
                 onSkip={g.id === 'unknown' ? () => mark.run({ line_id: r.l.id, status: 'skipped', note: null }).then(load).catch(() => {}) : null} />
             ))}</div>
@@ -266,7 +289,7 @@ export function BankReview({ account, imp }) {
 
 const REASON_ICON = { remembered: 'Brain', name: 'UserSearch', phone: 'Phone', amount: 'Equal', already: 'Link', already_via: 'Link', words: 'Tag', atm: 'Landmark',
   cash_deposit: 'Banknote', interest: 'Percent', came_back: 'Undo2', went_back: 'Undo2', near_payment: 'TriangleAlert' };
-function LineRow({ r, text, busy, onOk, onChange, onSkip, own }) {
+function LineRow({ r, text, busy, onOk, onChange, onSkip, own, onDir }) {
   const { l, s } = r;
   const [more, setMore] = useState(false);
   return (
@@ -276,10 +299,14 @@ function LineRow({ r, text, busy, onOk, onChange, onSkip, own }) {
           <button class="grow bk-txt" onClick={() => setMore(!more)}>
             <div class="t">{more ? l.narration : shortNarration(l.narration, own)}</div>
             {l.status === 'open' && l.note && <div class="bk-reopen"><Icon name="Undo2" size={13} />{t('bk_reopened')} {l.note}</div>}
+            {l.status === 'open' && s.doubt && <div class="bk-reopen"><Icon name="CircleHelp" size={13} />{s.doubt.map((d) => t(`bk_d_${d}`)).join(' · ')}</div>}
             <div class="s">{fmtDay(l.day, false)}{l.ref ? ` · ${l.ref}` : ''}</div>
           </button>
           <b class="num bk-amt" style={`color:${l.amount > 0 ? 'var(--ok)' : 'var(--bad)'}`}>{l.amount > 0 ? '+' : '−'}{money(Math.abs(l.amount), false)}</b>
         </div>
+        {l.status === 'open' && s.doubt?.includes('direction') && onDir && <div class="row" style="gap:8px;margin-top:8px">
+          <button class="btn btn-ghost grow" style="min-height:40px;font-size:13.5px" disabled={busy} onClick={() => onDir(true)}><Icon name="ArrowDown" size={15} />{t('bk_dir_in')}</button>
+          <button class="btn btn-ghost grow" style="min-height:40px;font-size:13.5px" disabled={busy} onClick={() => onDir(false)}><Icon name="ArrowUp" size={15} />{t('bk_dir_out')}</button></div>}
         {s.action ? (
           <div class="bk-sug">
             <Icon name={sugIcon(s)} size={16} stroke={2.2} />

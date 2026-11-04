@@ -180,6 +180,9 @@ export function coreItemFromDb(i) {
 const BILL_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
 /** What the AI is asked (reading an Indian steel purchase bill). */
+/** What a statement reader may say it could not prove about a line (4 Nov 2026). */
+export const BANK_DOUBTS = ['direction', 'balance', 'date_style', 'layout', 'photo'];
+
 export const BILL_PROMPT = `You read purchase bills (tax invoices) of steel bought by a steel trading shop in India.
 Return ONLY one JSON object, no other text, in exactly this shape:
 {"supplier":{"name":string|null,"gstin":string|null,"city":string|null,"phone":string|null},
@@ -791,12 +794,14 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         const fp = String(l.fingerprint || '');
         if (fp.length < 10 || fp.length > 300) throw bad('Read the statement again.');
         return { day: l.day, amount: r2(Number(l.amount)), narration: String(l.narration || '').replace(/\s+/g, ' ').trim().slice(0, 500),
-          ref: text(l.ref, 60), balance: num(l.balance), fingerprint: fp };
+          ref: text(l.ref, 60), balance: num(l.balance), fingerprint: fp,
+          doubts: (Array.isArray(l.doubts) ? l.doubts : []).filter((d) => BANK_DOUBTS.includes(d)) };
       });
       const day = (v) => (DAY.test(String(v || '')) ? v : null);
       return rpc('api_bank_save', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
         account_id: uuid(a.account_id, 'Choose the bank account.'), file_name: text(a.file_name, 200), from: day(a.from), to: day(a.to),
-        opening: num(a.opening), closing: num(a.closing), adds_up: !!a.adds_up, lines: clean } });
+        opening: num(a.opening), closing: num(a.closing), adds_up: !!a.adds_up,
+        file_hash: /^[0-9a-f]{64}$/.test(String(a.file_hash || '')) ? a.file_hash : null, lines: clean } });
     },
 
     /** A statement's lines with a suggestion for each (already in the app / customer / expense / …), and what is needed to choose. */
@@ -897,6 +902,13 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     async paymentTwinSeen(caller, a, key, hash) {
       need(caller, 'money');
       return rpc('api_payment_twin_seen', { p_caller: caller.id, p_key: key, p_hash: hash, p_payment: uuid(a?.payment_id, 'Which payment?') });
+    },
+
+    /** Owner: "money in or out?" for a line the reader could not prove. */
+    async bankDirection(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      if (typeof a?.money_in !== 'boolean') throw bad('Money in or out?');
+      return rpc('api_bank_direction', { p_caller: caller.id, p_key: key, p_hash: hash, p_line: uuid(a.line_id, 'Which bank line?'), p_in: a.money_in });
     },
 
     async bankMark(caller, a, key, hash) {

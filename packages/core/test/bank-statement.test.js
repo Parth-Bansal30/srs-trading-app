@@ -204,7 +204,8 @@ test('suggestions: already in the app, remembered, a customer by name / phone, e
   assert.deepEqual([by.l4.action, by.l4.category, by.l4.confidence], ['expense', 'bank', 'sure']);
   assert.deepEqual([by.l5.action, by.l5.customer_id, by.l5.reason, by.l5.confidence, by.l5.side], ['payment', 'c-ramesh', 'phone', 'likely', 'kacha'],
     'a phone number alone is only likely; the side with the money owed');
-  assert.deepEqual([by.l6.action, by.l6.supplier_id], ['supplier', 's-jindal']);
+  // (4 Nov 2026, F5: a cheque line goes to "Cheques & DDs" to be matched with the register — the supplier is the hint)
+  assert.deepEqual([by.l6.action, by.l6.supplier_id, by.l6.cheque.kind, by.l6.cheque.number], ['cheque', 's-jindal', 'out', '123']);
   assert.deepEqual([by.l7.action, by.l7.confidence], [null, 'unknown'], 'nobody we know → needs you');
   assert.deepEqual([by.l8.action, by.l8.customer_id, by.l8.confidence, by.l8.reason], ['payment', 'c-verma1', 'sure', 'amount'], 'exactly what they owe');
   assert.deepEqual([by.l9.action, by.l9.reason], ['move', 'cash_deposit']);

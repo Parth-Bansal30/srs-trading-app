@@ -6,6 +6,7 @@
  * backend alike).
  */
 import { r2 } from './round.js';
+import { chequeLine, chequeCandidates, depositOf } from './cheques.js';
 
 // ---------------------------------------------------------------- small readers
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
@@ -554,9 +555,11 @@ export function ownNames(lines = [], shop = null) {
   return own;
 }
 
-export function suggestBankLines({ lines = [], moves = [], customers = [], suppliers = [], payers = {}, dues = {}, drawer = null, days = 4, shop = null, own = null }) {
+export function suggestBankLines({ lines = [], moves = [], customers = [], suppliers = [], payers = {}, dues = {}, drawer = null, days = 4, shop = null, own = null, cheques = [] }) {
   own = own || ownNames(lines, shop);
   const read = (l) => readNarration(l.narration, own);
+  // cheques and DDs (4 Nov 2026, F5): never "ready", never paired as "came back" — a person matches each one to the register
+  const chq = lines.map((l) => ((l.status && l.status !== 'open') ? null : chequeLine(l)));
   const used = new Set(moves.filter((m) => m.linked).map((m) => m.ref));
   const dayNo = (d) => Math.round(Date.parse(`${d}T00:00:00Z`) / 86400000);
   const custPhone = new Map(customers.filter((c) => c.phone).map((c) => [String(c.phone).replace(/\D/g, '').slice(-10), c]));
@@ -572,11 +575,11 @@ export function suggestBankLines({ lines = [], moves = [], customers = [], suppl
   const backOf = new Map();
   const digits = (l) => new Set(`${l.narration || ''} ${l.ref || ''}`.match(/\d{6,}/g) || []);
   lines.forEach((r, j) => {
-    if ((r.status && r.status !== 'open') || backOf.has(j) || !REVERSAL.test(r.narration || '')) return;
+    if ((r.status && r.status !== 'open') || backOf.has(j) || chq[j] || !REVERSAL.test(r.narration || '')) return;
     const dr = digits(r);
     let best = -1; let bestScore = -1;
     lines.forEach((o, i) => {
-      if (i === j || backOf.has(i) || Math.abs(o.amount + r.amount) > 0.005) return;
+      if (i === j || backOf.has(i) || chq[i] || Math.abs(o.amount + r.amount) > 0.005) return;
       const gap = dayNo(r.day) - dayNo(o.day);
       if (gap < 0 || gap > 10) return;
       const shared = [...digits(o)].filter((x) => dr.has(x));
@@ -604,6 +607,13 @@ export function suggestBankLines({ lines = [], moves = [], customers = [], suppl
   // a customer who already has a payment written near that day (another amount, not matched): ask, never add it as sure
   const nearPay = (cid, l) => moves.find((m) => m.src === 'payment' && !used.has(m.ref) && m.customer_id === cid && m.amount > 0
     && Math.abs(dayNo(l.day) - dayNo(m.day)) <= days);
+  /** The customer a line's phone or name points to (only when one stands out): { c, why } */
+  const whoOf = (n) => {
+    if (n.phone && custPhone.has(n.phone)) return { c: custPhone.get(n.phone), why: 'phone' };
+    const scored = customers.map((c) => ({ c, f: nameFit(c.name, n.words) })).filter((x) => x.f >= 0.6).sort((a, b) => b.f - a.f);
+    if (scored.length && (scored.length === 1 || scored[0].f - scored[1].f >= 0.25)) return { c: scored[0].c, why: 'name' };
+    return null;
+  };
 
   lines.forEach((l, i) => {
     const base = { line: l.id ?? i };
@@ -613,6 +623,18 @@ export function suggestBankLines({ lines = [], moves = [], customers = [], suppl
       if (!o.status || o.status === 'open') { out.push({ ...base, action: 'skip', confidence: 'sure', reason: 'came_back', pair: o.id ?? backOf.get(i) }); return; }
     }
     const m = linkOf.get(i);
+    if (chq[i]) {
+      const ci = chq[i];
+      const n0 = read(l);
+      const who = ci.kind === 'in' ? whoOf(n0)?.c : null;
+      const sup = ci.kind === 'out' ? suppliers.map((s0) => ({ s: s0, f: nameFit(s0.name, n0.words) })).filter((x) => x.f >= 0.6).sort((a, b) => b.f - a.f)[0]?.s : null;
+      out.push({ ...base, action: ci.kind === 'charges' ? 'expense' : 'cheque', confidence: 'likely', reason: `cheque_${ci.kind}`,
+        cheque: ci, candidates: chequeCandidates(l, ci, cheques), deposit_line: depositOf(l, ci, lines),
+        ...(ci.kind === 'charges' ? { category: 'bank', method: null } : {}),
+        ...(m ? { move: m.ref, src: m.src, label: m.label || null, via: m.via || null } : {}),
+        customer_id: who?.id || null, supplier_id: sup?.id || null, side: who ? sideFor(who.id, Math.abs(l.amount)) : undefined, method: 'Cheque' });
+      return;
+    }
     if (m) { out.push({ ...base, action: 'link', confidence: 'sure', reason: m.via ? 'already_via' : 'already', move: m.ref, src: m.src, label: m.label || null, via: m.via || null }); return; }
     const n = read(l);
     if (n.back && backOf.has(i)) { out.push({ ...base, action: null, confidence: 'unknown', reason: 'went_back' }); return; }
@@ -627,12 +649,8 @@ export function suggestBankLines({ lines = [], moves = [], customers = [], suppl
       return;
     }
     // who is it?
-    let who = null; let why = null;
-    if (n.phone && custPhone.has(n.phone)) { who = custPhone.get(n.phone); why = 'phone'; }
-    if (!who) {
-      const scored = customers.map((c) => ({ c, f: nameFit(c.name, n.words) })).filter((x) => x.f >= 0.6).sort((a, b) => b.f - a.f);
-      if (scored.length && (scored.length === 1 || scored[0].f - scored[1].f >= 0.25)) { who = scored[0].c; why = 'name'; }
-    }
+    const w0 = whoOf(n);
+    const who = w0?.c || null; const why = w0?.why || null;
     if (l.amount > 0) {
       if (n.kind === 'cash') { out.push({ ...base, action: 'move', confidence: 'likely', reason: 'cash_deposit', to: drawer, method: null }); return; }
       if (n.kind === 'interest') { out.push({ ...base, action: 'skip', confidence: 'likely', reason: 'interest' }); return; }

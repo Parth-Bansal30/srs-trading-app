@@ -1067,3 +1067,27 @@ test('fingerprint: switch on (fresh PIN), unlock with the finger, refused when t
   await rejects(px.passkeyUnlock(locked, { challenge: 'not base64!', credential_id: p.credId, ...ans }), 400);
   assert.equal(store.unlocked, 1, 'only the good answer unlocked');
 });
+
+test('cheques: noted with a number and a customer; only the owner confirms a clearing or a return', async () => {
+  const accounts = { id: 'p-acc', company_id: 'c1', perms: core.ROLE_PRESETS.accounts() };
+  const LINE = '11111111-2222-3333-4444-555555555555';
+  const Q = '33333333-4444-5555-6666-777777777777';
+  const { ops, last, calls } = fakeDb();
+  await rejects(ops.chequeAdd(accounts, { direction: 'in', number: '', amount: 25000, customer_id: CUST }, 'k', 'h'), 400);
+  await rejects(ops.chequeAdd(accounts, { direction: 'in', number: '004512', amount: 0, customer_id: CUST }, 'k', 'h'), 400);
+  await rejects(ops.chequeAdd(accounts, { direction: 'sideways', number: '004512', amount: 1, customer_id: CUST }, 'k', 'h'), 400);
+  await rejects(ops.chequeAdd(accounts, { direction: 'in', number: '004512', amount: 25000, customer_id: CUST, got_on: '25 Oct' }, 'k', 'h'), 400);
+  await rejects(ops.chequeClear(accounts, { id: Q, line_id: LINE }, 'k', 'h'), 403);
+  await rejects(ops.chequeReturn(accounts, { id: Q, line_id: LINE }, 'k', 'h'), 403);
+  await rejects(ops.chequeReturn(owner, { id: Q, line_id: LINE, charge: -5 }, 'k', 'h'), 400);
+  assert.equal(calls.length, 0);
+  await ops.chequeAdd(accounts, { direction: 'in', number: ' 0045 12 ', bank_name: ' bob ', amount: '25000', customer_id: CUST, got_on: '2026-10-25' }, 'k', 'h');
+  assert.deepEqual(last('api_cheque_add').p, { direction: 'in', instrument: 'cheque', number: '004512', bank_name: 'bob', amount: 25000, customer_id: CUST,
+    side: 'pakka', supplier_id: null, expense_id: null, cheque_date: null, got_on: '2026-10-25', note: null });
+  await ops.chequeClear(owner, { line_id: LINE, new: { customer_id: CUST, number: '778899' } }, 'k', 'h');
+  assert.deepEqual(last('api_cheque_clear').p_new, { customer_id: CUST, side: 'pakka', number: '778899', bank_name: null, instrument: 'cheque' });
+  assert.equal(last('api_cheque_clear').p_id, null);
+  await ops.chequeReturn(owner, { id: Q, line_id: LINE, charge: '354' }, 'k', 'h');
+  assert.equal(last('api_cheque_return').p_charge, 354);
+  assert.equal(last('api_cheque_return').p_deposit_line, null);
+});

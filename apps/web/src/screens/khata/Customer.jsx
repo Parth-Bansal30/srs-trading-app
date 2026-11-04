@@ -19,6 +19,7 @@ import { toast } from '../../ui/toast.js';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, modeText, modeIcon, whereLabel } from '../../lib/accounts.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
+import { ChequeFields, ChequeRow, ChequeActSheet, emptyCheque, chequeArgs, chequeChosen, isOpen as chequeOpen } from '../../ui/money/Cheques.jsx';
 import '../review/review.css';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { ReminderSheet } from './Reminders.jsx';
@@ -38,13 +39,16 @@ export function Customer({ id }) {
   useEffect(() => { if (route.value.query.pay && can('khata')) setSheet('pay'); if (route.value.query.giveback && can('delete')) setSheet('giveback'); }, []);
   const [info, setInfo] = useState(null);     // gstin, address, note…
   const [extra, setExtra] = useState({});     // bought this year, special rates, sent slips
+  const [cheques, setCheques] = useState([]); // cheques / DDs not cleared yet, and recent ones that came back (4 Nov 2026)
+  const [chqOpen, setChqOpen] = useState(null);
   const tz = company.value?.timezone;
+  const loadCheques = () => (can('money') && can('khata') ? call('cheques', { customer_id: id, days: 60 }).then((l) => setCheques(l || [])).catch(() => {}) : null);
   const fy = periodDates('this_fy', new Date().toISOString(), tz);
   const load = () => call('khata', { customer_id: id }).then(([x]) => setR(x || null)).catch(() => setR(null));
   const loadInfo = () => loadCustomer(id).then(setInfo).catch(() => {});
   useEffect(() => { if (r !== undefined) load(); }, [outboxVersion.value]);
   useEffect(() => {
-    load(); loadInfo();
+    load(); loadInfo(); loadCheques();
     Promise.all([boughtSince(id, dayStartISO(tz, new Date(`${fy.from}T12:00:00Z`))), specialRates(id), sentSlips(id)])
       .then(([bought, rates, sent]) => setExtra({ bought, rates, sent })).catch(() => {});
   }, [id]);
@@ -57,6 +61,8 @@ export function Customer({ id }) {
   const pak = r.by_side?.pakka?.due || 0; const kac = r.by_side?.kacha?.due || 0;
   const entries = [...(r.entries || [])].filter((e) => !e.reversal).reverse();   // a cancellation shows on the payment it cancels
   const waiting = pendingPayments(outbox.value, id);
+  const chqShow = cheques.filter((q) => q.direction === 'in' && (chequeOpen(q) || q.status === 'returned'));
+  const chqWait = cheques.filter((q) => q.direction === 'in' && chequeOpen(q));
 
   return (
     <>
@@ -101,6 +107,13 @@ export function Customer({ id }) {
           {can('delete') && r.due <= 0 && (r.credit > 0 || r.pending_advance > 0) && <button class="btn btn-ghost" style="min-height:50px;font-size:15px;color:var(--warn)" onClick={() => setSheet('giveback')}><Icon name="Undo2" size={18} />{t('gb_btn')}</button>}
         </div>
 
+        {chqShow.length > 0 && (
+          <div class="card" style="margin-top:12px">
+            <div class="li chq-head"><div class="grow"><div class="t">{t('chq_waiting_t')}{chqWait.length ? ` · ${money(chqWait.reduce((x, q) => x + Number(q.amount), 0), false)}` : ''}</div>
+              <div class="s">{t('chq_waiting_s')}</div></div></div>
+            {chqShow.map((q) => <ChequeRow q={q} who={false} onOpen={setChqOpen} />)}
+          </div>
+        )}
         {can('khata') && <button class="btn btn-brand btn-block" style="margin-top:12px" onClick={() => setSheet('statement')}><Icon name="FileText" size={19} stroke={2.3} />{t('send_stmt')}</button>}
         {(extra.bought?.n > 0 || extra.rates?.length > 0 || c.notes) && (
           <div class="card" style="margin-top:12px">
@@ -137,7 +150,9 @@ export function Customer({ id }) {
         </div>
       </div>
 
-      <PaySheet open={sheet === 'pay'} c={c} sides={sides} dues={r.by_side} entries={entries} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }} />
+      <PaySheet open={sheet === 'pay'} c={c} sides={sides} dues={r.by_side} entries={entries} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('pay_saved', money(amt))); load(); }}
+        onCheque={(x) => { setSheet(null); toast(x?.twice ? t('chq_twice') : t('chq_saved')); loadCheques(); }} />
+      <ChequeActSheet q={chqOpen} onClose={() => setChqOpen(null)} onDone={() => { setChqOpen(null); toast(t('done_ok')); loadCheques(); }} />
       <GiveBackSheet open={sheet === 'giveback'} c={c} r={r} entries={entries} sides={sides} onClose={() => setSheet(null)} onDone={(amt) => { setSheet(null); toast(t('gb_done', money(amt))); load(); }} />
       <PaymentSheet e={payOpen} name={c.name} slips={r.slips || {}} tz={tz} onClose={() => setPayOpen(null)} onDone={() => { setPayOpen(null); toast(t('pc_done')); load(); }} />
       <OldDueSheet open={sheet === 'old'} c={c} sides={sides} onClose={() => setSheet(null)} onDone={() => { setSheet(null); toast(t('done_ok')); load(); }} />
@@ -160,14 +175,22 @@ const likelySide = (dues) => {
   return k && !p ? 'kacha' : 'pakka';
 };
 
-function PaySheet({ open, c, sides, dues, entries, onClose, onDone }) {
+function PaySheet({ open, c, sides, dues, entries, onClose, onDone, onCheque }) {
   const [amt, setAmt] = useState(''); const [note, setNote] = useState(''); const [side, setSide] = useState('pakka');
   const [twins, setTwins] = useState(null);   // possible double payment (4 Nov 2026): shown before saving, the person decides
-  useEffect(() => { if (open) { setSide(likelySide(dues)); setTwins(null); } }, [open]);
+  // a cheque / DD is noted, not paid (D2, 4 Nov 2026): it goes into the khata when the owner confirms it in the bank statement
+  const [how, setHow] = useState('money');
+  const [chq, setChq] = useState(emptyCheque());
+  const [switched, setSwitched] = useState(false);
+  useEffect(() => { if (open) { setSide(likelySide(dues)); setTwins(null); setHow('money'); setChq(emptyCheque()); setSwitched(false); } }, [open]);
   useEffect(() => setTwins(null), [amt]);
   const [where, setWhere, accs] = useWhere(open);
+  useEffect(() => { if (how === 'money' && chequeChosen(where)) { setHow('cheque'); setSwitched(true); setWhere(where.ids ? { ...where, methods: {} } : { mode: 'Cash' }); } }, [where]);
   const a = useAction('recordPayment');
+  const ca = useAction('chequeAdd');
   const seen = useAction('paymentTwinSeen');
+  const chqOk = Number(amt) > 0 && chq.number.trim().length > 0;
+  const saveCheque = () => ca.run(chequeArgs(chq, { customer_id: c.id, side, amount: amt, note })).then((x) => onCheque?.(x)).catch(() => {});
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   const save = (checked) => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }, {
     local: { meta: { uses: usesOf(c.id), customer: c.name, payment: { customer: c.name, ...payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
@@ -182,7 +205,23 @@ function PaySheet({ open, c, sides, dues, entries, onClose, onDone }) {
   };
   return (
     <Sheet open={open} onClose={onClose} title={t('add_payment')}
-      footer={!twins && <button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={trySave}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      footer={how === 'cheque'
+        ? <button class="btn btn-brand btn-block" disabled={ca.busy || !chqOk || !online.value} onClick={saveCheque}><Icon name="ScrollText" size={18} />{online.value ? t('chq_save', Number(amt) > 0 ? money(amt) : '') : t('chq_online')}</button>
+        : !twins && <button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={trySave}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      {can('money') && <div class="seg" style="margin-bottom:14px"><button class={how === 'money' ? 'on' : ''} onClick={() => setHow('money')}><Icon name="IndianRupee" size={15} />{t('pay_tab_money')}</button>
+        <button class={how === 'cheque' ? 'on' : ''} onClick={() => { setHow('cheque'); setTwins(null); }}><Icon name="ScrollText" size={15} />{t('pay_tab_cheque')}</button></div>}
+      {how === 'cheque' && <>
+        <div class="notice tone-accent" style="font-size:13.5px">{switched ? t('chq_switched') : t('chq_note_khata')}</div>
+        <div class="lbl" style="margin-top:14px">{t('amount')}</div>
+        <div class="field"><span class="faint">₹</span><input inputmode="decimal" value={amt} onInput={(e) => setAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>
+        <div style="height:10px" />
+        <ChequeFields v={chq} set={setChq} />
+        <SideSeg sides={sides} side={side} setSide={setSide} dues={dues} />
+        <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
+        <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
+        {ca.error && <div class="error">{ca.error.message}</div>}
+      </>}
+      {how === 'money' && <>
       {twins && (
         <div class="twin-box">
           <div class="t"><Icon name="Copy" size={16} /> {t('twin_t')}</div>
@@ -202,6 +241,7 @@ function PaySheet({ open, c, sides, dues, entries, onClose, onDone }) {
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
       <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
       {a.error && <div class="error">{a.error.message}</div>}
+      </>}
     </Sheet>
   );
 }

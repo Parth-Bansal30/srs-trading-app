@@ -21,7 +21,7 @@ import { AccountPick } from './AccountPick.jsx';
 import './money.css';
 
 const blank = () => ({ kind: 'expense', category: null, amount: '', accountId: null, accPicked: false, method: null, paidTo: '', note: '', day: 'today', date: '',
-  gstBill: false, gstAmount: '', billNo: '', sellerGstin: '', fileKey: null, supplierId: null, bills: [], more: false });
+  gstBill: false, gstAmount: '', billNo: '', sellerGstin: '', fileKey: null, supplierId: null, bills: [], more: false, chq: '' });
 /** The account an expense starts with: the one used last for this kind of expense, else the cash drawer. */
 const startAccount = (list, what) => (list || []).find((a) => a.id === lastOutAccount(what) && a.usable !== false) || (list || []).find((a) => a.is_drawer) || (list || [])[0];
 
@@ -44,6 +44,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   const [upErr, setUpErr] = useState(null);
   const [allCats, setAllCats] = useState(false);   // the 8 usual kinds first, the rest behind "More kinds" (26 Oct 2026)
   const save = useAction('saveExpense');
+  const chqAdd = useAction('chequeAdd');   // a supplier paid by cheque: its number goes in the cheque register (4 Nov 2026, F5)
   const photo = useRef(null);
   const amountIn = useRef(null);
   const kinds = expenseKinds();
@@ -97,7 +98,13 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
         day: dayArg || today, at: new Date().toISOString(), paid_to: f.paidTo.trim() || null, supplier: sup?.name || null, status: 'ok',
         account: (accounts || []).find((a) => a.id === f.accountId)?.name || '', is_drawer: !!(accounts || []).find((a) => a.id === f.accountId)?.is_drawer,
         replaces: edit?.id || null } } },
-    }).then((r) => onDone?.(r)).catch(() => {});
+    }).then(async (r) => {
+      const no = f.chq.trim();
+      if (no && r?.expense_id && f.kind === 'supplier' && f.method === 'Cheque') {
+        try { await chqAdd.run({ direction: 'out', number: no, amount: r2(amount), expense_id: r.expense_id }); } catch { /* the payment is saved; the cheque can be noted again */ }
+      }
+      onDone?.(r);
+    }).catch(() => {});
   };
 
   return (
@@ -162,6 +169,12 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
       <div class="lbl" style="margin-top:16px">{t('exp_from')}</div>
       <AccountPick accounts={accounts} value={f.accountId} onChange={(id) => set({ accountId: id, accPicked: true, method: null })} method={f.method} onMethod={(m) => set({ method: m })} />
       {credWarn && <div class="notice tone-warn cr-warn">{credWarn}</div>}
+      {f.kind === 'supplier' && f.method === 'Cheque' && !edit && <>
+        <div class="lbl" style="margin-top:14px">{t('chq_number')}</div>
+        <div class="field"><Icon name="ScrollText" size={16} style="color:var(--ink-3)" />
+          <input class="num" inputmode="numeric" value={f.chq} maxLength={20} placeholder="118244" onInput={(e) => set({ chq: e.currentTarget.value.replace(/[^0-9A-Za-z/-]/g, '').toUpperCase() })} /></div>
+        <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{t('chq_out_hint')}</div>
+      </>}
 
       <div class="lbl" style="margin-top:16px">{t('exp_day')}</div>
       <div class="seg">

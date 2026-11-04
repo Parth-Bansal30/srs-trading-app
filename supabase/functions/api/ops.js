@@ -809,9 +809,10 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'settings', 'money');
       const account = uuid(a?.account_id, 'Choose the bank account.');
       const imp = a?.import_id && isUuid(a.import_id) ? a.import_id : null;
-      const [d, raw] = await Promise.all([
+      const [d, raw, cheques] = await Promise.all([
         rpc('api_bank_data', { p_caller: caller.id, p_account: account, p_import: imp }),
         rpc('api_khata_data', { p_caller: caller.id, p_customer: null }),
+        rpc('api_cheques', { p_caller: caller.id, p_days: 200, p_customer: null }),
       ]);
       const k = coreKhataFromDb(raw);
       const sides = core.visibleSides(caller.perms);
@@ -824,8 +825,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       // the shop's own name is in most NEFT lines next to the payer's — never taken as the payer
       const own = core.ownNames(d.lines, d.shop);
       const suggestions = core.suggestBankLines({ lines: d.lines, moves: d.moves, customers: raw.customers, suppliers: d.suppliers,
-        payers: d.payers, dues, drawer: d.drawer, own });
-      return { ...d, own, customers: raw.customers.filter((c) => c.active !== false).map((c) => ({ id: c.id, name: c.name, phone: c.phone })), dues, suggestions };
+        payers: d.payers, dues, drawer: d.drawer, own, cheques });
+      return { ...d, own, cheques, customers: raw.customers.filter((c) => c.active !== false).map((c) => ({ id: c.id, name: c.name, phone: c.phone })), dues, suggestions };
     },
 
     /**
@@ -909,6 +910,71 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'settings', 'money');
       if (typeof a?.money_in !== 'boolean') throw bad('Money in or out?');
       return rpc('api_bank_direction', { p_caller: caller.id, p_key: key, p_hash: hash, p_line: uuid(a.line_id, 'Which bank line?'), p_in: a.money_in });
+    },
+
+    // ---------- cheques and DDs (4 Nov 2026, plan v2 F5) ----------
+    /** The register: what is waiting plus the last days; one customer's with customer_id. */
+    async cheques(caller, a) {
+      need(caller, 'money');
+      const days = Number.isInteger(a?.days) && a.days > 0 && a.days <= 800 ? a.days : 120;
+      return rpc('api_cheques', { p_caller: caller.id, p_days: days, p_customer: a?.customer_id && isUuid(a.customer_id) ? a.customer_id : null });
+    },
+    /**
+     * Note a cheque / DD: { direction: in | out, instrument: cheque | dd, number, bank_name, amount, customer_id, side (in),
+     * supplier_id, expense_id (out), cheque_date, got_on, note }. A customer's cheque does not touch the khata here.
+     */
+    async chequeAdd(caller, a, key, hash) {
+      need(caller, 'money');
+      const dir = a?.direction;
+      if (!['in', 'out'].includes(dir)) throw bad('Cheque in or out?');
+      const side = dir === 'in' ? (a?.side || 'pakka') : null;
+      if (dir === 'in' && !BILLS.includes(side)) throw bad('Choose Pakka or Kacha.');
+      const number = String(a?.number ?? '').toUpperCase().replace(/\s/g, '');
+      if (!/^[0-9A-Z/-]{1,20}$/.test(number)) throw bad('Type the cheque / DD number.');
+      const amount = Number(a?.amount);
+      if (!(amount > 0 && amount <= 1e8)) throw bad('Enter the amount.');
+      const day = (v) => (v == null || v === '' ? null : /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : (() => { throw bad('Check the date.'); })());
+      const p = { direction: dir, instrument: a?.instrument === 'dd' ? 'dd' : 'cheque', number, bank_name: text(a?.bank_name, 40), amount: r2(amount),
+        customer_id: dir === 'in' ? uuid(a?.customer_id, 'Choose the customer.') : null, side,
+        supplier_id: dir === 'out' && a?.supplier_id ? uuid(a.supplier_id, 'Choose the supplier.') : null,
+        expense_id: dir === 'out' && a?.expense_id ? uuid(a.expense_id, 'Which supplier payment?') : null,
+        cheque_date: day(a?.cheque_date), got_on: day(a?.got_on), note: text(a?.note, 300) };
+      return rpc('api_cheque_add', { p_caller: caller.id, p_key: key, p_hash: hash, p });
+    },
+    /** { id, status: deposited (account_id) | cancelled (note) } */
+    async chequeMark(caller, a, key, hash) {
+      need(caller, 'money');
+      if (!['deposited', 'cancelled'].includes(a?.status)) throw bad('Deposited or cancelled?');
+      return rpc('api_cheque_mark', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a.id, 'Which cheque?'), p_status: a.status,
+        p_account: a.status === 'deposited' ? uuid(a.account_id, 'Choose the bank account it went into.') : null, p_note: text(a.note, 300) });
+    },
+    /**
+     * Owner: this statement line is this cheque clearing — { line_id, id } or, for one not in the register,
+     * { line_id, new: { customer_id, side, number, bank_name, instrument } }. note: needed when the amounts differ.
+     */
+    async chequeClear(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      const line = uuid(a?.line_id, 'Which bank line?');
+      let fresh = null;
+      if (!a?.id) {
+        const n = a?.new || {};
+        if (!BILLS.includes(n.side || 'pakka')) throw bad('Choose Pakka or Kacha.');
+        if ((n.side || 'pakka') === 'kacha') need(caller, 'kacha');
+        const number = String(n.number ?? '').toUpperCase().replace(/\s/g, '');
+        if (!/^[0-9A-Z/-]{1,20}$/.test(number)) throw bad('Type the cheque / DD number.');
+        fresh = { customer_id: uuid(n.customer_id, 'Choose the customer.'), side: n.side || 'pakka', number, bank_name: text(n.bank_name, 40),
+          instrument: n.instrument === 'dd' ? 'dd' : 'cheque' };
+      }
+      return rpc('api_cheque_clear', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: a?.id ? uuid(a.id, 'Which cheque?') : null, p_line: line,
+        p_note: text(a?.note, 200), p_new: fresh });
+    },
+    /** Owner: this line is the cheque coming back — { id, line_id, deposit_line_id?, charge (to the khata; 0 = none), note }. */
+    async chequeReturn(caller, a, key, hash) {
+      need(caller, 'settings', 'money');
+      const charge = a?.charge == null || a.charge === '' ? 0 : Number(a.charge);
+      if (!(charge >= 0 && charge <= 100000)) throw bad('Check the return charges.');
+      return rpc('api_cheque_return', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which cheque?'), p_line: uuid(a?.line_id, 'Which bank line?'),
+        p_deposit_line: a?.deposit_line_id ? uuid(a.deposit_line_id, 'Which deposit line?') : null, p_charge: r2(charge), p_note: text(a?.note, 200) });
     },
 
     async bankMark(caller, a, key, hash) {
@@ -1781,7 +1847,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

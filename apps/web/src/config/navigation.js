@@ -23,6 +23,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'expenses', route: '/expenses', word: 'nav_expenses', icon: 'Receipt', perm: 'expenses' },
   { id: 'money', route: '/money', word: 'nav_money', icon: 'Wallet', perm: 'settings' },
   { id: 'bank', route: '/bank', word: 'nav_bank', icon: 'FileSpreadsheet', perm: 'settings' },
+  { id: 'cheques', route: '/cheques', word: 'nav_cheques', icon: 'ScrollText', perm: 'money' },
   { id: 'review', route: '/review', word: 'nav_review', icon: 'ListChecks', perm: 'money' },
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },

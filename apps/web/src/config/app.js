@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 export const APP = {
   name: 'SRS Trading',          // product name is still open — rename here (and in index.html + public/manifest.webmanifest)
-  version: '0.13.0',
+  version: '0.14.0',
   apiVersion: 1,                // must match the backend "api" function
   languages: [                  // order = order in the language switch
     { id: 'en', label: 'English' },

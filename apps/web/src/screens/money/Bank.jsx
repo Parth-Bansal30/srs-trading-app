@@ -4,7 +4,7 @@
 // owes, bank charges), ALREADY IN THE APP (nothing new is added), PLEASE CHECK (a name or phone in the bank text), NEEDS YOU.
 // Nothing is saved until the owner taps. Choosing once teaches the app ("SHARMA ENGG" → Sharma Engineering).
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { shortNarration, payerKey, readNarration, bankDay } from '@srs/core';
+import { shortNarration, payerKey, readNarration, bankDay, chequeShow } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
@@ -21,6 +21,7 @@ import { EXPENSE_CATEGORIES } from '../../config/options.js';
 import { store } from '../../lib/store.js';
 import { Icon, TopBar, Skeleton, Chip } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
+import { chqName, chqStatus, STATUS_TONE } from '../../ui/money/Cheques.jsx';
 import '../../ui/money/money.css';
 import './money-screens.css';
 
@@ -167,6 +168,7 @@ export function BankStart() {
 // ================================================================ 2. the review
 const GROUPS = [
   { id: 'unknown', word: 'bk_g_needs', tone: 'bad' },
+  { id: 'cheque', word: 'bk_g_cheque', tone: 'accent' },   // 4 Nov 2026 (F5): matched with the register one by one, never "ready"
   { id: 'likely', word: 'bk_g_check', tone: 'warn' },
   { id: 'sure', word: 'bk_g_ready', tone: 'ok' },
   { id: 'link', word: 'bk_g_already', tone: 'neutral' },
@@ -176,6 +178,7 @@ export function BankReview({ account, imp }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   const [edit, setEdit] = useState(null);      // the line being changed
+  const [chq, setChq] = useState(null);        // a cheque line being matched
   const [bulk, setBulk] = useState(null);      // { done, total }
   const [showDone, setShowDone] = useState(false);
   const [accs, setAccs] = useState([]);
@@ -195,7 +198,7 @@ export function BankReview({ account, imp }) {
 
   const rows = d.lines.map((l, i) => ({ l, s: d.suggestions[i] }));
   const open = rows.filter((r) => r.l.status === 'open');
-  const groupOf = (r) => (r.s.doubt ? 'unknown' : r.s.action === 'link' ? 'link' : r.s.confidence === 'sure' ? 'sure' : r.s.confidence === 'likely' ? 'likely' : 'unknown');
+  const groupOf = (r) => (r.s.doubt ? 'unknown' : r.s.cheque ? 'cheque' : r.s.action === 'link' ? 'link' : r.s.confidence === 'sure' ? 'sure' : r.s.confidence === 'likely' ? 'likely' : 'unknown');
   const by = Object.fromEntries(GROUPS.map((g) => [g.id, open.filter((r) => groupOf(r) === g.id)]));
   const done = rows.filter((r) => r.l.status === 'added' || r.l.status === 'linked');
   const skipped = rows.filter((r) => r.l.status === 'skipped');
@@ -221,7 +224,8 @@ export function BankReview({ account, imp }) {
     }
     setBulk(null); toast(bad ? t('bk_bulk_some', n - bad, bad) : t('bk_bulk_done', n)); load();
   };
-  const describe = (s, l) => suggestionText(s, l, cust, sups, accById, d.drawer);
+  const chqById = new Map((d.cheques || []).map((q) => [q.id, q]));
+  const describe = (s, l) => (s.action === 'cheque' ? chequeText(s, chqById) : suggestionText(s, l, cust, sups, accById, d.drawer));
   const appBal = d.app_balance;
   const closing = d.import?.closing;
   const diff = appBal?.balance != null && closing != null ? Math.round((Number(closing) - Number(appBal.balance)) * 100) / 100 : null;
@@ -244,7 +248,7 @@ export function BankReview({ account, imp }) {
             <div class="card">{by[g.id].map((r) => (
               <LineRow r={r} own={d.own} text={describe(r.s, r.l)} busy={run.busy || link.busy || mark.busy || dir.busy || !!bulk}
                 onDir={(isIn) => dir.run({ line_id: r.l.id, money_in: isIn }).then(load).catch(() => {})}
-                onOk={r.s.action ? () => one(r) : null} onChange={() => setEdit(r)}
+                onOk={r.s.action === 'cheque' ? () => setChq(r) : r.s.action ? () => one(r) : null} onChange={() => (r.s.cheque && r.s.cheque.kind !== 'charges' ? setChq(r) : setEdit(r))}
                 onSkip={g.id === 'unknown' ? () => mark.run({ line_id: r.l.id, status: 'skipped', note: null }).then(load).catch(() => {}) : null} />
             ))}</div>
           </section>
@@ -283,11 +287,13 @@ export function BankReview({ account, imp }) {
           <Icon name="CheckCheck" size={20} />{bulk ? t('bk_bulk_going', bulk.done, bulk.total) : t('bk_add_all', readyAll.length)}</button></div>
       )}
       {edit && <LineSheet r={edit} d={d} accs={accs} onClose={() => setEdit(null)} onDone={() => { setEdit(null); toast(t('bk_saved')); load(); }} />}
+      {chq && <ChequeSheet r={chq} d={d} rows={rows} onClose={() => setChq(null)} onOther={() => { const x = chq; setChq(null); setEdit(x); }}
+        onDone={(word) => { setChq(null); toast(t(word)); load(); }} />}
     </>
   );
 }
 
-const REASON_ICON = { remembered: 'Brain', name: 'UserSearch', phone: 'Phone', amount: 'Equal', already: 'Link', already_via: 'Link', words: 'Tag', atm: 'Landmark',
+const REASON_ICON = { cheque_in: 'ScrollText', cheque_return: 'Undo2', cheque_out: 'ScrollText', cheque_out_return: 'Undo2', cheque_charges: 'Receipt', remembered: 'Brain', name: 'UserSearch', phone: 'Phone', amount: 'Equal', already: 'Link', already_via: 'Link', words: 'Tag', atm: 'Landmark',
   cash_deposit: 'Banknote', interest: 'Percent', came_back: 'Undo2', went_back: 'Undo2', near_payment: 'TriangleAlert' };
 function LineRow({ r, text, busy, onOk, onChange, onSkip, own, onDir }) {
   const { l, s } = r;
@@ -314,15 +320,15 @@ function LineRow({ r, text, busy, onOk, onChange, onSkip, own, onDir }) {
           </div>
         ) : <div class="bk-sug unknown"><Icon name="CircleHelp" size={16} /><span>{t(l.amount > 0 ? 'bk_who_paid' : 'bk_what_out')}</span></div>}
         <div class="row bk-acts">
-          {onOk && <button class="btn btn-brand" disabled={busy} onClick={onOk}><Icon name="Check" size={17} stroke={2.6} />{s.action === 'link' ? t('bk_ok_link') : s.action === 'skip' ? t('bk_skip') : t('bk_ok')}</button>}
-          <button class={`btn ${onOk ? 'btn-ghost' : 'btn-brand'}`} disabled={busy} onClick={onChange}><Icon name={onOk ? 'Pencil' : 'ListChecks'} size={16} />{onOk ? t('bk_change') : t('bk_choose_what')}</button>
+          {onOk && <button class="btn btn-brand" disabled={busy} onClick={onOk}><Icon name={s.action === 'cheque' ? 'ScrollText' : 'Check'} size={17} stroke={2.6} />{s.action === 'cheque' ? t('bk_chq_match') : s.action === 'link' ? t('bk_ok_link') : s.action === 'skip' ? t('bk_skip') : t('bk_ok')}</button>}
+          {s.action !== 'cheque' && <button class={`btn ${onOk ? 'btn-ghost' : 'btn-brand'}`} disabled={busy} onClick={onChange}><Icon name={onOk ? 'Pencil' : 'ListChecks'} size={16} />{onOk ? t('bk_change') : t('bk_choose_what')}</button>}
           {onSkip && <button class="btn btn-ghost" disabled={busy} onClick={onSkip}>{t('bk_skip')}</button>}
         </div>
       </div>
     </div>
   );
 }
-const sugIcon = (s) => ({ link: 'Link', payment: 'IndianRupee', refund: 'Undo2', expense: 'Receipt', supplier: 'Truck', move: 'ArrowRightLeft', skip: 'SkipForward' }[s.action] || 'Info');
+const sugIcon = (s) => ({ cheque: 'ScrollText', link: 'Link', payment: 'IndianRupee', refund: 'Undo2', expense: 'Receipt', supplier: 'Truck', move: 'ArrowRightLeft', skip: 'SkipForward' }[s.action] || 'Info');
 function suggestionText(s, l, cust, sups, accs, drawer) {
   const side = (x) => (x === 'kacha' ? ` · ${t('bill_none_short')}` : '');
   switch (s.action) {
@@ -399,6 +405,135 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
       {key && <label class="row bk-remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.currentTarget.checked)} />
         <span>{t('bk_remember', (n.name || n.upi || n.phone || '').toUpperCase())}</span></label>}
       {(run.error || mark.error) && <div class="error">{(run.error || mark.error).message}</div>}
+    </Sheet>
+  );
+}
+
+// ================================================================ 4. a cheque / DD line (4 Nov 2026, plan v2 F5)
+/** "Cheque 004512 · Sharma Steel (in the register)" / "Not in the register" */
+function chequeText(s, byId) {
+  const c = s.cheque;
+  const first = (s.candidates || []).map((x) => byId.get(x.id)).find(Boolean);
+  const what = t(`bk_chq_k_${c.kind}`, c.number ? chequeShow(c.number) : '').replace(/\s+·\s*$/, '');
+  if (first) return `${what} · ${first.direction === 'in' ? first.customer : first.supplier}${s.candidates.length > 1 ? ` ${t('bk_chq_more', s.candidates.length - 1)}` : ''}`;
+  return `${what} · ${t(s.move ? 'bk_chq_in_app' : 'bk_chq_not_reg')}`;
+}
+
+/**
+ * Match a cheque line with the register and confirm. Nothing happens until Confirm: the line and the register cheque
+ * are shown side by side; different amounts need a note. A cheque coming back shows what changes before it is confirmed.
+ */
+function ChequeSheet({ r, d, rows, onClose, onDone, onOther }) {
+  const { l, s } = r;
+  const c = s.cheque;
+  const byId = new Map((d.cheques || []).map((q) => [q.id, q]));
+  const cands = (s.candidates || []).map((x) => ({ ...x, q: byId.get(x.id) })).filter((x) => x.q);
+  const [pick, setPick] = useState(null);          // the register cheque the owner tapped "Match" on
+  const [note, setNote] = useState('');
+  const [charge, setCharge] = useState(false);     // return charges onto the khata: off unless ticked
+  const chargeLine = c.kind === 'return' ? rows.find((x) => x.l.status === 'open' && x.s.cheque?.kind === 'charges' && Math.abs(Date.parse(x.l.day) - Date.parse(l.day)) <= 3 * 86400000) : null;
+  const [chargeAmt, setChargeAmt] = useState(chargeLine ? String(-chargeLine.l.amount) : '');
+  // not in the register (a cheque from a customer): the owner chooses whose it is
+  const [customer, setCustomer] = useState(s.customer_id || null);
+  const [side, setSide] = useState(s.side || 'pakka');
+  const [number, setNumber] = useState(c.number ? chequeShow(c.number) : '');
+  const [q, setQ] = useState('');
+  const clear = useAction('chequeClear');
+  const back = useAction('chequeReturn');
+  const link = useAction('bankLink');
+  const busy = clear.busy || back.busy || link.busy;
+  const err = clear.error || back.error || link.error;
+  const amt = Math.abs(l.amount);
+  const p = pick ? byId.get(pick) : null;
+  const diff = p && Math.abs(Number(p.amount) - amt) > 0.005;
+  const isBack = c.kind === 'return' || c.kind === 'out_return';
+  const depLine = s.deposit_line ? rows.find((x) => x.l.id === s.deposit_line)?.l : null;
+  const fresh = !cands.length && c.kind === 'in';
+  const list = fresh ? d.customers.filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
+
+  const confirm = () => {
+    if (isBack) return back.run({ id: p.id, line_id: l.id, deposit_line_id: p.status !== 'cleared' && depLine ? depLine.id : null,
+      charge: charge && c.kind === 'return' ? Number(chargeAmt) || 0 : 0, note: note || null }).then(() => onDone('bk_chq_returned')).catch(() => {});
+    if (fresh) return clear.run({ line_id: l.id, new: { customer_id: customer, side, number, bank_name: c.bank || null, instrument: c.instrument }, note: note || null })
+      .then(() => onDone('bk_chq_cleared')).catch(() => {});
+    return clear.run({ id: p.id, line_id: l.id, note: note || null }).then(() => onDone('bk_chq_cleared')).catch(() => {});
+  };
+  const ready = isBack ? !!p : fresh ? !!customer && number.trim().length > 0 : !!p && (!diff || note.trim());
+  const who = (x) => (x.direction === 'in' ? x.customer : x.supplier);
+  const effect = () => {
+    if (!p) return null;
+    if (c.kind === 'return') return p.status === 'cleared' ? t('bk_chq_ret_cleared', money(Number(p.amount), false), p.customer) : t('bk_chq_ret_waiting');
+    if (c.kind === 'out_return') return p.expense_id ? t('bk_chq_ret_out', p.supplier) : t('bk_chq_ret_out_none');
+    if (c.kind === 'in') return t('bk_chq_eff_in', money(amt, false), p.customer);
+    return p.expense_id ? t('bk_chq_eff_out', p.supplier) : t('bk_chq_eff_out_new', p.supplier);
+  };
+
+  return (
+    <Sheet open onClose={onClose} title={t(`bk_chq_t_${c.kind}`, money(amt, false))}
+      footer={(cands.length > 0 || fresh) && <button class="btn btn-brand btn-block" disabled={busy || !ready || !online.value} onClick={confirm}>
+        <Icon name="Check" size={18} stroke={2.6} />{isBack ? t('bk_chq_confirm_back') : t('bk_chq_confirm')}</button>}>
+      <div class="muted bk-narr">{fmtDay(l.day)} · {l.narration}{l.ref ? ` · ${l.ref}` : ''}</div>
+      {c.instrument === 'dd' && c.kind === 'in' && <div class="notice tone-neutral" style="font-size:13px;margin-top:8px">{t('bk_chq_dd')}</div>}
+
+      {s.move && !p && c.kind !== 'return' && c.kind !== 'out_return' && (
+        <div class="card pad" style="margin-top:12px">
+          <div class="t" style="font-weight:800">{t('bk_chq_app_t', s.label || '')}</div>
+          <div class="muted" style="font-size:13px;margin:4px 0 10px">{t('bk_chq_app_s')}</div>
+          <button class="btn btn-ghost btn-block" disabled={busy} onClick={() => link.run({ line_id: l.id, src: s.src, ref: s.move }).then(() => onDone('bk_saved')).catch(() => {})}>
+            <Icon name="Link" size={17} />{t('bk_ok_link')}</button>
+        </div>
+      )}
+
+      {cands.length > 0 && <>
+        <div class="lbl" style="margin-top:14px">{t('bk_chq_reg')}</div>
+        <div class="card">{cands.map((x) => (
+          <div class={`li chq-cand ${pick === x.id ? 'on' : ''}`}>
+            <div class="grow" style="min-width:0">
+              <div class="t ellip">{who(x.q)}</div>
+              <div class="s"><span class="num">{chqName(x.q)}</span>{[x.q.bank_name, t(x.q.direction === 'in' ? 'chq_got' : 'chq_given_on', fmtDay(x.q.got_on, false)), t(x.why === 'number' ? 'bk_chq_by_number' : 'bk_chq_by_amount')].filter(Boolean).map((z) => ` · ${z}`).join('')}</div>
+              <div class="row" style="gap:6px;margin-top:4px"><b class="num">{money(Number(x.q.amount), false)}</b><span class={`chip tone-${STATUS_TONE[x.q.status]}`}>{chqStatus(x.q)}</span></div>
+            </div>
+            <button class={`btn ${pick === x.id ? 'btn-brand' : 'btn-ghost'}`} style="min-height:40px" onClick={() => { setPick(pick === x.id ? null : x.id); setNote(''); }}>
+              {pick === x.id ? <><Icon name="Check" size={16} />{t('bk_chq_picked')}</> : t('bk_chq_match')}</button>
+          </div>))}</div>
+      </>}
+
+      {p && (
+        <div class="chq-side">
+          <div><div class="cap">{t('bk_chq_bank_says')}</div><b class="num">{money(amt, false)}</b><span>{c.number ? `${t('bk_chq_no')} ${chequeShow(c.number)}` : t('bk_chq_no_number')}</span><span>{fmtDay(l.day, false)}</span></div>
+          <div><div class="cap">{t('bk_chq_reg_says')}</div><b class="num" style={diff ? 'color:var(--bad)' : ''}>{money(Number(p.amount), false)}</b><span>{t('bk_chq_no')} {chequeShow(p.number)}</span><span>{fmtDay(p.got_on, false)}</span></div>
+        </div>
+      )}
+      {p && <div class={`notice ${isBack ? 'tone-warn' : 'tone-accent'}`} style="font-size:13.5px;margin-top:10px">{effect()}
+        {c.kind === 'return' && p.status !== 'cleared' && depLine && <div style="margin-top:4px">{t('bk_chq_ret_dep', fmtDay(depLine.day, false))}</div>}</div>}
+      {p && diff && !isBack && <><div class="lbl" style="margin-top:12px">{t('bk_chq_why_diff', money(Number(p.amount), false), money(amt, false))}</div>
+        <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('bk_chq_why_ph')} /></>}
+      {p && c.kind === 'return' && (
+        <label class="row bk-remember" style="margin-top:12px"><input type="checkbox" checked={charge} onChange={(e) => setCharge(e.currentTarget.checked)} />
+          <span>{t('bk_chq_charge_tick', p.customer)}</span></label>
+      )}
+      {p && c.kind === 'return' && charge && <div class="field" style="margin-top:8px"><span class="faint">₹</span><input inputmode="decimal" value={chargeAmt} onInput={(e) => setChargeAmt(e.currentTarget.value.replace(/[^\d.]/g, ''))} placeholder="0" /></div>}
+      {p && isBack && <><div class="lbl" style="margin-top:12px">{t('pay_note')}</div>
+        <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('bk_chq_back_ph')} /></>}
+
+      {fresh && <>
+        <div class="notice tone-warn" style="font-size:13.5px;margin-top:12px">{t('bk_chq_none')}</div>
+        <div class="lbl" style="margin-top:12px">{t('bk_chq_pick_cust')}</div>
+        <div class="field"><Icon name="Search" size={16} style="color:var(--ink-3)" /><input value={q} placeholder={t('bk_search_ph')} onInput={(e) => setQ(e.currentTarget.value)} /></div>
+        <div class="card bk-pick">{(customer && !list.some((x) => x.id === customer) ? [d.customers.find((x) => x.id === customer), ...list] : list).filter(Boolean).map((x) => (
+          <button class={`li ${customer === x.id ? 'on' : ''}`} onClick={() => setCustomer(x.id)}>
+            <div class="grow"><div class="t">{x.name}</div><div class="s">{d.dues[x.id]?.pakka || d.dues[x.id]?.kacha ? t('bk_owes', money((d.dues[x.id].pakka || 0) + (d.dues[x.id].kacha || 0), false)) : x.phone || ''}</div></div>
+            <span class={`radio ${customer === x.id ? 'on' : ''}`} /></button>))}</div>
+        <div class="lbl" style="margin-top:12px">{t(c.instrument === 'dd' ? 'chq_number_dd' : 'chq_number')}</div>
+        <div class="field"><input class="num" value={number} maxLength={20} onInput={(e) => setNumber(e.currentTarget.value.replace(/[^0-9A-Za-z/-]/g, '').toUpperCase())} placeholder="004512" /></div>
+        {can('kacha') && <><div class="lbl" style="margin-top:12px">{t('which_account')}</div>
+          <div class="seg"><button class={side === 'pakka' ? 'on' : ''} onClick={() => setSide('pakka')}>{t('bill_gst_short')}</button><button class={side === 'kacha' ? 'on' : ''} onClick={() => setSide('kacha')}>{t('bill_none_short')}</button></div></>}
+        {customer && number && <div class="notice tone-accent" style="font-size:13.5px;margin-top:12px">{t('bk_chq_eff_in', money(amt, false), d.customers.find((x) => x.id === customer)?.name || '')}</div>}
+      </>}
+      {!cands.length && !fresh && <div class="notice tone-warn" style="font-size:13.5px;margin-top:12px">{t(isBack ? (c.kind === 'return' ? 'bk_chq_none_back' : 'bk_chq_none_out_back') : 'bk_chq_none_out')}</div>}
+
+      <button class="btn btn-ghost btn-block" style="margin-top:14px" disabled={busy} onClick={onOther}><Icon name="ListChecks" size={16} />{t('bk_chq_other')}</button>
+      {err && <div class="error">{err.message}</div>}
     </Sheet>
   );
 }

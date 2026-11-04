@@ -7,6 +7,7 @@ import { billLine, billTotals, landedCosts, matchStockItem, guessGrade, guessSha
 import { t } from '../../lib/i18n.js';
 import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
+import { db } from '../../lib/backend.js';
 import { useAction } from '../../lib/action.js';
 import { loadCatalog } from '../../lib/catalog.js';
 import { store } from '../../lib/store.js';
@@ -54,6 +55,7 @@ export function PurchaseNew() {
   const pdfIn = useRef(); const photoIn = useRef();
   // the supplier's GST number: checked by itself (GST data service, or a check from the last 7 days) — 23 Oct 2026
   const [gstSeen, setGstSeen] = useState({});   // gstin → the latest check (api shape) or null
+  const [shopGstin, setShopGstin] = useState(null);   // the shop's own GST number (to check who the bill is made out to)
   const supRow = form?.supplier?.id ? (ctx?.suppliers || []).find((x) => x.id === form.supplier.id) : null;
   const supGstin = (supRow ? supRow.gstin : form?.supplier?.gstin) || '';
   useEffect(() => {
@@ -101,7 +103,8 @@ export function PurchaseNew() {
     f.supplier = known ? { id: known.id, name: known.name, gstin: known.gstin || '', city: known.city || '' } : { id: null, name: sup.name || '', gstin: sup.gstin || '', city: sup.city || '' };
     Object.assign(f, { bill_no: b.bill_no || '', bill_date: b.bill_date || today(), bill_type: b.bill_type || 'pakka',
       freight: b.freight ? String(b.freight) : '', other: b.other ? String(b.other) : '', gst: b.gst ? String(b.gst) : '',
-      round_off: b.round_off ? String(b.round_off) : '', total: b.total != null ? String(b.total) : '', unsure: b.unsure || [], file_key: fileKey, read_by_ai: true });
+      round_off: b.round_off ? String(b.round_off) : '', total: b.total != null ? String(b.total) : '', unsure: b.unsure || [], file_key: fileKey, read_by_ai: true,
+      buyer: b.buyer?.gstin ? b.buyer : null });
     f.lines = (b.lines?.length ? b.lines : [{}]).map((l) => suggest({ ...blankLine(), description: l.description || '', hsn: l.hsn || '',
       qty: l.qty_kg != null ? String(l.qty_kg) : '', rate: l.rate != null ? String(l.rate) : '', amount: l.amount != null ? String(l.amount) : '', unsure: l.unsure || [] }, f.supplier.id));
     return f;
@@ -114,7 +117,11 @@ export function PurchaseNew() {
     try {
       const { mime, data } = await fileToData(fl);
       const r = await call('readPurchaseBill', { mime, data });
-      if (r.ai && r.bill) { setForm(fromReading(r.bill, r.file_key)); setReadMsg({ ok: true }); }
+      if (r.ai && r.bill) {
+        setForm(fromReading(r.bill, r.file_key)); setReadMsg({ ok: true });
+        // a bill made out to another firm (a GST number that is not the shop's): its GST is not the shop's to claim
+        if (r.bill.buyer?.gstin) db.from('companies').select('gstin').maybeSingle().then(({ data }) => setShopGstin(data?.gstin || '')).catch(() => {});
+      }
       else { setForm({ ...blankForm('bill'), file_key: r.file_key }); setReadMsg({ ok: false, why: r.reason || (ctx?.can_read ? 'unreadable' : 'off') }); }
       setStep('form');
     } catch (e) { setErr(e.message); setStep('start'); }
@@ -268,6 +275,9 @@ export function PurchaseNew() {
         {readMsg && <div class={`notice ${readMsg.ok ? 'tone-ok' : 'tone-warn'}`} style="margin-bottom:10px">
           {readMsg.ok ? t('pu_read_ok') : t(readMsg.why === 'daily_limit' ? 'pu_read_limit' : readMsg.why === 'off' ? 'pu_read_off' : 'pu_read_fail')}</div>}
         {readMsg?.ok && <div class="notice tone-warn" style="margin-bottom:10px;font-weight:600">{t('pu_unsure')}</div>}
+        {f.buyer?.gstin && shopGstin != null && f.buyer.gstin !== shopGstin && (
+          <div class="notice tone-bad" style="margin-bottom:10px;font-weight:600">{shopGstin
+            ? t('pu_other_buyer', f.buyer.name || f.buyer.gstin, f.buyer.gstin, shopGstin) : t('pu_buyer_no_gst', f.buyer.name || f.buyer.gstin, f.buyer.gstin)}</div>)}
         {file && file.mime?.startsWith('image/') && <a href={file.url} target="_blank" rel="noopener"><img src={file.url} class="pu-thumb" alt="" /></a>}
 
         {isBill && (

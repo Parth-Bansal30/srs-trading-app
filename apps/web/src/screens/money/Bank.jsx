@@ -65,6 +65,12 @@ export function BankStart() {
     adds_up: read.adds_up, lines: read.lines }).then((r) => { store.set(LAST, acc); go(`/bank/${acc}/${r.import_id}`); }).catch(() => {});
   const account = accs?.find((a) => a.id === acc);
   const openLines = (waiting?.lines || []).length;
+  // a statement that covers days uploaded before: those entries are not saved again
+  const before = read?.from && read?.to ? (waiting?.imports || []).filter((i) => i.from && i.to && i.from <= read.to && i.to >= read.from) : [];
+  const minOf = (xs) => xs.reduce((m, x) => (x < m ? x : m)); const maxOf = (xs) => xs.reduce((m, x) => (x > m ? x : m));
+  const overlapFrom = before.length ? maxOf([read.from, minOf(before.map((i) => i.from))]) : null;
+  const overlapTo = before.length ? minOf([read.to, maxOf(before.map((i) => i.to))]) : null;
+  const oldFrom = read?.from && waiting?.start && read.from < waiting.start ? waiting.start : null;
 
   return (
     <>
@@ -123,6 +129,10 @@ export function BankStart() {
               <div style="margin-top:10px">{read.adds_up
                 ? <Chip tone="ok"><Icon name="CircleCheck" size={14} />{t('bk_adds_up')}</Chip>
                 : <div class="notice tone-warn" style="font-size:13px">{read.problems?.length ? t('bk_not_adds', read.problems.length) : t('bk_no_balance')}</div>}</div>
+              {before.length > 0 && <div class="notice tone-ok bk-twice" style="font-size:13px;margin-top:8px"><Icon name="ShieldCheck" size={16} />
+                <span>{t('bk_overlap', `${fmtDay(overlapFrom, false)} – ${fmtDay(overlapTo)}`)}</span></div>}
+              {oldFrom && <div class="notice tone-warn bk-twice" style="font-size:13px;margin-top:8px"><Icon name="History" size={16} />
+                <span>{read.to < oldFrom ? t('bk_all_old', fmtDay(oldFrom)) : t('bk_some_old', fmtDay(oldFrom))}</span></div>}
             </div>
           )}
         </>}
@@ -172,11 +182,11 @@ export function BankReview({ account, imp }) {
   /** Do what the suggestion says (✓). remember = teach the app this payer (when it isn't already remembered). */
   const accept = async (r, { silent = false } = {}) => {
     const { l, s } = r;
-    const key = s.reason !== 'remembered' ? payerKey(l.narration) : null;
-    if (s.action === 'link') return link.run({ line_id: l.id, src: s.src, ref: s.move });
+    const key = s.reason !== 'remembered' ? payerKey(l.narration, d.own) : null;
+    if (s.action === 'link') return link.run({ line_id: l.id, src: s.src, ref: s.move }).then((x) => { if (!silent && x?.moved_from) toast(t('bk_moved_upi', s.via || '')); return x; });
     if (s.action === 'skip') return mark.run({ line_id: l.id, status: 'skipped', note: t(`bk_why_${s.reason}`) !== `bk_why_${s.reason}` ? t(`bk_why_${s.reason}`) : null, remember_key: key });
     return run.run({ line_id: l.id, amount: l.amount, action: s.action, customer_id: s.customer_id, side: s.side || 'pakka', category: s.category,
-      supplier_id: s.supplier_id, to: s.to, method: s.method, remember_key: key, paid_to: s.action === 'expense' ? readNarration(l.narration).name : null })
+      supplier_id: s.supplier_id, to: s.to, method: s.method, remember_key: key, paid_to: s.action === 'expense' ? readNarration(l.narration, d.own).name : null })
       .then((x) => { if (!silent) toast(t('bk_added')); return x; });
   };
   const one = (r) => accept(r).then(load).catch(() => {});
@@ -201,7 +211,8 @@ export function BankReview({ account, imp }) {
         <div class="card pad bk-head">
           <div class="bk-count"><b class="num">{done.length + skipped.length}</b><span>/ {rows.length}</span></div>
           <div class="grow"><div class="t" style="font-weight:800">{open.length ? t('bk_left', open.length) : t('bk_all_done')}</div>
-            <div class="muted" style="font-size:13px">{d.import?.seen > 0 ? t('bk_seen_before', d.import.seen) : t('bk_nothing_saved')}</div></div>
+            <div class="muted" style="font-size:13px">{d.import?.seen > 0 ? t('bk_seen_before', d.import.seen) : open.length ? t('bk_nothing_saved') : ''}</div>
+            {d.import?.old > 0 && <div class="muted" style="font-size:13px;margin-top:2px">{t('bk_old_kept', d.import.old, fmtDay(d.start))}</div>}</div>
         </div>
 
         {GROUPS.map((g) => by[g.id].length > 0 && (
@@ -209,7 +220,7 @@ export function BankReview({ account, imp }) {
             <div class="sec"><h3><span class={`dot tone-${g.tone}`} />{t(g.word)} <span class="faint">({by[g.id].length})</span></h3></div>
             <div class="faint bk-sec-s">{t(`${g.word}_s`)}</div>
             <div class="card">{by[g.id].map((r) => (
-              <LineRow r={r} text={describe(r.s, r.l)} busy={run.busy || link.busy || mark.busy || !!bulk}
+              <LineRow r={r} own={d.own} text={describe(r.s, r.l)} busy={run.busy || link.busy || mark.busy || !!bulk}
                 onOk={r.s.action ? () => one(r) : null} onChange={() => setEdit(r)}
                 onSkip={g.id === 'unknown' ? () => mark.run({ line_id: r.l.id, status: 'skipped', note: null }).then(load).catch(() => {}) : null} />
             ))}</div>
@@ -222,7 +233,7 @@ export function BankReview({ account, imp }) {
             {showDone && <div class="card">{[...done, ...skipped].map((r) => (
               <div class="li bk-line done">
                 <div class={`iconbox tone-${r.l.status === 'skipped' ? 'neutral' : 'ok'}`}><Icon name={r.l.status === 'skipped' ? 'SkipForward' : 'Check'} size={18} /></div>
-                <div class="grow" style="min-width:0"><div class="t ellip">{shortNarration(r.l.narration)}</div>
+                <div class="grow" style="min-width:0"><div class="t ellip">{shortNarration(r.l.narration, d.own)}</div>
                   <div class="s">{fmtDay(r.l.day, false)} · {t(`bk_st_${r.l.status}`)}{r.l.note ? ` · ${r.l.note}` : ''}</div></div>
                 <div style="text-align:right"><b class="num" style={`color:${r.l.amount > 0 ? 'var(--ok)' : 'var(--bad)'}`}>{r.l.amount > 0 ? '+' : '−'}{money(Math.abs(r.l.amount), false)}</b>
                   {r.l.status !== 'added' && <button class="link" style="min-height:0;font-size:12.5px" onClick={() => mark.run({ line_id: r.l.id, status: 'open' }).then(load).catch(() => {})}>{t('bk_reopen')}</button>}</div>
@@ -253,8 +264,9 @@ export function BankReview({ account, imp }) {
   );
 }
 
-const REASON_ICON = { remembered: 'Brain', name: 'UserSearch', phone: 'Phone', amount: 'Equal', already: 'Link', words: 'Tag', atm: 'Landmark', cash_deposit: 'Banknote', interest: 'Percent' };
-function LineRow({ r, text, busy, onOk, onChange, onSkip }) {
+const REASON_ICON = { remembered: 'Brain', name: 'UserSearch', phone: 'Phone', amount: 'Equal', already: 'Link', already_via: 'Link', words: 'Tag', atm: 'Landmark',
+  cash_deposit: 'Banknote', interest: 'Percent', came_back: 'Undo2', went_back: 'Undo2', near_payment: 'TriangleAlert' };
+function LineRow({ r, text, busy, onOk, onChange, onSkip, own }) {
   const { l, s } = r;
   const [more, setMore] = useState(false);
   return (
@@ -262,7 +274,7 @@ function LineRow({ r, text, busy, onOk, onChange, onSkip }) {
       <div class="grow" style="min-width:0">
         <div class="row" style="gap:8px;align-items:flex-start">
           <button class="grow bk-txt" onClick={() => setMore(!more)}>
-            <div class="t">{more ? l.narration : shortNarration(l.narration)}</div>
+            <div class="t">{more ? l.narration : shortNarration(l.narration, own)}</div>
             <div class="s">{fmtDay(l.day, false)}{l.ref ? ` · ${l.ref}` : ''}</div>
           </button>
           <b class="num bk-amt" style={`color:${l.amount > 0 ? 'var(--ok)' : 'var(--bad)'}`}>{l.amount > 0 ? '+' : '−'}{money(Math.abs(l.amount), false)}</b>
@@ -274,7 +286,7 @@ function LineRow({ r, text, busy, onOk, onChange, onSkip }) {
           </div>
         ) : <div class="bk-sug unknown"><Icon name="CircleHelp" size={16} /><span>{t(l.amount > 0 ? 'bk_who_paid' : 'bk_what_out')}</span></div>}
         <div class="row bk-acts">
-          {onOk && <button class="btn btn-brand" disabled={busy} onClick={onOk}><Icon name="Check" size={17} stroke={2.6} />{s.action === 'link' ? t('bk_ok_link') : t('bk_ok')}</button>}
+          {onOk && <button class="btn btn-brand" disabled={busy} onClick={onOk}><Icon name="Check" size={17} stroke={2.6} />{s.action === 'link' ? t('bk_ok_link') : s.action === 'skip' ? t('bk_skip') : t('bk_ok')}</button>}
           <button class={`btn ${onOk ? 'btn-ghost' : 'btn-brand'}`} disabled={busy} onClick={onChange}><Icon name={onOk ? 'Pencil' : 'ListChecks'} size={16} />{onOk ? t('bk_change') : t('bk_choose_what')}</button>
           {onSkip && <button class="btn btn-ghost" disabled={busy} onClick={onSkip}>{t('bk_skip')}</button>}
         </div>
@@ -286,13 +298,13 @@ const sugIcon = (s) => ({ link: 'Link', payment: 'IndianRupee', refund: 'Undo2',
 function suggestionText(s, l, cust, sups, accs, drawer) {
   const side = (x) => (x === 'kacha' ? ` · ${t('bill_none_short')}` : '');
   switch (s.action) {
-    case 'link': return t('bk_same_as', `${s.label || t(`bk_src_${s.src}`)}`);
+    case 'link': return t('bk_same_as', `${s.label || t(`bk_src_${s.src}`)}`) + (s.via ? ` · ${t('bk_in_acc', s.via)}` : '');
     case 'payment': return `${cust.get(s.customer_id)?.name || '?'} · ${t('bk_khata')}${side(s.side)}`;
     case 'refund': return `${t('bk_gave_back')} · ${cust.get(s.customer_id)?.name || '?'}`;
     case 'expense': return `${t('bk_expense')} · ${t(catOf(s.category).word)}`;
     case 'supplier': return `${t('bk_paid_supplier')} · ${sups.get(s.supplier_id)?.name || '?'}`;
     case 'move': { const other = accs.get(s.to || drawer); const nm = other ? accName(other) : t('acc_drawer'); return l.amount < 0 ? t('bk_move_out', nm) : t('bk_move_in', nm); }
-    case 'skip': return t('bk_not_shop');
+    case 'skip': return s.reason === 'came_back' ? t('bk_came_back') : t('bk_not_shop');
     default: return '';
   }
 }
@@ -311,11 +323,11 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
   const [to, setTo] = useState(s.to || d.drawer);
   const [note, setNote] = useState('');
   const [q, setQ] = useState('');
-  const key = payerKey(l.narration);
+  const key = payerKey(l.narration, d.own);
   const [remember, setRemember] = useState(!!key);
   const run = useAction('bankRun');
   const mark = useAction('bankMark');
-  const n = readNarration(l.narration);
+  const n = readNarration(l.narration, d.own);
   const list = (kind === 'refund' ? d.customers.filter((c) => (d.dues[c.id]?.credit || 0) > 0) : d.customers)
     .filter((c) => !q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase()) || String(c.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '') || '§'));
   const shown = (customer && !list.slice(0, 8).some((c) => c.id === customer) ? [d.customers.find((c) => c.id === customer), ...list] : list).filter(Boolean).slice(0, 8);

@@ -27,6 +27,7 @@ declare
   d1 date := today - 6; d2 date := today - 5; d3 date := today - 1; d4 date := today;
   drawer uuid; sbi uuid; r jsonb; imp uuid; lines jsonb; l1 uuid; l2 uuid; l3 uuid; l4 uuid; l5 uuid; pid uuid; d jsonb; n int; x record;
 begin
+  update public.companies set created_at = now() - interval '90 days' where id = co;   -- lines before the app started are skipped (21_bank_twice)
   update public.people set perms = perms || '{"expenses":true,"stock":true}'::jsonb where id = owner;
   select id into drawer from public.money_accounts where company_id = co and is_drawer;
   sbi := (public.api_save_account(owner, gen_random_uuid(), 'h', '{"name":"SBI current","kind":"bank"}') ->> 'id')::uuid;
@@ -111,6 +112,7 @@ begin
   assert (app.account_balance(co, sbi, now()) ->> 'balance')::numeric = 116680.30, 'SBI now = the statement''s closing (nothing after it)';
 
   -- ---------- 8. too old ----------
+  update public.companies set created_at = now() - interval '700 days' where id = co;   -- (a line from before the app would be skipped on saving)
   r := public.api_bank_save(owner, gen_random_uuid(), 'h', jsonb_build_object('account_id', sbi, 'lines',
          jsonb_build_array(jsonb_build_object('day', today - 500, 'amount', 50, 'narration', 'old', 'fingerprint', 'old line 500 days ago'))));
   select id into l1 from public.bank_lines where fingerprint = 'old line 500 days ago';

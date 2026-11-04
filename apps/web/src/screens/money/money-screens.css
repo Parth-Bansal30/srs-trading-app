@@ -53,3 +53,7 @@
 .bk-pick .li.on{background:var(--accent-soft)}
 .bk-remember{gap:10px;margin-top:14px;font-size:14px;font-weight:600;align-items:flex-start}
 .bk-remember input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
+
+/* a statement that covers days uploaded before / days before the app (3 Nov 2026) */
+.bk-twice { display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; }
+.bk-twice svg { flex: none; margin-top: 1px; }

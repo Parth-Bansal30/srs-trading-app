@@ -183,11 +183,14 @@ const BILL_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 export const BILL_PROMPT = `You read purchase bills (tax invoices) of steel bought by a steel trading shop in India.
 Return ONLY one JSON object, no other text, in exactly this shape:
 {"supplier":{"name":string|null,"gstin":string|null,"city":string|null,"phone":string|null},
- "bill_no":string|null,"bill_date":"YYYY-MM-DD"|null,"has_gst":boolean,
+ "buyer":{"name":string|null,"gstin":string|null},
+ "bill_no":string|null,"eway_bill_no":string|null,"bill_date":"YYYY-MM-DD"|null,"has_gst":boolean,
  "lines":[{"description":string,"hsn":string|null,"qty":number|null,"qty_unit":"kg"|"mt"|"qtl","rate":number|null,"rate_unit":"kg"|"mt"|"qtl","amount":number|null}],
  "freight":number|null,"other_charges":number|null,"cgst":number|null,"sgst":number|null,"igst":number|null,"round_off":number|null,"total":number|null,
  "unsure":[string]}
 Rules: one entry in "lines" per item row of the bill (material lines only; freight, loading, packing, TCS go into freight / other_charges).
+A file may hold the same invoice more than once (ORIGINAL FOR RECIPIENT / DUPLICATE FOR TRANSPORTER / TRIPLICATE copies) and an e-way bill page:
+read the invoice ONCE — never add the lines of a copy or of the e-way bill again. "buyer" is the "Bill to" party (not "Ship to" / consignee).
 Numbers without commas or ₹. qty_unit / rate_unit as printed (MT or tonne = "mt", quintal = "qtl", kg = "kg"). The supplier is the SELLER, not the buyer.
 Dates as YYYY-MM-DD. If something is missing or unreadable use null. Never guess numbers: put the field in "unsure" instead,
 e.g. "lines.0.qty", "bill_no", "total". Do not add any field that is not on the bill.`;
@@ -214,6 +217,8 @@ export function normalizeBill(core, x) {
     supplier: { name: x?.supplier?.name ? String(x.supplier.name).slice(0, 120) : null, gstin: x?.supplier?.gstin ? String(x.supplier.gstin).replace(/\s/g, '').toUpperCase().slice(0, 15) : null,
       city: x?.supplier?.city ? String(x.supplier.city).slice(0, 80) : null, phone: x?.supplier?.phone ? String(x.supplier.phone).slice(0, 30) : null },
     bill_no: x?.bill_no ? String(x.bill_no).slice(0, 40) : null,
+    buyer: { name: x?.buyer?.name ? String(x.buyer.name).slice(0, 120) : null, gstin: x?.buyer?.gstin ? String(x.buyer.gstin).replace(/\s/g, '').toUpperCase().slice(0, 15) : null },
+    eway_bill_no: x?.eway_bill_no ? String(x.eway_bill_no).replace(/\s/g, '').slice(0, 20) : null,
     bill_date: /^\d{4}-\d{2}-\d{2}$/.test(String(x?.bill_date || '')) ? x.bill_date : null,
     bill_type: x?.has_gst === false && gst === 0 ? 'kacha' : 'pakka',
     freight: n(x?.freight) || 0, other: n(x?.other_charges) || 0, gst: Math.round(gst * 100) / 100, round_off: n(x?.round_off) || 0, total: n(x?.total),
@@ -801,9 +806,11 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         if (l.due > 0 || l.adv > 0) dues[c.id] = { pakka: l.bySide.pakka?.due || 0, kacha: l.bySide.kacha?.due || 0, credit: l.adv,
           creditBySide: Object.fromEntries(sides.map((sd) => [sd, l.bySide[sd]?.adv || 0])) };
       }
+      // the shop's own name is in most NEFT lines next to the payer's — never taken as the payer
+      const own = core.ownNames(d.lines, d.shop);
       const suggestions = core.suggestBankLines({ lines: d.lines, moves: d.moves, customers: raw.customers, suppliers: d.suppliers,
-        payers: d.payers, dues, drawer: d.drawer });
-      return { ...d, customers: raw.customers.filter((c) => c.active !== false).map((c) => ({ id: c.id, name: c.name, phone: c.phone })), dues, suggestions };
+        payers: d.payers, dues, drawer: d.drawer, own });
+      return { ...d, own, customers: raw.customers.filter((c) => c.active !== false).map((c) => ({ id: c.id, name: c.name, phone: c.phone })), dues, suggestions };
     },
 
     /**

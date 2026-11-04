@@ -41,8 +41,9 @@ async function pdfLines(file, password) {
     if (err?.name === 'PasswordException') throw new StatementError(err.code === 2 ? 'password_wrong' : 'password');
     throw new StatementError('pdf_bad');
   }
+  if (doc.numPages > 200) throw new StatementError('pdf_long');
   const out = [];
-  for (let p = 1; p <= Math.min(doc.numPages, 60); p++) {
+  for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const tc = await page.getTextContent();
     // group the text pieces into lines by their height on the page (a little tolerance), left to right
@@ -56,7 +57,7 @@ async function pdfLines(file, password) {
       row.items.push({ str: s, x, w: it.width || 0 });
     }
     rows.sort((a, b) => b.y - a.y);
-    for (const r of rows) out.push({ items: mergeClose(r.items.sort((a, b) => a.x - b.x)) });
+    for (const r of rows) out.push({ page: p, items: mergeClose(r.items.sort((a, b) => a.x - b.x)) });   // the page: its top is not an entry's text
   }
   if (!out.length) throw new StatementError('pdf_scan');   // a photo / scan: no text inside
   return out;

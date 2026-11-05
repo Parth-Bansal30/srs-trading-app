@@ -47,7 +47,7 @@ declare
   bank uuid; drawer uuid; b1 uuid; b2 uuid; b3 uuid; b4 uuid; e1 uuid; e2 uuid; e3 uuid; r jsonb; op uuid; item uuid; nid uuid; d jsonb; n int;
   today date := (now() at time zone 'Asia/Kolkata')::date;
 begin
-  update public.companies set created_at = now() - interval '60 days' where id = co;
+  update public.companies set created_at = '2025-04-01' where id = co;   -- (bills up to 200 days old are normal bills here)
   update public.people set perms = perms || '{"stock":true,"delete":true,"expenses":true}'::jsonb where id = owner;
   update public.people set perms = perms || '{"stock":true}'::jsonb where id = sales;   -- stock, no kacha, not the owner
   select id into drawer from public.money_accounts where company_id = co and is_drawer;

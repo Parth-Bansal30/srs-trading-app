@@ -19,7 +19,8 @@ import { online } from '../../lib/net.js';
 import './pickup.css';
 
 const coreItem = (i) => ({ shape: i.shape, unit: i.unit, d: i.dims, rows: i.order_item_lengths.map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
-  rate: Number(i.sell_rate), cutRate: Number(i.cut_rate), density: Number(i.density), aw: i.actual_weight == null ? null : Number(i.actual_weight) });
+  rate: Number(i.sell_rate), cutRate: Number(i.cut_rate), density: Number(i.density), aw: i.actual_weight == null ? null : Number(i.actual_weight),
+  ...(i.by_weight ? { byWeight: true } : {}) });
 
 export function Pickup({ id }) {
   const [o, setO] = useState(undefined);
@@ -142,7 +143,7 @@ function Weighed({ o, onAgain }) {
           <b class="num" style={far ? 'color:var(--bad)' : ''}>{kg(i.actual_weight)}</b>
         </div>
       ))}
-      {online.value && <button class="link" style={`margin-top:4px;${anyFar ? 'color:var(--bad)' : ''}`} onClick={onAgain}>
+      {online.value && !o.direct_purchase_id && <button class="link" style={`margin-top:4px;${anyFar ? 'color:var(--bad)' : ''}`} onClick={onAgain}>
         <Icon name="RotateCcw" size={15} />{t('weigh_again_q')} {t('weigh_again')}</button>}
     </div>
   );

@@ -9,6 +9,14 @@ import { unitOf, toMm, inchOf } from './units.js';
  * Returns null when the item is incomplete.
  */
 export function calcItem(item, mode, { minInch = 0 } = {}) {
+  // sold by the weight on the supplier's bill (a delivery straight to a customer, 5 Nov 2026): weight × rate, no cutting
+  if (item.byWeight) {
+    const w = Number(item.aw);
+    if (!(w > 0)) return null;
+    const rate = Number(item.rate) || 0;
+    const mat = r2(w * rate);
+    return { rows: [], est: w, weight: w, useAct: true, mat, cut: 0, total: mat, sides: [], area: 0, cuts: 0, pcs: 0, rate, cr: 0, L: 0, byWeight: true };
+  }
   const sh = SHAPES[item.shape];
   if (!sh) return null;
   const u = unitOf(item);

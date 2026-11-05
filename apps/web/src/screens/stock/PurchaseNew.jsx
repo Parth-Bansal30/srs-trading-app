@@ -23,6 +23,7 @@ import { fileToData } from '../../lib/files.js';
 import { online } from '../../lib/net.js';
 import { GstNote, gstFromCheck, gstFromSupplier, setGstService } from '../../ui/stock/GstStatus.jsx';
 import '../order/order.css';
+import { fmtDay } from '../../lib/docs.js';
 import './stock.css';
 
 const DRAFT = 'draft:purchase';
@@ -35,7 +36,8 @@ const key = () => Math.random().toString(36).slice(2);
 const blankLine = () => ({ key: key(), description: '', hsn: '', qty: '', qtyUnit: 'kg', rate: '', rateUnit: 'kg', amount: '', material_id: null, shape: null, label: '', unsure: [], how: null });
 const today = () => businessDate(new Date().toISOString(), company.value?.timezone || 'Asia/Kolkata');
 const blankForm = (kind = 'bill') => ({ kind, supplier: { id: null, name: '', gstin: '', city: '' }, bill_no: '', bill_date: today(), bill_type: 'pakka',
-  lines: [blankLine()], freight: '', other: '', gst: '', round_off: '', total: '', pay_status: 'to_pay', note: '', unsure: [], file_key: null, read_by_ai: false });
+  lines: [blankLine()], freight: '', other: '', gst: '', round_off: '', total: '', pay_status: 'to_pay', note: '', unsure: [], file_key: null, read_by_ai: false,
+  effect: 'stock', old_effect: null });   // what the bill changes (5 Nov 2026, F7): stock | direct; old bills: opening | accounted | reference
 
 export function PurchaseNew() {
   const opening = route.value.query.kind === 'opening';
@@ -192,6 +194,21 @@ export function PurchaseNew() {
   // ---------- 3. saved ----------
   if (step === 'done') {
     const nNew = (result?.lines || []).filter((l) => l.new).length;
+    const eff = result?.stock_effect || 'stock';
+    if (eff !== 'stock') {
+      return (
+        <><TopBar title={t('pu_done_t')} /><div class="page">
+          <div class="card pad" style="text-align:center">
+            <div class="pu-done"><Icon name="Check" size={30} stroke={3} /></div>
+            <div style="font-weight:800;font-size:19px;margin-top:10px">{t('pu_done_t')}</div>
+            <div class="muted" style="margin-top:4px">{t(`pu_done_eff_${eff}`)}</div>
+          </div>
+          {eff === 'direct' && <button class="btn btn-accent btn-block" style="margin-top:12px;min-height:54px" onClick={() => go(`/direct/${result.purchase_id}`)}>
+            <Icon name="ReceiptText" size={19} />{t('dd_make')}</button>}
+          <button class="btn btn-ghost btn-block" style="margin-top:10px" onClick={() => go(`/purchase/${result.purchase_id}`)}><Icon name="FileText" size={18} />{t('pu_open_bill')}</button>
+        </div></>
+      );
+    }
     return (
       <><TopBar title={t('pu_done_t')} /><div class="page">
         <div class="card pad" style="text-align:center">
@@ -236,8 +253,11 @@ export function PurchaseNew() {
   const sayOk = (c) => { if (c.type.startsWith('hsn')) rememberOk(c.key); set({ okChecks: [...(f.okChecks || []), c.key] }); };
   const lineChecks = (i) => checks.filter((c) => c.line === i);
   const hsnActions = (c, i) => c.suggest.map((x, k) => [`${t('chk_use', x.hsn)} · ${x.words}`, () => setLine(i, { hsn: x.hsn }), k === 0]);
+  const isOld = isBill && ctx.start && f.bill_date && f.bill_date < ctx.start;   // before the shop started the app
+  const effect = isOld ? f.old_effect : isBill ? f.effect : 'stock';
   const problems = () => {
     if (isBill && !sup.id && !sup.name.trim()) return t('pu_need_from');
+    if (isOld && !f.old_effect) return t('pu_old_need', fmtDay(ctx.start));
     for (let i = 0; i < f.lines.length; i++) {
       const c = calc.lines[i];
       if (!f.lines[i].material_id) return t('pu_need_line', i + 1, t('pu_need_grade'));
@@ -254,7 +274,8 @@ export function PurchaseNew() {
       kind: f.kind, bill_type: isBill ? f.bill_type : 'kacha', bill_no: isBill ? f.bill_no.trim() || null : null, bill_date: f.bill_date,
       supplier: isBill ? (sup.id ? { id: sup.id } : { name: sup.name.trim(), gstin: sup.gstin.trim() || null, city: sup.city.trim() || null }) : null,
       freight: isBill ? Number(f.freight || 0) : 0, other: isBill ? Number(f.other || 0) : 0, gst: isBill && f.bill_type === 'pakka' ? Number(f.gst || 0) : 0,
-      round_off: isBill ? Number(f.round_off || 0) : 0, total: calc.tot.total, pay_status: f.pay_status, note: f.note || null,
+      round_off: isBill ? Number(f.round_off || 0) : 0, total: calc.tot.total, pay_status: effect === 'stock' || effect === 'direct' ? f.pay_status : 'to_pay', note: f.note || null,
+      stock_effect: effect || undefined,
       file_key: f.file_key, read_by_ai: f.read_by_ai,
       lines: f.lines.map((l, i) => ({ description: l.description.trim() || `${matOf(l.material_id)?.code || ''} ${l.shape || ''}`.trim(),
         hsn: cleanHsn(l.hsn), qty_kg: calc.lines[i].kg, rate: calc.lines[i].rateKg, amount: calc.lines[i].amount, material_id: l.material_id, shape: l.shape,
@@ -376,15 +397,38 @@ export function PurchaseNew() {
               <div class={`notice ${calc.tot.ok ? 'tone-ok' : 'tone-warn'}`} style="margin-top:12px">
                 {calc.tot.ok ? t('pu_adds_up') : t('pu_differs', money(calc.tot.computed, true), money(calc.tot.total, true), money(calc.tot.diff, true))}</div>
               {checks.filter((c) => c.type === 'duplicate').map((c) => <CheckNote c={c} tz={tz} onOk={() => sayOk(c)} />)}
+              {isOld ? (
+                <div class="pu-eff-old">
+                  <div class="notice tone-warn" style="font-size:13.5px"><b>{t('pu_old_t', fmtDay(ctx.start))}</b><div style="margin-top:2px;font-weight:600">{t('pu_old_s')}</div></div>
+                  {['opening', 'accounted', 'reference'].map((e) => (
+                    <button class={`pu-eff ${f.old_effect === e ? 'on' : ''}`} onClick={() => set({ old_effect: e })}>
+                      <span class={`radio ${f.old_effect === e ? 'on' : ''}`} /><span class="grow"><b>{t(`pu_eff_${e}`)}</b><span class="s">{t(`pu_eff_${e}_s`)}</span></span></button>))}
+                </div>
+              ) : <>
+                <div class="lbl" style="margin-top:12px">{t('pu_where_q')}</div>
+                <div class="seg"><button class={f.effect === 'stock' ? 'on' : ''} onClick={() => set({ effect: 'stock' })}><Icon name="Boxes" size={15} />{t('pu_eff_stock')}</button>
+                  <button class={f.effect === 'direct' ? 'on' : ''} onClick={() => set({ effect: 'direct' })}><Icon name="Truck" size={15} />{t('pu_eff_direct')}</button></div>
+                {f.effect === 'direct' && <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{t('pu_eff_direct_s')}</div>}
+              </>}
+              {(effect === 'stock' || effect === 'direct') && <>
               <div class="lbl" style="margin-top:12px">{t('pu_paid_q')}</div>
               <div class="seg"><button class={f.pay_status === 'to_pay' ? 'on' : ''} onClick={() => set({ pay_status: 'to_pay' })}>{t('pu_to_pay')} {money(calc.tot.total, false)}</button>
                 <button class={f.pay_status === 'paid' ? 'on' : ''} onClick={() => set({ pay_status: 'paid' })}>{t('pu_paid_outside')}</button></div>
               <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{f.pay_status === 'paid' ? t('pu_paid_outside_s') : t('pu_to_pay_s')}</div>
+              </>}
             </div>
           </>
         )}
         <div class="lbl" style="margin-top:14px">{t('pu_note')}</div>
         <input class="textarea" value={f.note} onInput={(e) => set({ note: e.currentTarget.value })} />
+        <div class="card pad pu-changes">
+          <div class="lbl" style="margin:0 0 6px">{t('pu_changes_t')}</div>
+          <div class="row" style="gap:8px"><Icon name="Boxes" size={16} /><span>{effect === 'stock' || effect === 'opening' || !isBill ? t('pu_ch_stock', kgTxt(calc.kg)) : t('pu_ch_no_stock')}</span></div>
+          {isBill && <div class="row" style="gap:8px;margin-top:4px"><Icon name="Truck" size={16} /><span>{(effect === 'stock' || effect === 'direct') && f.pay_status !== 'paid' ? t('pu_ch_due', money(calc.tot.total, false)) : t('pu_ch_no_due')}</span></div>}
+          {effect === 'direct' && <div class="row" style="gap:8px;margin-top:4px"><Icon name="ReceiptText" size={16} /><span>{t('pu_ch_slip')}</span></div>}
+          {effect === 'accounted' && <div class="row" style="gap:8px;margin-top:4px"><Icon name="FileSpreadsheet" size={16} /><span>{t('pu_ch_register')}</span></div>}
+          {!effect && isOld && <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:4px">{t('pu_ch_choose')}</div>}
+        </div>
         {err && <div class="error" style="margin-top:12px">{err}</div>}
         {diff && <div class="card pad" style="margin-top:12px;border-color:var(--warn)">
           <div style="font-weight:700">{t('pu_differs', money(diff.computed, true), money(diff.total, true), money(diff.diff, true))}</div>
@@ -392,7 +436,7 @@ export function PurchaseNew() {
         </div>}
       </div>
       <div class="quotebar">
-        <button class="btn btn-accent btn-block" disabled={save.busy} onClick={() => (allChecks.length && !problems() ? setReview(true) : submit(false))}><Icon name="Boxes" size={19} stroke={2.3} />{save.busy ? '…' : t('pu_save', kgTxt(calc.kg))}</button>
+        <button class="btn btn-accent btn-block" disabled={save.busy} onClick={() => (allChecks.length && !problems() ? setReview(true) : submit(false))}><Icon name="Boxes" size={19} stroke={2.3} />{save.busy ? '…' : effect === 'stock' || effect === 'opening' || !isBill ? t('pu_save', kgTxt(calc.kg)) : t('pu_save_bill')}</button>
       </div>
       <Sheet open={review} onClose={() => setReview(false)} title={allChecks.length === 1 ? t('chk_sheet_t1') : t('chk_sheet_t', allChecks.length)}
         footer={<><button class="btn btn-ghost btn-block" onClick={() => setReview(false)}>{t('chk_back')}</button>

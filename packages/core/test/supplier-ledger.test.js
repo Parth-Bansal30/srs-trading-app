@@ -70,3 +70,12 @@ test('the supplier total = opening + bills − payments − notes, line by line'
   assert.equal(l.check, 0);
   assert.deepEqual(l.lines.map((x) => x.kind), ['opening', 'bill', 'payment', 'bill', 'payment', 'note_rate']);
 });
+
+test('an item sold by the weight on the bill (direct delivery): weight × rate, no cutting, same with sizes or not', async () => {
+  const { calcItem, orderTotals } = await import('../src/pricing.js');
+  const c = calcItem({ byWeight: true, shape: 'round', d: ['40'], rows: [], rate: 74, cutRate: 4, density: 7850, aw: 1985.5 }, 'est');
+  assert.equal(c.weight, 1985.5); assert.equal(c.mat, 146927); assert.equal(c.cut, 0);
+  assert.equal(calcItem({ byWeight: true, rate: 74, aw: null }, 'final'), null, 'no weight, no price');
+  const t = orderTotals({ items: [{ byWeight: true, rate: 74, aw: 1000 }] }, 'final', { bill: 'pakka', gstPct: 18 });
+  assert.equal(t.base, 74000); assert.equal(t.gst, 13320); assert.equal(t.total, 87320);
+});

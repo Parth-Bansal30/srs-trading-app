@@ -1114,3 +1114,24 @@ test('supplier khata: dues from the records; a payment\'s split is checked; the 
   await ops.saveExpense(stock, { kind: 'supplier', supplier_id: S, amount: 1000, account_id: B, purchase_ids: [B] }, 'k', 'h');
   assert.equal('allocations' in calls.findLast((c) => c.fn === 'api_save_expense').args.p, false, 'just ticked: the database splits oldest first');
 });
+
+test('direct delivery slip: sold by the bill\'s weight, no cutting, no stock; the bill\'s cancel passes the slip choice', async () => {
+  const P = '66666666-7777-8888-9999-aaaaaaaaaaaa';
+  const M = 'a1000000-0000-4000-8000-000000000001';
+  const calls = [];
+  const rpc = async (fn, args) => { calls.push({ fn, args });
+    if (fn === 'api_pricing_context') return { materials: [{ id: M, code: 'EN8', family: 'carbon', active: true, sell_rate: 70, cut_rate: 3 }], settings: { min_inch: 1 }, timezone: 'Asia/Kolkata' };
+    return { ok: true }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  await rejects(ops.directSlip(owner, { purchase_id: P, customer_id: CUST, lines: [{ material_id: M, shape: 'round', size: '', kg: 2000, rate: 74 }] }, 'k', 'h'), 400);
+  await rejects(ops.directSlip(owner, { purchase_id: P, customer_id: CUST, lines: [{ material_id: M, shape: 'round', size: '40', kg: 0, rate: 74 }] }, 'k', 'h'), 400);
+  await ops.directSlip(owner, { purchase_id: P, customer_id: CUST, lines: [{ material_id: M, shape: 'round', size: '40', kg: '2000', rate: '74' }] }, 'k', 'h');
+  const it = calls.findLast((c) => c.fn === 'api_direct_slip').args.p_items[0];
+  assert.deepEqual([it.by_weight, it.kg, it.sell_rate, it.cut_rate, it.stock_item_id, it.dims], [true, 2000, 74, 0, null, ['40']]);
+  assert.deepEqual(it.lengths, [{ len: '', pcs: 1, cuts: 0 }]);
+  assert.equal(core.calcItem({ ...coreItemFromDb({ ...it, actual_weight: 2000, by_weight: true, lengths: it.lengths }) }, 'final').mat, 148000);
+  await ops.purchaseCancel(owner, { id: P, reason: 'wrong', slip: 'keep' }, 'k', 'h');
+  assert.equal(calls.findLast((c) => c.fn === 'api_purchase_cancel').args.p_slip, 'keep');
+  await ops.purchaseCancel(owner, { id: P, reason: 'wrong', slip: 'maybe' }, 'k', 'h');
+  assert.equal(calls.findLast((c) => c.fn === 'api_purchase_cancel').args.p_slip, null, 'anything else = not answered (the database asks)');
+});

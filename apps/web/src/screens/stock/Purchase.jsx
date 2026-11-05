@@ -20,6 +20,7 @@ export function Purchase({ id }) {
   const [err, setErr] = useState(null);
   const [cancel, setCancel] = useState(false);
   const [why, setWhy] = useState('');
+  const [slipChoice, setSlipChoice] = useState(null);   // a direct delivery's slip on cancel: cancel | keep (asked, never assumed)
   const paid = useAction('purchasePaid');
   const cx = useAction('purchaseCancel');
   const tz = company.value?.timezone;
@@ -62,6 +63,14 @@ export function Purchase({ id }) {
             {paid.error && <div class="error">{paid.error.message}</div>}
           </div>
         )}
+        {!opening && p.stock_effect && p.stock_effect !== 'stock' && (
+          <div class={`notice ${p.stock_effect === 'direct' ? 'tone-accent' : 'tone-neutral'}`} style="margin-top:10px;font-size:13.5px">
+            <b>{t(`pu_eff_${p.stock_effect}`)}</b> · {t(`pu_eff_${p.stock_effect}_s`)}
+            {p.stock_effect === 'direct' && p.status === 'saved' && (d.direct_order
+              ? <button class="btn btn-ghost btn-block" style="margin-top:8px" onClick={() => go(`/slip/${d.direct_order.id}`)}><Icon name="ReceiptText" size={17} />{t('dd_slip_of', d.direct_order.slip_no, d.direct_order.customer)}</button>
+              : <button class="btn btn-accent btn-block" style="margin-top:8px" onClick={() => go(`/direct/${p.id}`)}><Icon name="ReceiptText" size={17} />{t('dd_make')}</button>)}
+          </div>
+        )}
         {d.file_url && <a class="btn btn-ghost btn-block" style="margin-top:10px" href={d.file_url} target="_blank" rel="noopener"><Icon name="FileText" size={18} />{t('pu_open_file')}</a>}
 
         <div class="sec"><h3>{t('pu_lines')}</h3><span class="faint num" style="font-size:13px;font-weight:600">{kgTxt(p.total_kg)}</span></div>
@@ -87,15 +96,21 @@ export function Purchase({ id }) {
         </div>
         {p.note && <div class="card pad muted" style="margin-top:10px;font-size:14px">{p.note}</div>}
         {p.status === 'saved' && (
-          <button class="link" style="margin-top:14px;color:var(--bad)" onClick={() => { setWhy(''); setCancel(true); }}><Icon name="Undo2" size={16} />{t('pu_cancel')}</button>
+          <button class="link" style="margin-top:14px;color:var(--bad)" onClick={() => { setWhy(''); setSlipChoice(null); setCancel(true); }}><Icon name="Undo2" size={16} />{t('pu_cancel')}</button>
         )}
       </div>
       <Sheet open={cancel} onClose={() => setCancel(false)} title={t('pu_cancel')}
-        footer={d.can_cancel && <button class="btn btn-block" style="background:var(--bad);color:#fff" disabled={cx.busy || !why.trim()}
-          onClick={() => cx.run({ id: p.id, reason: why }).then(() => { setCancel(false); forgetStock(); toast(t('pu_cancelled')); load(); }).catch(() => {})}>{t('pu_cancel')}</button>}>
+        footer={d.can_cancel && <button class="btn btn-block" style="background:var(--bad);color:#fff" disabled={cx.busy || !why.trim() || (d.direct_order && !slipChoice)}
+          onClick={() => cx.run({ id: p.id, reason: why, slip: d.direct_order ? slipChoice : undefined }).then(() => { setCancel(false); forgetStock(); toast(t('pu_cancelled')); load(); }).catch(() => {})}>{t('pu_cancel')}</button>}>
         {d.can_cancel ? <>
-          <div class="muted" style="font-size:14.5px;line-height:1.45;margin-bottom:12px">{t('pu_cancel_s')}</div>
+          <div class="muted" style="font-size:14.5px;line-height:1.45;margin-bottom:12px">{t(p.stock_effect === 'stock' || p.stock_effect === 'opening' || !p.stock_effect ? 'pu_cancel_s' : 'pu_cancel_s_nostock')}</div>
           <input class="textarea" value={why} onInput={(e) => setWhy(e.currentTarget.value)} placeholder={t('pu_cancel_ph')} autofocus />
+          {d.direct_order && <>
+            <div class="notice tone-warn" style="margin-top:12px;font-size:13.5px">{t('dd_cancel_q', d.direct_order.slip_no, d.direct_order.customer)}</div>
+            <div class="seg" style="margin-top:8px"><button class={slipChoice === 'cancel' ? 'on' : ''} disabled={d.direct_order.status === 'done'} onClick={() => setSlipChoice('cancel')}>{t('dd_cancel_too')}</button>
+              <button class={slipChoice === 'keep' ? 'on' : ''} onClick={() => setSlipChoice('keep')}>{t('dd_keep_slip')}</button></div>
+            {d.direct_order.status === 'done' && <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{t('dd_cancel_done')}</div>}
+          </>}
           {cx.error && <div class="error" style="margin-top:10px">{cx.error.message}</div>}
         </> : <div class="notice tone-warn">{t('pu_cancel_no')}</div>}
       </Sheet>

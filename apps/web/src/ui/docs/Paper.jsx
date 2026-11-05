@@ -16,9 +16,10 @@ const sizeText = (it) => {
   const d = (it.dims || []).slice(0, SHAPES[it.shape]?.dims.length || 1);
   return `${it.shape === 'round' ? 'Ø ' : ''}${d.join(' × ')}${unit(it.unit)}`;
 };
-const lengthRows = (it, l) => (SHAPES[it.shape]?.len
-  ? it.lengths.map((r) => `${r.len}${unit(it.unit)} × ${r.pcs}`)
-  : [`${it.pcs} ${tIn(l, 'pcs')}`]);
+const lengthRows = (it, l) => (it.by_weight ? [tIn(l, 'by_weight')]   // a direct delivery: sold by the bill's weight
+  : SHAPES[it.shape]?.len
+    ? it.lengths.map((r) => `${r.len}${unit(it.unit)} × ${r.pcs}`)
+    : [`${it.pcs} ${tIn(l, 'pcs')}`]);
 // a payment split across accounts shows its modes, e.g. "Cash + Bank" (never an account name)
 const modeWord = (l, mode) => String(mode || '').split('+').map((x) => PAY_METHODS.find((m) => m.id === x)).filter(Boolean).map((m) => tIn(l, m.word)).join(' + ') || null;
 const payLabel = (l, p, tz) => {

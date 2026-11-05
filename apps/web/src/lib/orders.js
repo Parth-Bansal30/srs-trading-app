@@ -8,10 +8,10 @@ import { outbox } from './offline/outbox.js';
 import { localOrder, patchOrder } from './offline/overlay.js';
 
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
-const ORDER = 'id,slip_no,internal_no,status,bill_type,customer_id,created_at,accepted_at,weighed_at,done_at,cancelled_at,cancel_reason,deleted_at,deleted_by,delete_reason,deleted_from,pay_mode,in_khata,gst_pct,kacha_pct,total_weight,base_amount,material_amount,cutting_amount,gst_amount,total_amount,pricing_rules';
+const ORDER = 'id,direct_purchase_id,slip_no,internal_no,status,bill_type,customer_id,created_at,accepted_at,weighed_at,done_at,cancelled_at,cancel_reason,deleted_at,deleted_by,delete_reason,deleted_from,pay_mode,in_khata,gst_pct,kacha_pct,total_weight,base_amount,material_amount,cutting_amount,gst_amount,total_amount,pricing_rules';
 
 export async function loadOrder(id) {
-  const o = await q(db.from('orders').select(`${ORDER},customers(id,name,phone),order_items(id,position,material_id,grade_code,shape,unit,dims,sell_rate,cut_rate,density,special_rate,actual_weight,weigh_batch_id,stock_item_id,order_item_lengths(position,len,pcs,cuts)),payments(id,amount,mode,kind,note,received_at,reverses_payment_id,from_payment_id,payment_parts(account_id,amount,method,money_accounts(name,is_drawer)))`).eq('id', id).maybeSingle());
+  const o = await q(db.from('orders').select(`${ORDER},customers(id,name,phone),order_items(id,position,material_id,grade_code,shape,unit,dims,sell_rate,cut_rate,density,special_rate,actual_weight,weigh_batch_id,stock_item_id,by_weight,order_item_lengths(position,len,pcs,cuts)),payments(id,amount,mode,kind,note,received_at,reverses_payment_id,from_payment_id,payment_parts(account_id,amount,method,money_accounts(name,is_drawer)))`).eq('id', id).maybeSingle());
   if (!o) return null;
   o.order_items.sort((a, b) => a.position - b.position).forEach((i) => i.order_item_lengths.sort((a, b) => a.position - b.position));
   o.payments.sort((a, b) => new Date(a.received_at) - new Date(b.received_at));
@@ -47,6 +47,7 @@ export const shapeName = (s) => t(SHAPE_LOOK[s]?.word || s);
 export const unitTxt = (u) => (u === 'in' ? '"' : ' mm');
 export const dimText = (it) => `${(it.dims || it.d || []).slice(0, SHAPES[it.shape]?.dims.length || 1).join(' × ')}${unitTxt(it.unit)}`;
 export const lengthsText = (it) => {
+  if (it.by_weight) return t('by_weight');   // a direct delivery: sold by the bill's weight (5 Nov 2026)
   const rows = it.order_item_lengths || it.lengths || [];
   if (!SHAPES[it.shape]?.len) return `${rows.reduce((a, r) => a + Number(r.pcs), 0)} ${t('pcs')}`;
   return rows.map((r) => `${r.len}${unitTxt(it.unit).trim()} × ${r.pcs}`).join(', ');
@@ -58,7 +59,7 @@ export function slipText(o, { shop, showWeight = true, tz }) {
   const c = o.customers || {};
   let s = `*${shop}* — ${t('order_slip')} #${o.slip_no}\n${t('date')}: ${shortDate(o.done_at || o.created_at, tz)}\n${t('customer')}: ${c.name}${c.phone ? ` (${c.phone})` : ''}\n\n`;
   o.order_items.forEach((it, i) => {
-    s += `${i + 1}. ${it.grade_code} ${shapeName(it.shape)} ${dimText(it)} — ${lengthsText(it)} — ${totalPcs(it)} ${t('pcs')}${showWeight && it.actual_weight ? ` — ${kg(it.actual_weight)}` : ''}\n`;
+    s += `${i + 1}. ${it.grade_code} ${shapeName(it.shape)} ${dimText(it)} — ${lengthsText(it)}${it.by_weight ? '' : ` — ${totalPcs(it)} ${t('pcs')}`}${(showWeight || it.by_weight) && it.actual_weight ? ` — ${kg(it.actual_weight)}` : ''}\n`;
   });
   if (o.status === 'done') {
     s += `\n${t('material')}: ${money(o.material_amount, true)}\n${t('cutting')}: ${money(o.cutting_amount, true)}`;

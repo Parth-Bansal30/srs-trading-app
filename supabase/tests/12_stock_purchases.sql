@@ -28,6 +28,8 @@ declare
   it4 uuid := 'a4000000-0000-0000-0000-000000000004';
   bill jsonb; r jsonb; s75 uuid; s78 uuid; s8 uuid; sup uuid; p1 uuid; p2 uuid; n int; kg numeric;
 begin
+  -- (5 Nov 2026, F7: bills from before the shop started the app need a choice — this shop started long ago)
+  update public.companies set created_at = '2025-04-01' where id = '11111111-1111-1111-1111-111111111111';
   assert (app.role_preset('owner') ->> 'stock')::boolean and not (app.role_preset('sales') ? 'stock'), 'owners have "stock"';
   update public.people set perms = perms || '{"stock":true,"delete":true}'::jsonb where id = owner;
 

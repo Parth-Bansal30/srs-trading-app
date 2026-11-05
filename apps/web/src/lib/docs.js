@@ -137,9 +137,10 @@ export function slipText(doc, url) {
   const unit = (u) => (u === 'in' ? '"' : ' mm');
   const items = s.items.flatMap((it) => {
     const size = `${it.shape === 'round' ? 'Ø' : ''}${(it.dims || []).filter((x) => x !== '' && x != null).join('×')}${unit(it.unit)}`;
-    const lens = it.lengths.length && it.lengths[0].len != null && it.lengths[0].len !== ''
-      ? it.lengths.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ')
-      : `${it.pcs} ${tIn(l, 'pcs')}`;
+    const lens = it.by_weight ? tIn(l, 'by_weight')
+      : it.lengths.length && it.lengths[0].len != null && it.lengths[0].len !== ''
+        ? it.lengths.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ')
+        : `${it.pcs} ${tIn(l, 'pcs')}`;
     return [`${it.grade} ${size}${it.hsn ? ` HSN ${it.hsn}` : ''}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : '')];
   });
   const lines = [[tIn(l, 'material'), s.material], [tIn(l, 'cutting'), s.cutting], ...(s.gst ? [[tIn(l, 'gst_line', s.gst_pct), s.gst_amount]] : [])];

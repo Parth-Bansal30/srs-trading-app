@@ -6,6 +6,8 @@ declare
   en24 uuid := 'a1000000-0000-0000-0000-000000000002';
   r jsonb; h jsonb;
 begin
+  -- (5 Nov 2026, F7: bills from before the shop started the app need a choice — this shop started long ago)
+  update public.companies set created_at = '2025-04-01' where id = '11111111-1111-1111-1111-111111111111';
   update public.people set perms = perms || '{"stock":true}'::jsonb where id = owner;
   perform public.api_save_purchase(owner, gen_random_uuid(), 'h', jsonb_build_object('kind', 'bill', 'bill_no', 'C-1', 'bill_date', current_date - 3, 'bill_type', 'pakka',
     'supplier', jsonb_build_object('name', 'Check Steels'), 'freight', 0, 'gst', 0, 'total', 15600,

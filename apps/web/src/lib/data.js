@@ -18,8 +18,9 @@ export async function loadToday({ perms, tz }) {
       out.sales = { total: sum(), pakka: sum('pakka'), kacha: sum('kacha'),
         nPakka: rows.filter((r) => r.bill_type === 'pakka').length, nKacha: rows.filter((r) => r.bill_type === 'kacha').length };
     }));
-    jobs.push(q(db.from('orders').select('status').in('status', ['estimate', 'accepted', 'weighed'])).then((rows) => {
+    jobs.push(q(db.from('orders').select('status,direct_purchase_id').in('status', ['estimate', 'accepted', 'weighed'])).then((rows) => {
       out.counts.estimates = rows.filter((r) => r.status === 'estimate').length;
+      out.counts.directWaiting = rows.filter((r) => r.status === 'weighed' && r.direct_purchase_id).length;   // direct deliveries to finish (F7)
       out.counts.readyForPickup = rows.filter((r) => r.status === 'weighed').length;
       out.counts.accepted = rows.filter((r) => r.status === 'accepted').length;
     }));

@@ -55,6 +55,7 @@ export const ADD = [
 export const NEEDS = [
   { id: 'review', count: 'review', word: 'need_review', one: 'need_review_1', icon: 'ListChecks', tone: 'warn', route: '/review', perm: 'money' },
   { id: 'weigh', count: 'toWeigh', word: 'need_weigh', one: 'need_weigh_1', icon: 'Scale', tone: 'accent', route: '/weigh', perm: 'weigh' },
+  { id: 'direct', count: 'directWaiting', word: 'need_direct', icon: 'Truck', tone: 'accent', route: '/slips?stage=weighed', perm: 'money' },
   { id: 'pickup', count: 'readyForPickup', word: 'need_pickup', icon: 'PackageCheck', tone: 'ok', route: '/slips?stage=weighed', perm: 'money' },
   { id: 'suplate', count: 'supplierLate', word: 'need_sup_late', icon: 'Truck', tone: 'bad', route: '/suppliers', perm: 'stock' },
   { id: 'remind', count: 'reminders', word: 'need_remind', icon: 'BellRing', tone: 'bad', route: '/reminders', perm: 'khata' },
@@ -62,4 +63,4 @@ export const NEEDS = [
 ];
 
 // Screens that use the whole screen (their own bottom buttons), so the bottom bar hides.
-export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/', '/start', '/purchases/new'];
+export const FULL_SCREEN = ['/new', '/pickup/', '/weigh/', '/start', '/purchases/new', '/direct/'];   // full screens: no tab bar over their save button

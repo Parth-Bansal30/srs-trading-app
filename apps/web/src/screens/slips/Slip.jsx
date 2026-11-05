@@ -81,8 +81,9 @@ export function Slip({ id }) {
     return { materialId: it.material_id, shape: it.shape, kg: Number(it.actual_weight) || (c ? c.est : 0) };
   };
   // a weight very different from the item's size (26 Oct 2026: 180 typed for 18.0)
-  const farOf = (it) => it.actual_weight != null && weightCheck(needOf({ ...it, actual_weight: null }).kg, Number(it.actual_weight))?.level === 'far';
-  const reweigh = net && o.status === 'weighed' && (can('weigh') || can('money'));
+  const farOf = (it) => !it.by_weight && it.actual_weight != null && weightCheck(needOf({ ...it, actual_weight: null }).kg, Number(it.actual_weight))?.level === 'far';
+  const direct = !!o.direct_purchase_id;   // a delivery straight to a customer (5 Nov 2026): no weighing, no stock
+  const reweigh = net && !direct && o.status === 'weighed' && (can('weigh') || can('money'));
   const pickItem = pickFor && o.order_items.find((i) => i.id === pickFor);
   const due = o.status === 'done' ? Math.max(0, r2(Number(o.total_amount) - o.paid)) : 0;
 
@@ -94,6 +95,13 @@ export function Slip({ id }) {
           {menu.length > 0 && <button class="round" onClick={() => setSheet('menu')} aria-label={t('slip_more')}><Icon name="EllipsisVertical" size={20} stroke={2.2} /></button>}
         </div>} />
       <div class="page" style="padding-bottom:calc(var(--tabbar-h) + 150px)">
+        {direct && (
+          <div class="notice tone-accent row" style="gap:10px;align-items:flex-start;margin-bottom:10px;font-size:13.5px">
+            <Icon name="Truck" size={18} />
+            <span class="grow"><b>{t('dd_banner')}</b><span style="display:block;font-weight:600;margin-top:2px">{t('dd_banner_s')}</span></span>
+            {can('stock') && <button class="link" style="min-height:0" onClick={() => go(`/purchase/${o.direct_purchase_id}`)}>{t('dd_open_bill')}</button>}
+          </div>
+        )}
         {justDone && (
           <div class="done-banner">
             <div class="ic"><Icon name="Check" size={26} stroke={3} /></div>
@@ -138,7 +146,7 @@ export function Slip({ id }) {
               <div class="iconbox tone-neutral num" style="font-weight:800">{i + 1}</div>
               <div class="grow">
                 <div class="t">{it.grade_code} · {shapeName(it.shape)} {dimText(it)}</div>
-                <div class="s num">{lengthsText(it)} · {totalPcs(it)} {t('pcs')}</div>
+                <div class="s num">{lengthsText(it)}{it.by_weight ? '' : ` · ${totalPcs(it)} ${t('pcs')}`}</div>
               </div>
               <div style="text-align:right">
                 {it.actual_weight ? <div class="num" style={`font-weight:700${farOf(it) ? ';color:var(--bad)' : ''}`}>{kg(it.actual_weight)}</div> : <span class="faint" style="font-size:13px">{t('waiting_weight')}</span>}
@@ -208,6 +216,7 @@ export function Slip({ id }) {
           {net && ['accepted', 'weighed'].includes(o.status) && can('money') && o.advance > 0 && <button class="link" onClick={() => setSheet('adjust')}>{t('act_adjust')}</button>}
           {net && o.status === 'done' && extra > 0 && can('delete') && <button class="link" onClick={() => setSheet('adjust')}>{t('act_return_extra')} ({money(extra)})</button>}
           {reweigh && <button class="link" onClick={() => setSheet('reweigh')}><Icon name="RotateCcw" size={15} />{t('weigh_again')}</button>}
+          {net && direct && o.status === 'weighed' && can('money') && can('new') && <button class="link" onClick={() => setSheet('dweights')}><Icon name="Scale" size={15} />{t('dd_change_kg')}</button>}
           {net && ['accepted', 'weighed'].includes(o.status) && can('new') && <button class="link" style="color:var(--bad)" onClick={() => setSheet('cancel')}>{t('act_cancel')}</button>}
           {!net && !local && ['accepted', 'weighed', 'done'].includes(o.status) && <span class="faint" style="font-size:12.5px">{t('off_more_later')}</span>}
         </div>
@@ -215,6 +224,7 @@ export function Slip({ id }) {
 
       {fix && <TransferSheet open={!!fix} preset={fix} onClose={() => setFix(null)} onDone={() => { setFix(null); toast(t('fix_acc_done')); }} />}
       {sheet === 'quote' && <QuoteSheet o={o} onClose={() => setSheet(null)} />}
+      {sheet === 'dweights' && <DirectWeights o={o} onClose={() => setSheet(null)} onDone={() => { setSheet(null); toast(t('done_ok')); load(); }} />}
       <WeighAgainSheet o={sheet === 'reweigh' ? o : null} onClose={() => setSheet(null)} onDone={() => { setSheet(null); can('weigh') ? go(`/weigh/${o.id}`) : load(); }} />
       <AcceptSheet open={sheet === 'accept'} o={o} onClose={() => setSheet(null)} onDone={() => done(t('accepted_msg', o.slip_no))} />
       <AdvanceSheet open={sheet === 'advance'} o={o} onClose={() => setSheet(null)} onDone={() => done()} />
@@ -335,6 +345,26 @@ function CancelSheet({ open, o, onClose, onDone, onAdjust }) {
         <input class="textarea" value={reason} onInput={(e) => setReason(e.currentTarget.value)} placeholder={t('cancel_reason_ph')} autofocus />
       </>}
       <Err a={a} />
+    </Sheet>
+  );
+}
+
+/** A direct slip's weights from the bill, corrected before it is finished (owner / money people). */
+function DirectWeights({ o, onClose, onDone }) {
+  const [w, setW] = useState(Object.fromEntries(o.order_items.map((i) => [i.id, String(Number(i.actual_weight || 0))])));
+  const a = useAction('directWeights');
+  const ok = Object.values(w).every((v) => Number(v) > 0);
+  return (
+    <Sheet open onClose={onClose} title={t('dd_change_kg')}
+      footer={<button class="btn btn-brand btn-block" disabled={a.busy || !ok} onClick={() => a.run({ order_id: o.id, weights: Object.fromEntries(Object.entries(w).map(([k, v]) => [k, Number(v)])) }).then(onDone).catch(() => {})}>
+        <Icon name="Check" size={18} stroke={2.6} />{t('save')}</button>}>
+      <div class="muted" style="font-size:13.5px;margin-bottom:10px">{t('dd_change_kg_s')}</div>
+      {o.order_items.map((i) => (
+        <div class="row" style="gap:10px;margin-top:8px;align-items:center">
+          <span class="grow" style="font-weight:700">{i.grade_code} · {shapeName(i.shape)} {dimText(i)}</span>
+          <div class="field num" style="width:140px"><input inputmode="decimal" value={w[i.id]} onInput={(e) => setW({ ...w, [i.id]: e.currentTarget.value.replace(/[^\d.]/g, '') })} /><span class="faint">kg</span></div>
+        </div>))}
+      {a.error && <div class="error">{a.error.message}</div>}
     </Sheet>
   );
 }

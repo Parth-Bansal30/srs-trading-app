@@ -48,6 +48,7 @@ import { BankStart, BankReview } from './screens/money/Bank.jsx';
 import { Review } from './screens/review/Review.jsx';
 import { ChequeList } from './screens/money/ChequeList.jsx';
 import { SupplierKhata } from './screens/stock/SupplierKhata.jsx';
+import { DirectSlip } from './screens/stock/DirectSlip.jsx';
 import { Suppliers } from './screens/stock/Suppliers.jsx';
 import { Waiting } from './screens/Waiting.jsx';
 import { OfflineBar } from './ui/OfflineBar.jsx';
@@ -95,6 +96,7 @@ const SCREENS = {
   '/bank/:account/:imp': ({ account, imp }) => <BankReview account={account} imp={imp} key={`${account}/${imp}`} />,
   '/suppliers': () => <Suppliers />,
   '/supplier/:id': ({ id }) => <SupplierKhata id={id} key={id} />,
+  '/direct/:id': ({ id }) => <DirectSlip id={id} key={id} />,
   '/waiting': () => <Waiting />,
   '/search': () => <Search />,
 };

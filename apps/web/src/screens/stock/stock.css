@@ -58,3 +58,15 @@
 .sup-total .faint{font-size:12.5px;font-weight:700}
 .sup-total b{font-size:22px;font-weight:800;letter-spacing:-.02em}
 .sk-line .t{font-size:14.5px}
+
+/* what a bill changes / direct deliveries (5 Nov 2026, F7) */
+.pu-changes{margin-top:12px;font-size:14px;font-weight:600}
+.pu-eff-old{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.pu-eff{display:flex;gap:10px;align-items:flex-start;text-align:left;padding:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink)}
+.pu-eff.on{border-color:var(--accent);background:var(--accent-soft)}
+.pu-eff .s{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin-top:2px}
+.pu-eff .radio{margin-top:2px}
+.dd-shapes{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.dd-shapes button{min-height:36px;padding:0 10px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:13px}
+.dd-shapes button.on{border-color:var(--accent);background:var(--accent-soft)}
+.dd-eff{margin-top:6px;font-size:14px;font-weight:600}

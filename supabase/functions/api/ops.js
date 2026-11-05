@@ -185,6 +185,7 @@ export function coreItemFromDb(i) {
     rows: (i.lengths || []).map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
     rate: Number(i.sell_rate ?? 0), cutRate: Number(i.cut_rate ?? 0), density: Number(i.density),
     aw: i.actual_weight == null ? null : Number(i.actual_weight),
+    ...(i.by_weight ? { byWeight: true } : {}),   // a direct delivery's item: sold by the bill's weight (5 Nov 2026)
   };
 }
 
@@ -1244,8 +1245,9 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
           total_weight: raw.show_weight !== false ? Number(o.total_weight) : null,
           items: (raw.items || []).map((i) => ({
             grade: i.grade, shape: i.shape, unit: i.unit, dims: i.dims,
-            lengths: (i.lengths || []).map((l) => ({ len: l.len, pcs: Number(l.pcs) })),
-            pcs: (i.lengths || []).reduce((x, l) => x + Number(l.pcs), 0),
+            lengths: i.by_weight ? [] : (i.lengths || []).map((l) => ({ len: l.len, pcs: Number(l.pcs) })),
+            pcs: i.by_weight ? null : (i.lengths || []).reduce((x, l) => x + Number(l.pcs), 0),
+            by_weight: !!i.by_weight,
             weight: raw.show_weight !== false && i.weight != null ? Number(i.weight) : null,
             hsn: gst && i.hsn ? String(i.hsn) : null, // GST slips only, from the stock the item came from
           })),
@@ -1382,7 +1384,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const weighed = (raw.weighed || []).map((w) => {
         const c = core.calcItem({ shape: w.shape, unit: w.unit, d: w.dims, rows: (w.lengths || []).map((l) => ({ len: l.len ?? '', pcs: l.pcs, cuts: l.cuts ?? '' })),
           rate: 0, cutRate: 0, density: Number(w.density) }, 'est', { minInch: w.min_inch ?? raw.settings.min_inch ?? 1 });
-        return { slipNo: w.slip_no, grade: w.grade, expected: c ? c.est : 0, actual: Number(w.actual) };
+        return { slipNo: w.slip_no, grade: w.grade, expected: c ? c.est : Number(w.actual), actual: Number(w.actual) };   // (no size: sold by weight)
       });
       const summary = core.daySummary({
         orders: (raw.orders || []).map((o) => ({ id: o.id, slipNo: o.slip_no, customer: o.customer, bill: o.bill, total: Number(o.total), weight: Number(o.weight || 0),
@@ -1610,8 +1612,56 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         // a bill file can only be one this company uploaded
         file_key: typeof b.file_key === 'string' && b.file_key.startsWith(`${caller.company_id}/`) ? b.file_key.slice(0, 200) : null,
         read_by_ai: !!b.read_by_ai, note: text(b.note),
+        // what it changes (5 Nov 2026, F7): stock | direct (straight to a customer) | opening | accounted | reference (old bills)
+        stock_effect: ['stock', 'direct', 'opening', 'accounted', 'reference'].includes(b.stock_effect) ? b.stock_effect : (kind === 'opening' ? 'stock' : b.stock_effect ? 'x' : 'stock'),
         lines: lines.map((l, i) => ({ ...l, freight_share: shares[i].share })),
       } });
+    },
+
+    /**
+     * The customer's slip for a delivery straight to a customer (5 Nov 2026, F7): { purchase_id, customer_id, lines:
+     * [{ material_id, shape, unit, size (as on the bill), kg, rate }] }. Sold by the bill's weight; no weighing, no stock.
+     */
+    async directSlip(caller, a, key, hash) {
+      need(caller, 'new'); need(caller, 'money'); need(caller, 'stock');
+      const purchase = uuid(a?.purchase_id, 'Which bill?');
+      const customer = uuid(a?.customer_id, 'Choose the customer.');
+      const lines = Array.isArray(a?.lines) ? a.lines : [];
+      if (!lines.length || lines.length > 100) throw bad('Add the steel.');
+      const ctx = await pricingContext(caller, customer, lines);
+      const mats = new Map((ctx.materials || []).map((m) => [m.id, m]));
+      const familyDensity = { ...core.DEFAULT_FAMILY_DENSITY, ...(ctx.settings.family_density || {}) };
+      const items = lines.map((l, i) => {
+        const n = i + 1;
+        const m = mats.get(l?.material_id);
+        if (!m) throw bad(`Line ${n}: choose a grade from your list.`);
+        const sh = core.SHAPES[l.shape];
+        if (!sh) throw bad(`Line ${n}: choose the shape.`);
+        const unit = l.unit === 'in' ? 'in' : 'mm';
+        const size = (Array.isArray(l.size) ? l.size : [l.size]).slice(0, sh.dims.length).map((v) => String(v ?? '').trim());
+        while (size.length < sh.dims.length) size.push('');
+        if (size.some((v) => !v || v.length > 20)) throw bad(`Line ${n}: write the size as on the bill.`);
+        const kg = Number(l.kg);
+        if (!(kg > 0 && kg <= 1e7)) throw bad(`Line ${n}: enter the weight from the bill.`);
+        const rate = rateValue(l.rate, `rate for line ${n}`);
+        const density = m.density_override != null ? Number(m.density_override) : Number(familyDensity[m.family]);
+        return { material_id: m.id, grade_code: m.code, shape: l.shape, unit, dims: size, sell_rate: rate, cut_rate: 0, density, special_rate: false,
+          stock_item_id: null, by_weight: true, kg: Math.round(kg * 1000) / 1000, lengths: [{ len: '', pcs: 1, cuts: 0 }] };
+      });
+      return rpc('api_direct_slip', { p_caller: caller.id, p_key: key, p_hash: hash, p_purchase: purchase, p_customer: customer, p_rules: pricingRules(ctx), p_items: items });
+    },
+    /** A direct slip's weights corrected before it is finished: { order_id, weights: { item_id: kg } }. */
+    async directWeights(caller, a, key, hash) {
+      need(caller, 'new'); need(caller, 'money');
+      const w = a?.weights && typeof a.weights === 'object' ? a.weights : {};
+      const out = {};
+      for (const [id, v] of Object.entries(w)) {
+        const kg = Number(v);
+        if (!isUuid(id) || !(kg > 0 && kg <= 1e7)) throw bad('Enter the weights.');
+        out[id] = Math.round(kg * 1000) / 1000;
+      }
+      if (!Object.keys(out).length) throw bad('Enter the weights.');
+      return rpc('api_direct_weights', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a?.order_id, 'Which slip?'), p_weights: out });
     },
 
     async purchases(caller, a) {
@@ -1635,7 +1685,9 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'stock');
       const reason = text(a?.reason);
       if (!reason) throw bad('Write why the bill is cancelled.');
-      return rpc('api_purchase_cancel', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which bill?'), p_reason: reason });
+      // a delivery straight to a customer: the person says what happens to its slip (cancel / keep) — never by itself
+      return rpc('api_purchase_cancel', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which bill?'), p_reason: reason,
+        p_slip: ['cancel', 'keep'].includes(a?.slip) ? a.slip : null });
     },
 
     /** count = the kg really there; close = this stock is finished (what's left is scrap / weight difference). */

@@ -1156,3 +1156,29 @@ test('cash rules (F8): the ₹2 lakh stop is a plain 409; only the owner records
   await ops.cashRoom(staff, { customer_id: CUST });
   assert.equal(calls.at(-1).fn, 'api_cash_room');
 });
+
+test('same customer twice + join (F9): "different person" goes to the database; the join\'s moves are worked out on the server', async () => {
+  const K = '11111111-2222-4333-8444-000000000001';
+  const O = '11111111-2222-4333-8444-000000000002';
+  const calls = [];
+  const khata = (id, extra) => ({ customers: [{ id, name: id === K ? 'Sharma Engineering' : 'Sharma Engg' }], orders: [], payments: [], old_dues: extra });
+  const rpc = async (fn, args) => { calls.push({ fn, args });
+    if (fn === 'api_customer_join_check') return { kept: { id: K }, old: { id: O }, open_slips: [], stamp: 'st1' };
+    if (fn === 'api_khata_data') return args.p_customer === K
+      ? khata(K, [{ id: 'd1', customer_id: K, side: 'pakka', date: '2026-10-01', amount: 10000 }])
+      : khata(O, [{ id: 'd2', customer_id: O, side: 'pakka', date: '2026-10-02', amount: 4000 }]);
+    return { ok: true, id: 'new' }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  await ops.createCustomer(sales, { name: 'Sharma Engg', phone: '9811022334', not_same: [K, 'junk', K] }, 'k', 'h');
+  assert.deepEqual(calls.at(-1).args.p_not_same, [K]);
+  await rejects(ops.customerJoinPreview(sales, { kept_id: K, old_id: O }), 403);
+  const p = await ops.customerJoinPreview(owner, { kept_id: K, old_id: O });
+  assert.deepEqual(p.moves, [{ side: 'pakka', kind: 'due', amount: 4000 }]);
+  assert.equal(p.after.kept.pakka.due, 14000);
+  await rejects(ops.customerJoin(owner, { kept_id: K, old_id: O, stamp: 'st1', moves: [{ side: 'pakka', kind: 'due', amount: 3000 }] }, 'k', 'h'), 409, 'changed');
+  await ops.customerJoin(owner, { kept_id: K, old_id: O, stamp: 'st1', moves: [{ side: 'pakka', kind: 'due', amount: '4000' }], note: 'same firm' }, 'k', 'h');
+  const j = calls.at(-1);
+  assert.equal(j.fn, 'api_customer_join');
+  assert.deepEqual([j.args.p_kept, j.args.p_old, j.args.p_stamp, j.args.p_note], [K, O, 'st1', 'same firm']);
+  assert.deepEqual(j.args.p_moves, p.moves, 'the server\'s own moves are written');
+});

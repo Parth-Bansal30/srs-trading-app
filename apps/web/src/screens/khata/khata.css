@@ -13,3 +13,16 @@
 .cacts{display:flex;gap:8px;margin-top:14px}
 .cacts > *{flex:1;height:52px;border-radius:14px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:14px;color:var(--ink);text-decoration:none}
 .cacts > .new{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+
+/* same customer twice + joining (6 Nov 2026, F9) */
+.same-box{border-radius:14px;background:var(--warn-soft);padding:12px 14px;margin-top:12px}
+.same-box.strong{background:var(--bad-soft)}
+.same-box .t{font-weight:800;color:var(--warn);display:flex;gap:6px;align-items:center;font-size:14.5px}
+.same-box.strong .t{color:var(--bad)}
+.same-row{display:flex;gap:10px;align-items:center;margin-top:10px}
+.same-row .s{display:block;font-size:12.5px;color:var(--ink-2);font-weight:600}
+.join-banner{display:block;font-size:13.5px;margin-bottom:12px}
+.join-pair{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+@media (min-width:560px){.join-pair{grid-template-columns:1fr 1fr}}
+.join-side{gap:8px;font-size:13.5px;font-weight:600;margin-top:6px;align-items:center}
+.join-side .num{white-space:nowrap}

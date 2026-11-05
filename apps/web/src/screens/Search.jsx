@@ -69,9 +69,9 @@ export function Search() {
             {total === 0 && !busy && <div class="empty-note"><Icon name="SearchX" size={34} /><div>{t('search_none', q.trim())}</div></div>}
 
             <Sec title={t('sr_customers')} n={r.customers.length}>{r.customers.map((c) => (
-              <button class="li" onClick={() => open(`/customer/${c.id}`)}>
+              <button class="li" onClick={() => open(`/customer/${c.joined_into || c.id}`)}>
                 <div class="cav" style={`background:${avatarColour(c.id)}`}>{firstLetter(c.name)}</div>
-                <div class="grow"><div class="t">{c.name}</div><div class="s num">{c.phone || t('no_phone')}</div></div>
+                <div class="grow"><div class="t">{c.name}</div><div class="s num">{c.joined_into ? t('join_into_s', c.joined_name) : c.phone || t('no_phone')}</div></div>
                 <Icon name="ChevronRight" size={18} style="color:var(--ink-3)" />
               </button>))}</Sec>
 

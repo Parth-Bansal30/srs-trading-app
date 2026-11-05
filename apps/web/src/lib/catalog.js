@@ -12,7 +12,7 @@ export async function loadCatalog(force = false) {
   const [materials, rates, customers, settings] = await Promise.all([
     q(db.from('materials').select('id,code,family,density_override,active,info').order('code')),
     q(db.from('current_material_rates').select('material_id,sell_rate,cut_rate')).catch(() => []),
-    q(db.from('customers').select('id,name,phone,notes,active').order('name')),
+    q(db.from('customers').select('id,name,phone,notes,active,joined_into').order('name')),
     q(db.from('company_settings').select('*').maybeSingle()),
   ]);
   const rateOf = new Map(rates.map((r) => [r.material_id, r]));

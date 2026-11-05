@@ -55,6 +55,7 @@ function Card({ r, onAnswer }) {
       <div class="row rv-btns">
         {r.customer_id && <button class="btn btn-ghost" onClick={() => go(`/customer/${r.customer_id}`)}><Icon name="BookOpenText" size={16} />{t('rv_open_khata')}</button>}
         {r.supplier_id && <button class="btn btn-ghost" onClick={() => go(`/supplier/${r.supplier_id}`)}><Icon name="Truck" size={16} />{t('sk_open_khata')}</button>}
+        {r.kind === 'maybe_same_customer' && d.other_id && <button class="btn btn-ghost" onClick={() => go(`/customer/${d.other_id}`)}><Icon name="Users" size={16} />{t('rv_open_other', d.other || '')}</button>}
         {r.kind === 'cheque_twice' && <button class="btn btn-ghost" onClick={() => go('/cheques')}><Icon name="ScrollText" size={16} />{t('nav_cheques')}</button>}
         {r.status === 'open' ? <button class="btn btn-brand" onClick={() => onAnswer(r)}><Icon name="Check" size={16} stroke={2.6} />{t('rv_checked')}</button>
           : <button class="btn btn-ghost" onClick={() => onAnswer(r, true)}><Icon name="Undo2" size={16} />{t('rv_reopen')}</button>}

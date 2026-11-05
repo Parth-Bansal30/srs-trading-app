@@ -52,7 +52,7 @@ export function Khata() {
       <div class="page">
         <div class="seg" style="margin-bottom:12px">
           <button class={view === 'owe' ? 'on' : ''} onClick={() => pickView('owe')}>{t('cust_tab_owe', owing.length)}</button>
-          <button class={view === 'all' ? 'on' : ''} onClick={() => pickView('all')}>{t('cust_tab_all', all ? all.filter((c) => c.active).length : '…')}</button>
+          <button class={view === 'all' ? 'on' : ''} onClick={() => pickView('all')}>{t('cust_tab_all', all ? all.filter((c) => c.active && !c.joined_into).length : '…')}</button>
         </div>
         {view === 'all' ? <AllCustomers all={all} khata={withAge} tz={tz} /> : <>
         <div class="hero" style="padding:16px 18px">
@@ -107,7 +107,7 @@ function AllCustomers({ all, khata, tz }) {
   const [f, setF] = useState(null); // adv | nomob | gst
   const acc = useMemo(() => new Map(khata.map((r) => [r.customer.id, r])), [khata]);
   if (!all) return <div class="card pad"><Skeleton h={18} /><Skeleton h={18} w="60%" style="margin-top:12px" /></div>;
-  const active = all.filter((c) => c.active);
+  const active = all.filter((c) => c.active && !c.joined_into);   // a joined customer lives on in the one it was joined into
   const s = q.trim().toLowerCase(); const digits = s.replace(/\D/g, '');
   const tests = { adv: (c) => (acc.get(c.id)?.credit || 0) > 0 && !(acc.get(c.id)?.due > 0), nomob: (c) => !c.phone, gst: (c) => !!c.gstin };
   const list = active

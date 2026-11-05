@@ -1076,8 +1076,10 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const extra = {};
       if (a.gstin) extra.gstin = gstinValue(a.gstin);
       if (a.address) extra.address = text(a.address, 300);
+      // "a different person" (the phone asked about a customer with the same phone / a similar name, 6 Nov 2026 F9)
+      const notSame = Array.isArray(a.not_same) ? [...new Set(a.not_same.filter(isUuid))].slice(0, 10) : [];
       const cu = await payRpc('api_create_customer', { p_caller: caller.id, p_key: key, p_hash: hash, p_name: name, p_phone: text(a.phone, 30), p_notes: text(a.notes),
-        ...(isUuid(a.id) ? { p_id: a.id } : {}) }, null, offlineAt(a.offline_at));
+        ...(isUuid(a.id) ? { p_id: a.id } : {}), ...(notSame.length ? { p_not_same: notSame } : {}) }, null, offlineAt(a.offline_at));
       if (!Object.keys(extra).length) return cu;
       return rpc('api_update_customer', { p_caller: caller.id, p_key: newKey(), p_hash: hash, p_customer: cu.id, p_changes: extra });
     },
@@ -1177,16 +1179,70 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
 
     // ---------- khata and reminders ----------
     /** Every customer's account worked out with @srs/core (who owes, credit held, oldest due). */
+    /** "Already in khata: Sharma Engineering (2 slips, ₹10,000 due)" — for up to 3 possible matches (F9). */
+    async customerBrief(caller, a) {
+      need(caller, 'new');
+      const ids = (Array.isArray(a?.ids) ? a.ids : []).filter(isUuid).slice(0, 3);
+      const money = !!caller.perms?.money;
+      const sides = core.visibleSides(caller.perms);
+      return Promise.all(ids.map(async (id) => {
+        if (!money) return { id };
+        const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: id });
+        const k = coreKhataFromDb(raw);
+        const l = core.customerLedger({ custId: id, ...k, sides, allSides: sides });
+        return { id, name: raw.customers[0]?.name, slips: raw.orders.filter((o) => o.status === 'done').length, due: l.due, credit: l.adv };
+      }));
+    },
+
+    /** Join two customers — the preview (F9): both khatas side by side, what moves, open slips that stop it. Owner only. */
+    async customerJoinPreview(caller, a) {
+      need(caller, 'settings');
+      const kept = uuid(a?.kept_id, 'Which customer to keep?');
+      const old = uuid(a?.old_id, 'Which customer to join into it?');
+      if (kept === old) throw bad('Choose two different customers.');
+      const [chk, rk, ro] = await Promise.all([
+        rpc('api_customer_join_check', { p_caller: caller.id, p_kept: kept, p_old: old }),
+        rpc('api_khata_data', { p_caller: caller.id, p_customer: kept }),
+        rpc('api_khata_data', { p_caller: caller.id, p_customer: old }),
+      ]);
+      if (!chk.kept || !chk.old) throw bad('Choose the two customers.');
+      const sides = core.visibleSides(caller.perms);
+      const lk = core.customerLedger({ custId: kept, ...coreKhataFromDb(rk), sides, allSides: sides });
+      const lo = core.customerLedger({ custId: old, ...coreKhataFromDb(ro), sides, allSides: sides });
+      const plan = core.joinPlan(lk.bySide, lo.bySide);
+      return { kept: chk.kept, old: chk.old, open_slips: chk.open_slips, stamp: chk.stamp, moves: plan.moves, before: plan.before, after: plan.after,
+        slips: { kept: rk.orders.filter((o) => o.status === 'done').length, old: ro.orders.filter((o) => o.status === 'done').length },
+        pending_advance: { kept: lk.pend, old: lo.pend } };
+    },
+    /** Confirm a join: the server works the moves out again; the preview's must match (else: look again). */
+    async customerJoin(caller, a, key, hash) {
+      const p = await ops.customerJoinPreview(caller, a);
+      if (stableStringify(p.moves) !== stableStringify(Array.isArray(a?.moves) ? a.moves.map((m) => ({ side: m.side, kind: m.kind, amount: Number(m.amount) })) : null)) {
+        throw new ApiError(409, 'changed', 'Something changed in these khatas after the preview. Please look again.');
+      }
+      return rpc('api_customer_join', { p_caller: caller.id, p_key: key, p_hash: hash, p_kept: p.kept.id, p_old: p.old.id, p_moves: p.moves,
+        p_stamp: text(a?.stamp, 64), p_note: text(a?.note, 300) });
+    },
+    async customerJoinUndo(caller, a, key, hash) {
+      need(caller, 'settings');
+      return rpc('api_customer_join_undo', { p_caller: caller.id, p_key: key, p_hash: hash, p_join: uuid(a?.join_id, 'Which join?'), p_note: text(a?.note, 200) });
+    },
+    async customerJoins(caller, a) {
+      need(caller, 'money');
+      return rpc('api_customer_joins', { p_caller: caller.id, p_customer: uuid(a?.customer_id, 'Which customer?') });
+    },
+
     async khata(caller, a) {
       need(caller, 'money');
       const customer = a?.customer_id && isUuid(a.customer_id) ? a.customer_id : null;
       const raw = await rpc('api_khata_data', { p_caller: caller.id, p_customer: customer });
       const k = coreKhataFromDb(raw);
       const sides = core.visibleSides(caller.perms);
+      const noteOf = new Map((raw.old_dues || []).filter((d) => d.note).map((d) => [d.id, d.note]));
       return raw.customers.map((c) => {
         const l = core.customerLedger({ custId: c.id, ...k, sides, allSides: sides });
         return { customer: c, due: l.due, credit: l.adv, pending_advance: l.pend, oldest: l.oldest, by_side: l.bySide,
-          entries: customer ? markCancelled(l.entries, raw.payments) : undefined,
+          entries: customer ? markCancelled(l.entries, raw.payments).map((e) => (e.did ? { ...e, note: noteOf.get(e.did) || undefined } : e)) : undefined,
           slips: customer ? Object.fromEntries(raw.orders.map((o) => [o.id, o.slip_no])) : undefined };
       }).filter((x) => customer || x.due > 0 || x.credit > 0);
     },
@@ -2007,7 +2063,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

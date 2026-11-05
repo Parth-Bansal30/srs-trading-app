@@ -5,7 +5,7 @@ import { AVATAR_COLOURS } from '../config/options.js';
 import { loadCatalog, customerRates } from './catalog.js';
 
 const q = async (p) => { const { data, error } = await p; if (error) throw error; return data; };
-const COLS = 'id,name,phone,gstin,address,notes,active';
+const COLS = 'id,name,phone,gstin,address,notes,active,joined_into,joined_at';
 
 /** Every customer with their last finished slip (for "Last slip 17 Aug"). */
 export async function loadCustomers() {

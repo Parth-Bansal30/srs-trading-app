@@ -31,7 +31,9 @@ export async function runSearch(q) {
   const p = parseSearch(q, cat?.materials || []);
   if (!p) return null;
   const custById = new Map((cat?.customers || []).map((c) => [c.id, c]));
-  const customers = rankCustomers((cat?.customers || []).filter((c) => customerFits(c, p)), p).slice(0, 8);
+  // a joined customer is still found — it points to the one it was joined into (F9)
+  const customers = rankCustomers((cat?.customers || []).filter((c) => customerFits(c, p)), p).slice(0, 8)
+    .map((c) => (c.joined_into ? { ...c, joined_name: custById.get(c.joined_into)?.name || '' } : c));
   const grade = p.grade ? (cat?.materials || []).find((m) => m.id === p.grade) : null;
   const money = can('money');
   const jobs = {};

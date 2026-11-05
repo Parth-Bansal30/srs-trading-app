@@ -3,7 +3,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { checkGstin } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { useAction } from '../../lib/action.js';
-import { forgetCatalog } from '../../lib/catalog.js';
+import { forgetCatalog, loadCatalog } from '../../lib/catalog.js';
+import { useSameCustomer } from './SameCustomer.jsx';
 import { Icon } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 
@@ -11,17 +12,20 @@ const blank = { name: '', phone: '', gstin: '', address: '', notes: '' };
 const canPickContact = typeof navigator !== 'undefined' && 'contacts' in navigator && 'select' in (navigator.contacts || {});
 
 /** c = the customer to edit, or null to add a new one. onSaved(customer) after saving. */
-export function CustomerEdit({ open, c, onClose, onSaved }) {
+export function CustomerEdit({ open, c, onClose, onSaved, onUse }) {
   const [v, setV] = useState(blank);
+  const [known, setKnown] = useState([]);
+  const same = useSameCustomer(known);   // "already in khata?" for a new customer (F9)
   const add = useAction('createCustomer');
   const upd = useAction('updateCustomer');
   const a = c ? upd : add;
   useEffect(() => {
     if (!open) return;
     setV(c ? { name: c.name || '', phone: c.phone || '', gstin: c.gstin || '', address: c.address || '', notes: c.notes || '' } : blank);
-    add.setError(null); upd.setError(null);
+    add.setError(null); upd.setError(null); same.reset();
+    if (!c) loadCatalog().then((x) => setKnown(x.customers || [])).catch(() => setKnown([]));
   }, [open, c?.id]);
-  const set = (k) => (e) => setV({ ...v, [k]: k === 'gstin' ? e.currentTarget.value.toUpperCase().replace(/\s/g, '') : e.currentTarget.value });
+  const set = (k) => (e) => { if (k === 'name' || k === 'phone') same.reset(); setV({ ...v, [k]: k === 'gstin' ? e.currentTarget.value.toUpperCase().replace(/\s/g, '') : e.currentTarget.value }); };
   const g = v.gstin.trim() ? checkGstin(v.gstin) : null;
   const gShow = g && v.gstin.trim().length >= 15;
 
@@ -33,7 +37,7 @@ export function CustomerEdit({ open, c, onClose, onSaved }) {
     } catch { /* closed */ }
   };
 
-  const save = async () => {
+  const save = async (notSame = null) => {
     let out;
     if (c) {
       const changes = {};
@@ -41,14 +45,17 @@ export function CustomerEdit({ open, c, onClose, onSaved }) {
       if (!Object.keys(changes).length) return onClose();
       out = await upd.run({ customer_id: c.id, changes }).catch(() => null);
     } else {
-      out = await add.run({ name: v.name, phone: v.phone, gstin: v.gstin || undefined, address: v.address || undefined, notes: v.notes || undefined }).catch(() => null);
+      if (!notSame && !(await same.ask({ name: v.name, phone: v.phone }))) return;   // asks first; "different person" comes back here
+      const ns = notSame || same.notSame;
+      out = await add.run({ name: v.name, phone: v.phone, gstin: v.gstin || undefined, address: v.address || undefined, notes: v.notes || undefined,
+        ...(ns.length ? { not_same: ns } : {}) }).catch(() => null);
     }
     if (out) { forgetCatalog(); onSaved(out); }
   };
 
   return (
     <Sheet open={open} onClose={onClose} title={c ? t('cust_edit') : t('new_customer')}
-      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !v.name.trim() || (gShow && !g.ok)} onClick={save}>{t('save')}</button>}>
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !v.name.trim() || (gShow && !g.ok) || same.asking} onClick={() => save()}>{t('save')}</button>}>
       <div class="lbl">{t('name')}</div>
       <div class="field"><input value={v.name} onInput={set('name')} autofocus={!c} /></div>
       <div class="lbl" style="margin-top:12px">{t('cust_mobile')}</div>
@@ -64,6 +71,7 @@ export function CustomerEdit({ open, c, onClose, onSaved }) {
       <input class="textarea" value={v.address} onInput={set('address')} maxLength={300} />
       <div class="lbl" style="margin-top:12px">{t('cust_note')}</div>
       <input class="textarea" value={v.notes} onInput={set('notes')} maxLength={500} />
+      {same.box((x) => { same.reset(); onUse ? onUse(x) : onSaved(x); }, (ids) => save(ids))}
       {a.error && <div class="error">{a.error.message}</div>}
     </Sheet>
   );

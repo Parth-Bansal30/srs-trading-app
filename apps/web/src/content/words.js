@@ -1945,6 +1945,26 @@ const NEW_WORDS = {
   dd_cancel_done: ['The slip is finished: it is kept (delete it from the slip if it was wrong).', 'पर्ची पूरी हो चुकी: रहेगी (गलत थी तो पर्ची से डिलीट करें)।', 'Parchi poori ho chuki: rahegi (galat thi to parchi se delete karo).'],
   need_direct: ['{0} direct delivery slips to finish', '{0} सीधी डिलीवरी पर्चियाँ पूरी करनी हैं', '{0} seedhi delivery parchiyan poori karni hain'],
 
+  // the ₹2 lakh cash rule (5 Nov 2026, F8)
+  cash_t: ['Cash limit — the ₹2 lakh rule', 'नकद की सीमा — ₹2 लाख का नियम', 'Cash ki seema — ₹2 lakh ka niyam'],
+  cash_day_had: ['Cash from this customer today so far: {0}', 'आज इस ग्राहक से अब तक नकद: {0}', 'Aaj is grahak se ab tak cash: {0}'],
+  cash_slip_had: ['Cash for this slip so far: {0}', 'इस पर्ची पर अब तक नकद: {0}', 'Is parchi par ab tak cash: {0}'],
+  cash_room: ['Only {0} more can be taken in cash. Take the other {1} by UPI / bank.', 'नकद में सिर्फ़ {0} और ले सकते हैं। बाकी {1} UPI / बैंक से लें।', 'Cash mein sirf {0} aur le sakte ho. Baaki {1} UPI / bank se lo.'],
+  cash_no_room: ['No more cash can be taken. Take all {0} by UPI / bank.', 'अब और नकद नहीं ले सकते। पूरे {0} UPI / बैंक से लें।', 'Ab aur cash nahi le sakte. Poore {0} UPI / bank se lo.'],
+  cash_fix: ['{0} cash + {1} to {2}', '{0} नकद + {1} {2} में', '{0} cash + {1} {2} mein'],
+  cash_fix_all: ['All of it to {0}', 'सब {0} में', 'Sab {0} mein'],
+  cash_need_acc: ['Add a bank / UPI account in Settings → Payment accounts to take the rest that way.', 'बाकी उस तरह लेने के लिए सेटिंग → पेमेंट खाते में बैंक / UPI खाता जोड़ें।', 'Baaki us tarah lene ke liye Settings → Payment khate mein bank / UPI khata jodo.'],
+  cash_why: ['The law does not allow ₹2,00,000 or more in cash from one person in a day, or for one deal.', 'कानून एक व्यक्ति से एक दिन में, या एक सौदे के लिए, ₹2,00,000 या ज़्यादा नकद लेने की इजाज़त नहीं देता।', 'Kanoon ek vyakti se ek din mein, ya ek saude ke liye, ₹2,00,000 ya zyada cash lene ki ijaazat nahi deta.'],
+  cash_taken: ['The cash was already handed over to us — record what happened', 'नकद पहले ही हमें दे दिया गया था — जो हुआ वह लिखें', 'Cash pehle hi humein de diya gaya tha — jo hua woh likho'],
+  cash_reason_ph: ['What happened? (for the CA)', 'क्या हुआ? (CA के लिए)', 'Kya hua? (CA ke liye)'],
+  cash_reason_s: ['It is saved and goes to “To check” as important, for the CA.', 'यह सेव होगा और CA के लिए “जाँचना है” में ज़रूरी बनकर जाएगा।', 'Yeh save hoga aur CA ke liye “Check karna hai” mein zaroori bankar jayega.'],
+  cash_staff: ['If the cash was already handed over, ask the owner to record it.', 'अगर नकद पहले ही दे दिया गया है, तो मालिक से लिखवाएं।', 'Agar cash pehle hi de diya gaya hai, to maalik se likhwao.'],
+  cash_out_taken: ['The cash was already paid — record it with what happened', 'नकद पहले ही दे दिया — जो हुआ उसके साथ लिखें', 'Cash pehle hi de diya — jo hua uske saath likho'],
+  rv_k_cash_limit: ['Cash over the limit (no internet) — {0}', 'सीमा से ज़्यादा नकद (बिना इंटरनेट) — {0}', 'Seema se zyada cash (bina internet) — {0}'],
+  rv_k_cash_exception: ['Cash over the limit, recorded by the owner — {0}', 'सीमा से ज़्यादा नकद, मालिक ने लिखा — {0}', 'Seema se zyada cash, maalik ne likha — {0}'],
+  rv_k_cash_occasion: ['A lot of cash in one week — {0}', 'एक हफ़्ते में बहुत नकद — {0}', 'Ek hafte mein bahut cash — {0}'],
+  rv_k_cash_out: ['Cash paid over ₹10,000 in a day — {0}', 'एक दिन में ₹10,000 से ज़्यादा नकद दिया — {0}', 'Ek din mein ₹10,000 se zyada cash diya — {0}'],
+
   // offline
   off_bar_last: ['last seen {0}', '{0} का', '{0} ka'],
   off_online: ['Internet is on. Waiting entries go by themselves.', 'इंटरनेट चल रहा है। बाकी एंट्री अपने आप चली जाएंगी।', 'Internet chal raha hai. Baaki entry apne aap chali jayengi.'],

@@ -17,6 +17,7 @@ import { go, route } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
+import { useCashRule } from '../../ui/money/CashRule.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
@@ -239,22 +240,23 @@ export function NewOrder() {
 
       <CustomerPicker open={pickCust} customers={cat.customers} regulars={regs} onClose={() => setPickCust(false)}
         onPick={(c) => { setCustomer(c); setPickCust(false); }} />
-      <AdvanceSheet open={advOpen} busy={busy} onClose={() => setAdvOpen(false)} total={totals.plain.total}
+      <AdvanceSheet open={advOpen} busy={busy} customerId={customer?.id} onClose={() => setAdvOpen(false)} total={totals.plain.total}
         onAccept={(adv, label) => { setAdvOpen(false); save(true, adv, label); }} />
     </div>
   );
 }
 
-function AdvanceSheet({ open, onClose, onAccept, busy }) {
+function AdvanceSheet({ open, onClose, onAccept, busy, customerId }) {
   const [amt, setAmt] = useState('');
   const [note, setNote] = useState('');
   const money_ = can('money');
   const [where, setWhere, accs] = useWhere(open && money_);
+  const rule = useCashRule({ open: open && money_ && Number(amt) > 0, customerId, amount: r2(Number(amt)), where, setWhere, accounts: accs });   // the ₹2 lakh rule (F8)
   const bad = money_ && Number(amt) > 0 ? whereProblem(where, r2(Number(amt)), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('accept')}
-      footer={<button class="btn btn-accent btn-block" disabled={busy || !!bad} onClick={() => onAccept(money_ && Number(amt) > 0 ? { amount: r2(Number(amt)), note, ...whereArgs(where, r2(Number(amt))) } : null, whereLabel(where, accs))}>
-        <Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : Number(amt) > 0 ? `${t('accept')} · ${money(amt)}` : t('accept')}</button>}>
+      footer={<button class="btn btn-accent btn-block" disabled={busy || !!bad || rule.blocked} onClick={() => onAccept(money_ && Number(amt) > 0 ? { amount: r2(Number(amt)), note, ...whereArgs(where, r2(Number(amt))), ...rule.args } : null, whereLabel(where, accs))}>
+        <Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : rule.blocked ? t('cash_t') : Number(amt) > 0 ? `${t('accept')} · ${money(amt)}` : t('accept')}</button>}>
       {money_ ? (
         <>
           <div class="muted" style="margin-bottom:14px">{t('adv_note')}</div>
@@ -264,6 +266,7 @@ function AdvanceSheet({ open, onClose, onAccept, busy }) {
             <>
               <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
               <MoneyTo amount={r2(Number(amt))} value={where} onChange={setWhere} accounts={accs} />
+              {rule.box}
               <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
               <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
             </>

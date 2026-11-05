@@ -16,6 +16,7 @@ import { StatementSheet } from '../docs/StatementSheet.jsx';
 import { go, route } from '../../lib/router.js';
 import { moneySaved } from '../../lib/easy.js';
 import { toast } from '../../ui/toast.js';
+import { useCashRule } from '../../ui/money/CashRule.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, modeText, modeIcon, whereLabel } from '../../lib/accounts.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
@@ -187,12 +188,13 @@ function PaySheet({ open, c, sides, dues, entries, onClose, onDone, onCheque }) 
   const [where, setWhere, accs] = useWhere(open);
   useEffect(() => { if (how === 'money' && chequeChosen(where)) { setHow('cheque'); setSwitched(true); setWhere(where.ids ? { ...where, methods: {} } : { mode: 'Cash' }); } }, [where]);
   const a = useAction('recordPayment');
+  const rule = useCashRule({ open: open && how === 'money', customerId: c.id, amount: Number(amt), where, setWhere, accounts: accs });   // the ₹2 lakh rule (F8)
   const ca = useAction('chequeAdd');
   const seen = useAction('paymentTwinSeen');
   const chqOk = Number(amt) > 0 && chq.number.trim().length > 0;
   const saveCheque = () => ca.run(chequeArgs(chq, { customer_id: c.id, side, amount: amt, note })).then((x) => onCheque?.(x)).catch(() => {});
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
-  const save = (checked) => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)) }, {
+  const save = (checked) => a.run({ customer_id: c.id, amount: Number(amt), side, note, ...whereArgs(where, Number(amt)), ...rule.args }, {
     local: { meta: { uses: usesOf(c.id), customer: c.name, payment: { customer: c.name, ...payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
   }).then((x) => {
     if (checked && x?.payment_id) seen.run({ payment_id: x.payment_id }).catch(() => {});
@@ -207,7 +209,7 @@ function PaySheet({ open, c, sides, dues, entries, onClose, onDone, onCheque }) 
     <Sheet open={open} onClose={onClose} title={t('add_payment')}
       footer={how === 'cheque'
         ? <button class="btn btn-brand btn-block" disabled={ca.busy || !chqOk || !online.value} onClick={saveCheque}><Icon name="ScrollText" size={18} />{online.value ? t('chq_save', Number(amt) > 0 ? money(amt) : '') : t('chq_online')}</button>
-        : !twins && <button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={trySave}>{bad ? t(bad) : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+        : !twins && <button class="btn btn-brand btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad || rule.blocked} onClick={trySave}>{bad ? t(bad) : rule.blocked ? t('cash_t') : <>{t('record_payment')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       {can('money') && <div class="seg" style="margin-bottom:14px"><button class={how === 'money' ? 'on' : ''} onClick={() => setHow('money')}><Icon name="IndianRupee" size={15} />{t('pay_tab_money')}</button>
         <button class={how === 'cheque' ? 'on' : ''} onClick={() => { setHow('cheque'); setTwins(null); }}><Icon name="ScrollText" size={15} />{t('pay_tab_cheque')}</button></div>}
       {how === 'cheque' && <>
@@ -238,6 +240,7 @@ function PaySheet({ open, c, sides, dues, entries, onClose, onDone, onCheque }) 
       <SideSeg sides={sides} side={side} setSide={setSide} dues={dues} />
       <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
       <MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
+      {rule.box}
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div>
       <input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
       {a.error && <div class="error">{a.error.message}</div>}

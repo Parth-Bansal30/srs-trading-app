@@ -70,3 +70,10 @@
 .bsplit-txt .s{display:block}
 .bsplit-amt{width:120px;flex:none}
 .bsplit-sum{margin-top:8px;font-size:14px;gap:10px}
+
+/* the ₹2 lakh cash rule (5 Nov 2026, F8) */
+.cash-rule{border-radius:14px;background:var(--bad-soft);padding:12px 14px;margin-top:12px}
+.cash-rule .t{font-weight:800;color:var(--bad);display:flex;align-items:center;gap:6px}
+.cash-rule .s{font-size:13.5px;color:var(--ink);margin-top:4px;line-height:1.4}
+.cash-taken{display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:13.5px;font-weight:700;color:var(--ink)}
+.cash-taken input{width:20px;height:20px;margin-top:1px;accent-color:var(--bad)}

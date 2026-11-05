@@ -452,11 +452,22 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
    * Run an operation. With accounts chosen it goes through api_pay (all in one go, the split checked); an entry made
    * offline goes through api_run with the time it really happened (23 Oct 2026).
    */
-  const payRpc = (fn, args, place, at = null) => (at
+  const payRpc = (fn, args, place, at = null, reason = null) => (at
     ? rpc('api_run', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place?.parts ?? null, p_account: place?.account ?? null, p_at: at })
-    : place
-      ? rpc('api_pay', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place.parts, p_account: place.account })
-      : rpc(fn, args));
+    : reason   // the owner records cash that was really already taken, over the limit (5 Nov 2026, F8 / D4)
+      ? rpc('api_cash_reason_pay', { p_caller: args.p_caller, p_reason: reason, p_op: fn, p_args: args, p_parts: place?.parts ?? null, p_account: place?.account ?? null })
+      : place
+        ? rpc('api_pay', { p_caller: args.p_caller, p_op: fn, p_args: args, p_parts: place.parts, p_account: place.account })
+        : rpc(fn, args));
+  /** "Cash was already taken" — the owner only, with what happened. */
+  const cashReason = (caller, a) => {
+    const raw = a?.cash_reason ?? a?.advance?.cash_reason;   // (an advance on a new order carries it inside the advance)
+    if (raw == null || raw === '') return null;
+    need(caller, 'settings');
+    const r = text(raw, 300);
+    if (!r || r.length < 5) throw bad('Write what happened (why the cash was already taken).');
+    return r;
+  };
 
   async function pricingContext(caller, customerId, items) {
     const matIds = [...new Set((Array.isArray(items) ? items : []).map((i) => i?.material_id).filter(isUuid))];
@@ -477,7 +488,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const res = await payRpc('api_create_order', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: customer, p_rules: pricingRules(ctx),
         p_items: items, p_accept: !!a.accept, p_advance: advance, ...(isUuid(a.order_id) ? { p_order_id: a.order_id } : {}),
-      }, advance ? advancePlace(a.advance) : null, offlineAt(a.offline_at));
+      }, advance ? advancePlace(a.advance) : null, offlineAt(a.offline_at), cashReason(caller, a));
       return { ...res, estimate: estimateOf(caller, built, ctx.settings.min_inch) };
     },
 
@@ -498,7 +509,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const advance = advanceArg(caller, a.advance);
       return payRpc('api_accept_order', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'), p_advance: advance,
-      }, advance ? advancePlace(a.advance) : null, offlineAt(a.offline_at));
+      }, advance ? advancePlace(a.advance) : null, offlineAt(a.offline_at), cashReason(caller, a));
     },
 
     async addAdvance(caller, a, key, hash) {
@@ -508,7 +519,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return payRpc('api_add_advance', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a.order_id, 'Which order?'),
         p_amount: amt, p_mode: modeFor(a.mode, place), p_note: text(a.note),
-      }, place, offlineAt(a.offline_at));
+      }, place, offlineAt(a.offline_at), cashReason(caller, a));
     },
 
     // ---------- weighing ----------
@@ -623,7 +634,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
           basis: { advance, weights: Object.fromEntries(ctx.items.map((i) => [i.id, i.actual_weight == null ? null : Number(i.actual_weight)])) },
           totals: { weight: r3(T.wt), base: T.base, material: T.matK, cutting: T.cutK, gst: T.gst, total: T.total },
         },
-      }, place, offlineAt(a.offline_at));
+      }, place, offlineAt(a.offline_at), cashReason(caller, a));
       return { ...res, breakdown: { material: T.matK, cutting: T.cutK, gst: T.gst, pct: T.pct, total: T.total, advance: f.A, balance: f.B, extra: f.extra, paid_now: paidNow, due: f.due } };
     },
 
@@ -637,7 +648,14 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return payRpc('api_record_payment', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_customer: uuid(a.customer_id, 'Choose a customer.'),
         p_amount: amt, p_mode: modeFor(a.mode, place), p_side: a.side, p_note: text(a.note),
-      }, place, offlineAt(a.offline_at));
+      }, place, offlineAt(a.offline_at), cashReason(caller, a));
+    },
+
+    /** Cash rules (5 Nov 2026, F8): how much more cash may be taken from this customer today / on this slip. */
+    async cashRoom(caller, a) {
+      need(caller, 'money');
+      return rpc('api_cash_room', { p_caller: caller.id, p_customer: a?.customer_id && isUuid(a.customer_id) ? a.customer_id : null,
+        p_order: a?.order_id && isUuid(a.order_id) ? a.order_id : null });
     },
 
     async reversePayment(caller, a, key, hash) {
@@ -693,7 +711,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const sellerGstin = gstBill ? gstinValue(a.seller_gstin) || null : null;
       const bills = Array.isArray(a.purchase_ids) ? [...new Set(a.purchase_ids)] : [];
       if (bills.length > 50 || !bills.every(isUuid)) throw bad('Choose the bills again.');
-      return rpc('api_save_expense', { p_caller: caller.id, p_key: key, p_hash: hash, p: {
+      const reason = cashReason(caller, a);
+      return rpc(reason ? 'api_cash_reason_expense' : 'api_save_expense', { p_caller: caller.id, p_key: key, p_hash: hash, ...(reason ? { p_reason: reason } : {}), p: {
         kind, category, amount: amt, account_id: uuid(a.account_id, 'Choose where the money came from.'),
         method: BANK_METHODS.includes(a.method) ? a.method : null, at: entryAt(a), paid_to: text(a.paid_to, 80), note: text(a.note, 300),
         gst_bill: gstBill, gst_amount: gstAmt, bill_no: gstBill ? text(a.bill_no, 40) : null, seller_gstin: sellerGstin,
@@ -1988,7 +2007,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 
@@ -1999,6 +2018,7 @@ export function mapDbError(code, message) {
   if (code === '23505') return new ApiError(409, 'duplicate', message);
   if (code === '23001') return new ApiError(409, 'not_allowed_now', message);
   if (code === '23503') return new ApiError(400, 'not_found', 'That record is not in your company.');
+  if (code === '23514' && /^Cash (from|to) /.test(message || '')) return new ApiError(409, 'cash_limit', message);   // the ₹2 lakh rule (F8)
   if (code === '23514' || code === '23502' || (code && code.startsWith('22'))) return new ApiError(400, 'invalid', message);
   return null;
 }

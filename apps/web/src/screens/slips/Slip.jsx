@@ -21,6 +21,7 @@ import { call } from '../../lib/api.js';
 import { DeleteSheet, AskDeleteSheet } from './DeleteSheet.jsx';
 import { loadStock, forgetStock } from '../../lib/stock.js';
 import { StockLine, StockPick } from '../../ui/stock/StockPick.jsx';
+import { useCashRule } from '../../ui/money/CashRule.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, modeText, modeIcon, accName, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
@@ -260,15 +261,16 @@ function AcceptSheet({ open, o, onClose, onDone }) {
   const [amt, setAmt] = useState(''); const [note, setNote] = useState('');
   const [where, setWhere, accs] = useWhere(open && can('money'));
   const a = useAction('acceptOrder');
+  const rule = useCashRule({ open: open && Number(amt) > 0, customerId: o.customer_id, orderId: o.id, amount: Number(amt), where, setWhere, accounts: accs });
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
-  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null }, {
+  const go_ = () => a.run({ order_id: o.id, advance: can('money') && Number(amt) > 0 ? { amount: Number(amt), note, ...whereArgs(where, Number(amt)) } : null, ...rule.args }, {
     local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: { status: 'accepted', payment: can('money') ? payPatch(amt, whereArgs(where, Number(amt)), accs) : null } } },
   })
     .then((r) => { if (can('money') && Number(amt) > 0) moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {});
   return (
-    <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy || !!bad} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : t('accept')}</button>}>
+    <Sheet open={open} onClose={onClose} title={t('accept')} footer={<button class="btn btn-accent btn-block" disabled={a.busy || !!bad || rule.blocked} onClick={go_}><Icon name="Check" size={20} stroke={2.6} />{bad ? t(bad) : rule.blocked ? t('cash_t') : t('accept')}</button>}>
       {can('money') && <><div class="muted" style="margin-bottom:12px">{t('adv_note')}</div><div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
-        {Number(amt) > 0 && <><div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt)} value={where} onChange={setWhere} accounts={accs} />
+        {Number(amt) > 0 && <><div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt)} value={where} onChange={setWhere} accounts={accs} />{rule.box}
           <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} /></>}</>}
       <Err a={a} />
     </Sheet>
@@ -279,14 +281,15 @@ function AdvanceSheet({ open, o, onClose, onDone }) {
   const [amt, setAmt] = useState(''); const [note, setNote] = useState('');
   const [where, setWhere, accs] = useWhere(open);
   const a = useAction('addAdvance');
+  const rule = useCashRule({ open, customerId: o.customer_id, orderId: o.id, amount: Number(amt), where, setWhere, accounts: accs });
   const bad = Number(amt) > 0 ? whereProblem(where, Number(amt), accs) : null;
   return (
     <Sheet open={open} onClose={onClose} title={t('adv_add')}
-      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)) }, {
+      footer={<button class="btn btn-accent btn-block" disabled={a.busy || !(Number(amt) > 0) || !!bad || rule.blocked} onClick={() => a.run({ order_id: o.id, amount: Number(amt), note, ...whereArgs(where, Number(amt)), ...rule.args }, {
         local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: { payment: payPatch(amt, whereArgs(where, Number(amt)), accs) } } },
-      }).then((r) => { moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {})}>{bad ? t(bad) : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
+      }).then((r) => { moneySaved({ amount: Number(amt), customer: o.customers?.name, slipNo: o.slip_no, account: whereLabel(where, accs) }); onDone(r); }).catch(() => {})}>{bad ? t(bad) : rule.blocked ? t('cash_t') : <>{t('adv_add')} {Number(amt) > 0 ? money(amt) : ''}</>}</button>}>
       <div class="lbl">{t('adv_amt')}</div><MoneyInput value={amt} onInput={setAmt} />
-      <div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />
+      <div class="lbl" style="margin-top:14px">{t('acc_where')}</div><MoneyTo amount={Number(amt) || 0} value={where} onChange={setWhere} accounts={accs} />{rule.box}
       <div class="lbl" style="margin-top:14px">{t('pay_note')}</div><input class="textarea" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note_ph')} />
       <Err a={a} />
     </Sheet>

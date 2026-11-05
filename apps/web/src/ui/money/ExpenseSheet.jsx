@@ -45,6 +45,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   const [upErr, setUpErr] = useState(null);
   const [allCats, setAllCats] = useState(false);   // the 8 usual kinds first, the rest behind "More kinds" (26 Oct 2026)
   const save = useAction('saveExpense');
+  const [why, setWhy] = useState(null);   // ₹2 lakh cash to a supplier was stopped: only the owner can record it, with what happened (F8)
   const chqAdd = useAction('chequeAdd');   // a supplier paid by cheque: its number goes in the cheque register (4 Nov 2026, F5)
   const photo = useRef(null);
   const amountIn = useRef(null);
@@ -54,7 +55,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
 
   useEffect(() => {
     if (!open) return;
-    save.setError(null); setUpErr(null); setAllCats(false);
+    save.setError(null); setUpErr(null); setAllCats(false); setWhy(null);
     const base = blank();
     if (edit) {
       Object.assign(base, { kind: edit.kind, category: edit.category, amount: String(Number(edit.amount)), accountId: edit.account_id, method: edit.method || null,
@@ -96,6 +97,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
       supplier_id: f.kind === 'supplier' ? f.supplierId : undefined,
       allocations: f.kind === 'supplier' ? (f.parts || []).map((x) => ({ ...x, amount: Number(x.amount) })).filter((x) => x.amount > 0) : undefined,
       file_key: f.fileKey || undefined, replaces_id: edit?.id || undefined,
+      cash_reason: why != null && why.trim().length >= 5 ? why.trim() : undefined,
     }, {
       // without internet: kept on the phone and sent later; the list shows it as "waiting to send"
       local: { meta: { expense: { kind: f.kind, category: f.kind === 'expense' ? f.category : f.kind === 'owner' ? 'home' : 'supplier', amount: r2(amount),
@@ -115,7 +117,12 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
     <Sheet open={open} onClose={onClose} title={edit ? t('exp_change') : f.kind === 'supplier' ? t('sk_record_payment') : t('exp_add')}
       footer={<>
         {save.error && <div class="error" style="margin:0 0 8px">{save.error.message}</div>}
-        <button class="btn btn-accent btn-block" disabled={!!problem || splitBad || save.busy || upBusy} onClick={submit}>
+        {save.error?.code === 'cash_limit' && can('settings') && <div style="margin:0 0 8px">
+          <label class="cash-taken" style="margin-top:0"><input type="checkbox" checked={why != null} onChange={(e) => setWhy(e.currentTarget.checked ? '' : null)} /><span>{t('cash_out_taken')}</span></label>
+          {why != null && <><input class="textarea" style="margin-top:8px" value={why} onInput={(e) => setWhy(e.currentTarget.value)} placeholder={t('cash_reason_ph')} />
+            <div class="faint" style="font-size:12px;font-weight:600;margin-top:4px">{t('cash_reason_s')}</div></>}
+        </div>}
+        <button class="btn btn-accent btn-block" disabled={!!problem || splitBad || save.busy || upBusy || (why != null && why.trim().length < 5)} onClick={submit}>
           <Icon name="Check" size={20} stroke={2.6} />{save.busy ? '…' : problem && amount > 0 ? t(problem) : t(f.kind === 'supplier' ? 'sk_pay_save' : 'exp_save', amount > 0 ? money(amount) : '')}
         </button>
       </>}>

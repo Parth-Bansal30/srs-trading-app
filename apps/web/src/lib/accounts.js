@@ -3,7 +3,7 @@ import { fmtDay } from './docs.js';
 // Money accounts: where money goes (Shop cash + the shop's own bank / UPI / Paytm accounts).
 // Loaded through the api; every change goes through useAction / call.
 import { signal } from '@preact/signals';
-import { checkSplit, splitMode, maskNumber, creditOver } from '@srs/core';
+import { checkSplit, splitMode, maskNumber, creditOver, partMode } from '@srs/core';
 import { useEffect, useState } from 'preact/hooks';
 import { can, company } from './session.js';
 import { call } from './api.js';
@@ -55,6 +55,15 @@ export function whereArgs(w, amount) {
     return id ? { account_id: id, method: w.methods?.[id] || undefined } : {};
   }
   return { parts: w.ids.map((id) => ({ account_id: id, amount: Number(w.amounts?.[id] || 0), method: w.methods?.[id] || undefined })) };
+}
+/** How much of the payment is CASH (the ₹2 lakh rule, F8): the drawer and any cash account count. */
+export function cashPartOf(w, amount, accounts) {
+  const A = Number(amount) || 0;
+  if (!w || !(A > 0)) return 0;
+  if (!w.ids) return w.mode === 'Cash' ? A : 0;
+  const isCash = (id) => { const a = (accounts || []).find((x) => x.id === id); return !!a && (a.is_drawer || partMode(a.kind) === 'Cash'); };
+  if (!w.split || w.ids.length === 1) return isCash(w.ids[0]) ? A : 0;
+  return w.ids.filter(isCash).reduce((s, id) => s + (Number(w.amounts?.[id]) || 0), 0);
 }
 /** Is it ready to save? Returns null when fine, else a word key for the problem. */
 export function whereProblem(w, amount, accounts) {

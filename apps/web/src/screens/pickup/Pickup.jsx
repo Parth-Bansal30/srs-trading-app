@@ -10,6 +10,7 @@ import { useAction } from '../../lib/action.js';
 import { money, kg, shortDate } from '../../lib/format.js';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
+import { useCashRule } from '../../ui/money/CashRule.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
@@ -32,6 +33,8 @@ export function Pickup({ id }) {
   const [note, setNote] = useState('');
   const [again, setAgain] = useState(false);
   const fin = useAction('finalizeOrder');
+  const [payAmt, setPayAmt] = useState(0);
+  const rule = useCashRule({ open: !!o, customerId: o?.customer_id, orderId: o?.id, amount: payAmt, where, setWhere, accounts: accs });
   const tz = company.value?.timezone;
   const load = () => Promise.all([loadOrderAny(id), loadCatalog(true)]).then(([x, c]) => { setO(x); setCat(c); }).catch(() => setO(null));
   useEffect(() => { load(); }, [id]);
@@ -43,15 +46,18 @@ export function Pickup({ id }) {
     return { pakka: finishCalc({ ...base, bill: 'pakka' }), kacha: finishCalc({ ...base, bill: 'kacha' }), chosen: bill ? finishCalc({ ...base, bill }) : null };
   }, [o, cat, bill, mode, paid]);
 
+  const nowPaid = calc?.chosen?.paidNow || 0;
+  useEffect(() => { if (nowPaid !== payAmt) setPayAmt(nowPaid); }, [nowPaid]);
   if (o === undefined || !calc) return <><TopBar title={t('pickup_title')} /><div class="page"><Skeleton h={120} /><Skeleton h={220} style="margin-top:12px" /></div></>;
   if (!o || o.status !== 'weighed') { go(o ? `/slip/${o.id}` : '/slips'); return null; }
 
   const f = calc.chosen;
   const problem = f ? finishProblem(f) : 'choose_bill';
   const placeBad = !problem && f.paidNow > 0 ? whereProblem(where, f.paidNow, accs) : null;
+  const cashBad = !problem && !placeBad && f.paidNow > 0 && rule.blocked ? 'cash_t' : null;   // the ₹2 lakh rule (F8)
   const submit = async (share) => {
     try {
-      const r = await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? pickupPay(whereArgs(where, f.paidNow)) : {}) }, {
+      const r = await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? { ...pickupPay(whereArgs(where, f.paidNow)), ...rule.args } : {}) }, {
         // without internet: kept on this phone; the slip shows as finished (the server works the bill out again when it arrives)
         local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: {
           bill_type: bill, in_khata: f.due > 0, payment: payPatch(f.paidNow, whereArgs(where, f.paidNow), accs),
@@ -105,6 +111,7 @@ export function Pickup({ id }) {
               <>
                 <div class="lbl" style="margin-top:14px">{t('acc_where')}</div>
                 <MoneyTo amount={f.paidNow} value={where} onChange={setWhere} accounts={accs} />
+                {rule.box}
                 <input class="textarea" style="margin-top:10px" value={note} onInput={(e) => setNote(e.currentTarget.value)} placeholder={t('pay_note')} />
               </>
             )}
@@ -115,7 +122,7 @@ export function Pickup({ id }) {
       </div>
       <WeighAgainSheet o={again ? o : null} onClose={() => setAgain(false)} onDone={() => { setAgain(false); go(`/slip/${o.id}`); }} />
       <div class="dock">
-        {problem || placeBad ? <button class="btn btn-block btn-ghost" disabled>{t(placeBad || (problem === 'need_part' ? 'need_part' : 'choose_bill'))}</button> : (
+        {problem || placeBad || cashBad ? <button class="btn btn-block btn-ghost" disabled>{t(placeBad || cashBad || (problem === 'need_part' ? 'need_part' : 'choose_bill'))}</button> : (
           <div class="row">
             <button class="btn btn-ghost" disabled={fin.busy} onClick={() => submit(false)}>{t('finish_only')}</button>
             <button class="btn btn-accent grow" disabled={fin.busy} onClick={() => submit(true)}><Icon name="MessageCircle" size={20} stroke={2.4} />{t('finish_share')}</button>

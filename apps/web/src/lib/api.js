@@ -22,10 +22,10 @@ export { newKey };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Operations that only read (no request key; their answers are kept on the phone for offline use). */
-export const READ_OPS = new Set(['cheques', 'reviewList', 'accounts', 'weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet',
+export const READ_OPS = new Set(['cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet',
   'deletedSlips', 'deletePreview', 'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
-const NO_COPY = new Set(['askSteelQuestion', 'readPurchaseBill', 'uploadReceipt', 'expenseFile', 'deletePreview']);
+const NO_COPY = new Set(['cashRoom', 'askSteelQuestion', 'readPurchaseBill', 'uploadReceipt', 'expenseFile', 'deletePreview']);
 const offlineError = () => new ApiError(0, 'offline', 'No internet. This needs the internet — please try again when it is back.');
 
 /** One request to the api (with retries on network trouble). */

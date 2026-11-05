@@ -1135,3 +1135,24 @@ test('direct delivery slip: sold by the bill\'s weight, no cutting, no stock; th
   await ops.purchaseCancel(owner, { id: P, reason: 'wrong', slip: 'maybe' }, 'k', 'h');
   assert.equal(calls.findLast((c) => c.fn === 'api_purchase_cancel').args.p_slip, null, 'anything else = not answered (the database asks)');
 });
+
+test('cash rules (F8): the ₹2 lakh stop is a plain 409; only the owner records cash already taken, with the reason', async () => {
+  const e = mapDbError('23514', 'Cash from Mehta Steels today would be ₹2,10,000 — the limit is under ₹2,00,000. Take ₹10,001 or more by UPI / bank.');
+  assert.equal(e.status, 409); assert.equal(e.code, 'cash_limit');
+  assert.equal(mapDbError('23514', 'new row violates check constraint').code, 'invalid', 'other checks stay 400');
+  const calls = [];
+  const rpc = async (fn, args) => { calls.push({ fn, args }); return { ok: true, payment_id: 'p1' }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  const A = '11111111-2222-4333-8444-555555555555';
+  const staff = { ...sales, perms: { ...sales.perms, khata: 1 } };   // money + khata, not the owner
+  await ops.recordPayment(staff, { customer_id: CUST, amount: 5000, side: 'pakka', account_id: A }, 'k', 'h');
+  assert.equal(calls.at(-1).fn, 'api_pay', 'normal cash: the normal way');
+  await rejects(ops.recordPayment(staff, { customer_id: CUST, amount: 5000, side: 'pakka', account_id: A, cash_reason: 'customer already gave it' }, 'k', 'h'), 403);
+  await rejects(ops.recordPayment(owner, { customer_id: CUST, amount: 5000, side: 'pakka', account_id: A, cash_reason: 'ok' }, 'k', 'h'), 400);
+  await ops.recordPayment(owner, { customer_id: CUST, amount: 5000, side: 'pakka', account_id: A, cash_reason: 'Handed over before we could say' }, 'k', 'h');
+  assert.equal(calls.at(-1).fn, 'api_cash_reason_pay');
+  assert.equal(calls.at(-1).args.p_reason, 'Handed over before we could say');
+  assert.equal(calls.at(-1).args.p_op, 'api_record_payment');
+  await ops.cashRoom(staff, { customer_id: CUST });
+  assert.equal(calls.at(-1).fn, 'api_cash_room');
+});

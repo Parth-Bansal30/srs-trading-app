@@ -28,3 +28,4 @@ export * from './bankStatement.js';
 export * from './twins.js';
 export * from './credit.js';
 export * from './cheques.js';
+export * from './supplierLedger.js';

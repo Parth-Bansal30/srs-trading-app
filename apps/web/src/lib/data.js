@@ -39,6 +39,7 @@ export async function loadToday({ perms, tz }) {
     jobs.push(call('expenses', { from: day, to: day }).then((x) => { out.expenses = x.totals; }));
   }
   if (perms.money) jobs.push(call('reviewList', {}).then((x) => { out.counts.review = x.open; }));
+  if (perms.stock) jobs.push(call('suppliers', {}).then((x) => { out.counts.supplierLate = (x.suppliers || []).reduce((n, s) => n + (s.overdue_n || 0), 0); }));
   if (perms.weigh) jobs.push(call('weighingList', {}).then((list) => { out.counts.toWeigh = list.length; out.weighing = list; }));
   if (perms.money && perms.khata) {
     jobs.push(call('reminderList', {}).then((list) => {

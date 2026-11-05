@@ -32,7 +32,7 @@ begin
     values (co, raj, 'R-1', current_date - 20, 'pakka', 100000, 18000, 118000, 1000),
            (co, lsr, 'L-1', current_date - 40, 'pakka', 50000, 9000, 59000, 500),
            (co, old, 'O-1', current_date - 300, 'pakka', 1000, 180, 1180, 10);
-  update public.purchases set pay_status = 'paid' where company_id = co and bill_no = 'O-1';
+  update public.purchases set settled = 'outside', settled_at = now() where company_id = co and bill_no = 'O-1';   -- paid (outside the app, 5 Nov 2026: "paid" is kept by the database)
 
   -- ---------- 1. a person checks on the GST portal ----------
   perform pg_temp.expect(format($q$select public.api_gst_save(%L, gen_random_uuid(), 'h', '{"gstin":"07AAACR5055K1Z9","status":"cancelled"}')$q$, acct), '42501', 'stock permission');

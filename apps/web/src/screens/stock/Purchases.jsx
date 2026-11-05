@@ -8,6 +8,7 @@ import { go } from '../../lib/router.js';
 import { kgTxt } from '../../lib/stock.js';
 import { fmtDay } from '../../lib/docs.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
+import { shopToday } from '../../lib/expenses.js';
 import './stock.css';
 
 export function Purchases() {
@@ -16,7 +17,12 @@ export function Purchases() {
   const [f, setF] = useState('all');
   useEffect(() => { call('purchases', { limit: 300 }).then(setRows).catch((e) => setErr(e.message)); }, []);
   const list = (rows || []).filter((p) => f === 'all' || (f === 'to_pay' ? p.status === 'saved' && p.pay_status === 'to_pay' : true));
-  const toPay = (rows || []).filter((p) => p.status === 'saved' && p.pay_status === 'to_pay' && p.kind === 'bill').reduce((a, p) => a + Number(p.total), 0);
+  // what is still owed on the bills (part payments counted; 5 Nov 2026). Advances are on each supplier's page.
+  const toPay = (rows || []).filter((p) => p.status === 'saved' && p.pay_status === 'to_pay' && p.kind === 'bill').reduce((a, p) => a + Number(p.left ?? p.total), 0);
+  const chip = (p) => (p.settled === 'outside' ? <Chip tone="neutral">{t('pu_paid_outside')}</Chip>
+    : p.pay_status === 'paid' ? <Chip tone="ok">{t('pu_paid')}</Chip>
+      : Number(p.left) < Number(p.total) - 0.5 ? <Chip tone="accent">{t('sk_left_short', money(Number(p.left), false))}</Chip>
+        : <Chip tone={p.due_date && p.due_date < shopToday() ? 'bad' : 'warn'}>{p.due_date && p.due_date < shopToday() ? t('sk_st_overdue') : t('pu_to_pay')}</Chip>);
   return (
     <>
       <TopBar title={t('nav_purchases')} sub={rows ? t('pu_list_sub', rows.length, `${t('pu_to_pay')} ${money(toPay, false)}`) : ''}
@@ -39,7 +45,7 @@ export function Purchases() {
                   <div style="text-align:right">
                     <b class="num" style="font-size:14.5px">{money(p.total, false)}</b>
                     <div>{p.status === 'cancelled' ? <Chip tone="neutral">{t('pu_cancelled')}</Chip>
-                      : p.kind === 'opening' ? null : <Chip tone={p.pay_status === 'paid' ? 'ok' : 'warn'}>{t(p.pay_status === 'paid' ? 'pu_paid' : 'pu_to_pay')}</Chip>}</div>
+                      : p.kind === 'opening' ? null : chip(p)}</div>
                   </div>
                 </button>
               ))}

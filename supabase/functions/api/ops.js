@@ -109,6 +109,18 @@ function placement(a, total) {
 const modeFor = (v, place) => (place ? (PAY_METHODS.includes(v) ? v : 'Cash') : payMethod(v));
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const r2 = (n) => Math.round(n * 100) / 100;
+
+/** A supplier payment's split over bills (5 Nov 2026, F6): [{ purchase_id | opening_id, amount, outside }] or null. */
+function allocationsOf(v) {
+  if (v == null) return null;
+  if (!Array.isArray(v) || v.length > 60) throw bad('Choose the bills again.');
+  return v.map((x) => {
+    const amt = Number(x?.amount);
+    if (!(amt > 0 && amt <= 1e9)) throw bad('Check the amounts against the bills.');
+    if (x?.opening_id) return { opening_id: uuid(x.opening_id, 'Choose the bills again.'), amount: r2(amt) };
+    return { purchase_id: uuid(x?.purchase_id, 'Choose the bills again.'), amount: r2(amt), ...(x.outside === true ? { outside: true } : {}) };
+  });
+}
 const LANGS = ['en', 'hi', 'hn'];
 const UPI_ID = /^[A-Za-z0-9._-]{2,64}@[A-Za-z][A-Za-z0-9]{1,63}$/;
 /** Shop header on a customer document. The GST number only goes on GST documents. */
@@ -297,6 +309,18 @@ const DELETE_MONEY = ['none', 'never', 'credit', 'refund'];
  * readBill (optional): the AI that reads a bill — (base64, mime) → the model's text (JSON as asked in BILL_PROMPT).
  */
 export function makeOps({ core, rpc, companySettings, askModel, newKey = () => crypto.randomUUID(), push = null, otp = null, files = null, readBill = null, gstLookup = null }) {
+  /** Every supplier's khata from api_supplier_data (worked out by @srs/core, the only place the maths lives). */
+  const supplierLedgers = (raw) => {
+    const by = (list, id) => (list || []).filter((x) => x.supplier_id === id);
+    const out = new Map();
+    for (const s of raw?.suppliers || []) {
+      const payments = by(raw.payments, s.id);
+      const ids = new Set(payments.map((p) => p.id));
+      out.set(s.id, core.supplierLedger({ supplier: s, bills: by(raw.bills, s.id), openings: by(raw.openings, s.id), notes: by(raw.notes, s.id), payments,
+        allocations: (raw.allocations || []).filter((x) => ids.has(x.expense_id)) }, raw.today));
+    }
+    return out;
+  };
   /** '' clears it; otherwise it must be a correct GST number (typing mistakes are caught). */
   const gstinValue = (v) => {
     const s = String(v ?? '').trim();
@@ -675,6 +699,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         supplier_id: kind === 'supplier' ? uuid(a.supplier_id, 'Choose the supplier.') : null, purchase_ids: kind === 'supplier' ? bills : [],
         file_key: typeof a.file_key === 'string' && a.file_key.startsWith(`${caller.company_id}/`) ? a.file_key.slice(0, 200) : null,
         replaces_id: a.replaces_id ? uuid(a.replaces_id, 'Which expense?') : null, offline: !!a.offline_at,
+        ...(kind === 'supplier' && a.allocations != null ? { allocations: allocationsOf(a.allocations) } : {}),
       } });
     },
 
@@ -867,7 +892,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       } else if (a.action === 'supplier') {
         const supplier = uuid(a.supplier_id, 'Choose the supplier.');
         op = 'api_save_expense';
-        args = { kind: 'supplier', category: 'supplier', supplier_id: supplier, paid_to: text(a.paid_to, 80), note, gst_bill: false, purchase_ids: [], file_key: null };
+        args = { kind: 'supplier', category: 'supplier', supplier_id: supplier, paid_to: text(a.paid_to, 80), note, gst_bill: false, purchase_ids: [], file_key: null,
+          ...(a.allocations != null ? { allocations: allocationsOf(a.allocations) } : {}) };
         memo = { action: 'supplier', supplier_id: supplier };
       } else if (a.action === 'move') {
         op = 'api_save_transfer';
@@ -1650,7 +1676,70 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     /** Suppliers with their GST status; service = whether the automatic check is switched on. */
     async suppliers(caller) {
       need(caller, 'stock');
-      return { suppliers: await rpc('api_suppliers', { p_caller: caller.id }), service: !!gstLookup, portal: core.GST_PORTAL_SEARCH };
+      const [list, raw] = await Promise.all([rpc('api_suppliers', { p_caller: caller.id }), rpc('api_supplier_data', { p_caller: caller.id, p_supplier: null })]);
+      const led = supplierLedgers(raw);
+      // what we owe each one comes from the supplier khata (opening + bills − payments − notes), not from the old tick
+      const suppliers = (list || []).map((s) => { const l = led.get(s.id); return { ...s, to_pay: l ? l.due : 0, advance: l ? l.advance : 0, overdue: l ? l.overdue : 0, overdue_n: l ? l.overdue_n : 0, credit_days: l?.credit_days ?? null }; });
+      return { suppliers, service: !!gstLookup, portal: core.GST_PORTAL_SEARCH };
+    },
+
+    // ---------- the supplier khata (5 Nov 2026, plan v2 F6) ----------
+    /** One supplier: bills (paid / part / to pay / outside, due dates, overdue), payments and their bills, notes, the statement. */
+    async supplierKhata(caller, a) {
+      need(caller, 'stock');
+      const id = uuid(a?.supplier_id, 'Which supplier?');
+      const raw = await rpc('api_supplier_data', { p_caller: caller.id, p_supplier: id });
+      const s = (raw.suppliers || [])[0];
+      if (!s) throw bad('Supplier not found.');
+      const l = supplierLedgers(raw).get(id);
+      return { supplier: s, today: raw.today, ...l, notes: raw.notes || [], allocations: raw.allocations || [] };
+    },
+    /** Set an existing payment against bills again: { expense_id, allocations }. */
+    async supplierAllocate(caller, a, key, hash) {
+      need(caller, 'stock');
+      return rpc('api_supplier_allocate', { p_caller: caller.id, p_key: key, p_hash: hash, p_expense: uuid(a?.expense_id, 'Which payment?'), p_parts: allocationsOf(a?.allocations) || [] });
+    },
+    /** Owner: the opening balance — { supplier_id, side, direction: owe | credit, amount (0 = none), date, note }. */
+    async supplierOpening(caller, a, key, hash) {
+      need(caller, 'settings');
+      const side = a?.side || 'pakka';
+      if (!BILLS.includes(side)) throw bad('Choose Pakka or Kacha.');
+      if (side === 'kacha') need(caller, 'kacha');
+      if (!['owe', 'credit'].includes(a?.direction || 'owe')) throw bad('Do we owe them, or they owe us?');
+      const amt = a?.amount == null || a.amount === '' ? 0 : Number(a.amount);
+      if (!(amt >= 0 && amt <= 1e9)) throw bad('Enter the amount.');
+      return rpc('api_supplier_opening', { p_caller: caller.id, p_key: key, p_hash: hash, p: { supplier_id: uuid(a?.supplier_id, 'Which supplier?'), side,
+        direction: a?.direction || 'owe', amount: r2(amt), date: DAY.test(a?.date || '') ? a.date : null, note: text(a?.note, 300) } });
+    },
+    async supplierSettings(caller, a, key, hash) {
+      need(caller, 'stock');
+      const days = a?.credit_days == null || a.credit_days === '' ? null : Number(a.credit_days);
+      if (days !== null && !(Number.isInteger(days) && days >= 0 && days <= 365)) throw bad('Credit days: 0 to 365.');
+      return rpc('api_supplier_settings', { p_caller: caller.id, p_key: key, p_hash: hash, p_supplier: uuid(a?.supplier_id, 'Which supplier?'), p_credit_days: days });
+    },
+    /** A credit note: { supplier_id, kind: return | rate | discount | other, purchase_id, side, amount, note_no, date, note, lines: [{ stock_item_id, kg }] }. */
+    async supplierNote(caller, a, key, hash) {
+      need(caller, 'stock');
+      if (!['return', 'rate', 'discount', 'other'].includes(a?.kind)) throw bad('What is the note for?');
+      const amt = Number(a?.amount);
+      if (!(amt > 0 && amt <= 1e9)) throw bad('Enter the amount.');
+      const side = a?.side || 'pakka';
+      if (!BILLS.includes(side)) throw bad('Choose Pakka or Kacha.');
+      const lines = a.kind === 'return' ? (Array.isArray(a.lines) ? a.lines : []).slice(0, 40).map((x) => {
+        const kg = Number(x?.kg);
+        if (!(kg > 0 && kg <= 1e7)) throw bad('Enter the kg sent back.');
+        return { stock_item_id: uuid(x?.stock_item_id, 'Choose the steel from the stock.'), kg: Math.round(kg * 1000) / 1000 };
+      }) : [];
+      if (a.kind === 'return' && !lines.length) throw bad('Which steel went back, and how many kg?');
+      return rpc('api_supplier_note', { p_caller: caller.id, p_key: key, p_hash: hash, p: { supplier_id: uuid(a?.supplier_id, 'Which supplier?'), kind: a.kind,
+        purchase_id: a?.purchase_id ? uuid(a.purchase_id, 'Which bill?') : null, side, amount: r2(amt), note_no: text(a?.note_no, 40),
+        date: DAY.test(a?.date || '') ? a.date : null, note: text(a?.note, 300), lines } });
+    },
+    async supplierNoteCancel(caller, a, key, hash) {
+      need(caller, 'stock');
+      const reason = text(a?.reason, 300);
+      if (!reason) throw bad('Write why it is cancelled.');
+      return rpc('api_supplier_note_cancel', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which note?'), p_reason: reason });
     },
 
     /**
@@ -1847,7 +1936,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

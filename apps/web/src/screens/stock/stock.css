@@ -45,3 +45,16 @@
 .chk-a button{min-height:32px;padding:0 11px;border-radius:9px;font-size:12.5px;font-weight:700;background:var(--surface);color:var(--ink);border:1px solid var(--line-2)}
 .chk-a button.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
 .chk-list .li{align-items:flex-start}
+
+/* supplier khata (5 Nov 2026, F6) */
+.sup-row{align-items:center;gap:10px}
+.sup-row>.iconbox{border:0;cursor:pointer}
+.sup-main{text-align:left;background:none;border:0;padding:0;color:inherit}
+.sup-due{display:flex;flex-direction:column;align-items:flex-end;gap:1px;background:none;border:0;padding:0 0 0 6px;color:inherit;position:relative;padding-right:20px}
+.sup-due svg{position:absolute;right:0;top:50%;transform:translateY(-50%)}
+.sup-due b{font-size:15.5px}
+.sup-total{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}
+.sup-total>div{flex:1;min-width:130px}
+.sup-total .faint{font-size:12.5px;font-weight:700}
+.sup-total b{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.sk-line .t{font-size:14.5px}

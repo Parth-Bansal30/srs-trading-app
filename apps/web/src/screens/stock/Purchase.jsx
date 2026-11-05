@@ -10,6 +10,7 @@ import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { fmtDay } from '../../lib/docs.js';
 import { forgetStock, shapeWord, kgTxt } from '../../lib/stock.js';
+import { shopToday } from '../../lib/expenses.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import './stock.css';
@@ -41,9 +42,24 @@ export function Purchase({ id }) {
               {d.supplier?.gstin && <div class="faint num" style="font-size:13px;font-weight:600">GSTIN {d.supplier.gstin}</div>}
               <div class="muted" style="font-size:13px">{t('pu_by', d.by || '')} · {shortDate(p.created_at, tz)} {time(p.created_at, tz)}</div>
             </div>
-            {p.status === 'saved' && <button class={`btn ${p.pay_status === 'paid' ? 'btn-ghost' : 'btn-accent'}`} style="min-height:42px;font-size:14.5px" disabled={paid.busy}
-              onClick={() => paid.run({ id: p.id, paid: p.pay_status !== 'paid' }).then(() => load()).catch(() => {})}>
-              {p.pay_status === 'paid' ? <><Icon name="CircleCheck" size={17} />{t('pu_paid')}</> : t('pu_mark_paid')}</button>}
+            {p.status === 'saved' && <Chip tone={p.settled === 'outside' ? 'neutral' : p.pay_status === 'paid' ? 'ok' : Number(d.left) < Number(p.total_amount) - 0.5 ? 'accent' : 'warn'}>
+              {p.settled === 'outside' ? t('pu_paid_outside') : p.pay_status === 'paid' ? t('pu_paid') : Number(d.left) < Number(p.total_amount) - 0.5 ? t('sk_part', money(Number(p.total_amount), false)) : t('pu_to_pay')}</Chip>}
+          </div>
+        )}
+        {!opening && p.status === 'saved' && (
+          <div class="card pad" style="margin-top:10px">
+            {p.pay_status !== 'paid' && <div class="row" style="justify-content:space-between;align-items:baseline">
+              <span class="muted">{t('sk_still_to_pay')}</span><b class="num" style="font-size:22px;color:var(--bad)">{money(Number(d.left), false)}</b></div>}
+            {d.due_date && p.pay_status !== 'paid' && <div class="faint" style="font-size:13px;font-weight:600;margin-top:2px">{d.due_date < shopToday() ? <b style="color:var(--bad)">{t('sk_overdue_since', fmtDay(d.due_date))}</b> : t('sk_due_on', fmtDay(d.due_date))}</div>}
+            {(d.paid_by || []).map((x) => <div class="row" style="justify-content:space-between;font-size:13.5px;margin-top:6px"><span class="muted">{t('sk_paid_on', fmtDay(x.day, false))} · {x.account}{x.method ? ` · ${x.method === 'Cheque' ? t('pm_cheque') : x.method}` : ''}</span><b class="num">{money(Number(x.amount), false)}</b></div>)}
+            {(d.notes || []).map((x) => <div class="row" style="justify-content:space-between;font-size:13.5px;margin-top:6px"><span class="muted">{t(`sk_k_${x.kind}`)}{x.note_no ? ` · ${x.note_no}` : ''} · {fmtDay(x.date, false)}</span><b class="num">− {money(Number(x.amount), false)}</b></div>)}
+            {p.settled === 'outside' && <div class="muted" style="font-size:13.5px">{t('pu_paid_outside_s')}</div>}
+            <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+              {p.pay_status !== 'paid' && d.supplier && <button class="btn btn-brand grow" onClick={() => go(`/supplier/${d.supplier.id}`)}><Icon name="IndianRupee" size={17} />{t('sk_record_payment')}</button>}
+              {p.pay_status !== 'paid' && Number(d.left) >= Number(p.total_amount) - 0.5 && <button class="btn btn-ghost" disabled={paid.busy} onClick={() => paid.run({ id: p.id, paid: true }).then(() => load()).catch(() => {})}>{t('pu_mark_outside')}</button>}
+              {p.settled === 'outside' && <button class="btn btn-ghost" disabled={paid.busy} onClick={() => paid.run({ id: p.id, paid: false }).then(() => load()).catch(() => {})}><Icon name="Undo2" size={16} />{t('pu_unmark_outside')}</button>}
+            </div>
+            {paid.error && <div class="error">{paid.error.message}</div>}
           </div>
         )}
         {d.file_url && <a class="btn btn-ghost btn-block" style="margin-top:10px" href={d.file_url} target="_blank" rel="noopener"><Icon name="FileText" size={18} />{t('pu_open_file')}</a>}

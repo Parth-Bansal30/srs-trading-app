@@ -1091,3 +1091,26 @@ test('cheques: noted with a number and a customer; only the owner confirms a cle
   assert.equal(last('api_cheque_return').p_charge, 354);
   assert.equal(last('api_cheque_return').p_deposit_line, null);
 });
+
+test('supplier khata: dues from the records; a payment\'s split is checked; the opening is the owner\'s', async () => {
+  const stock = { id: 'p-stock', company_id: 'c1', perms: { ...core.ROLE_PRESETS.accounts(), stock: true } };
+  const S = '44444444-5555-6666-7777-888888888888';
+  const B = '55555555-6666-7777-8888-999999999999';
+  const calls = [];
+  const raw = { today: '2026-11-28', suppliers: [{ id: S, name: 'Mehta Bright Steel', credit_days: 30 }],
+    bills: [{ id: B, supplier_id: S, bill_no: 'SBM/1184', date: '2026-10-28', side: 'pakka', total: 125670 }],
+    payments: [{ id: 'e1', supplier_id: S, amount: 80000, day: '2026-11-04' }], allocations: [{ expense_id: 'e1', purchase_id: B, amount: 80000 }], openings: [], notes: [] };
+  const rpc = async (fn, args) => { calls.push({ fn, args }); return fn === 'api_supplier_data' ? structuredClone(raw) : fn === 'api_suppliers' ? [{ id: S, name: 'Mehta Bright Steel', to_pay: 125670 }] : { ok: true }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  const k = await ops.supplierKhata(stock, { supplier_id: S });
+  assert.equal(k.due, 45670); assert.equal(k.overdue, 45670); assert.equal(k.bills[0].status, 'part');
+  const l = await ops.suppliers(stock);
+  assert.equal(l.suppliers[0].to_pay, 45670, 'the list shows the khata\'s due, not the old tick');
+  await assert.rejects(ops.supplierOpening(stock, { supplier_id: S, amount: 240000 }, 'k', 'h'), (e) => e instanceof ApiError && e.status === 403);
+  await assert.rejects(ops.saveExpense(stock, { kind: 'supplier', supplier_id: S, amount: 1000, account_id: B, allocations: [{ purchase_id: B, amount: -5 }] }, 'k', 'h'), (e) => e.status === 400);
+  await ops.saveExpense(stock, { kind: 'supplier', supplier_id: S, amount: 1000, account_id: B, allocations: [{ purchase_id: B, amount: '600.556', outside: true }, { opening_id: S, amount: 400 }] }, 'k', 'h');
+  const p = calls.findLast((c) => c.fn === 'api_save_expense').args.p;
+  assert.deepEqual(p.allocations, [{ purchase_id: B, amount: 600.56, outside: true }, { opening_id: S, amount: 400 }]);
+  await ops.saveExpense(stock, { kind: 'supplier', supplier_id: S, amount: 1000, account_id: B, purchase_ids: [B] }, 'k', 'h');
+  assert.equal('allocations' in calls.findLast((c) => c.fn === 'api_save_expense').args.p, false, 'just ticked: the database splits oldest first');
+});

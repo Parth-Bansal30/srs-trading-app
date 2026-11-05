@@ -22,6 +22,7 @@ import { store } from '../../lib/store.js';
 import { Icon, TopBar, Skeleton, Chip } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { chqName, chqStatus, STATUS_TONE } from '../../ui/money/Cheques.jsx';
+import { BillSplit } from '../../ui/stock/BillSplit.jsx';
 import '../../ui/money/money.css';
 import './money-screens.css';
 
@@ -356,6 +357,7 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
   const [supplier, setSupplier] = useState(s.supplier_id || null);
   const [to, setTo] = useState(s.to || d.drawer);
   const [note, setNote] = useState('');
+  const [parts, setParts] = useState([]);      // which of the supplier's bills (5 Nov 2026, F6)
   const [q, setQ] = useState('');
   const key = payerKey(l.narration, d.own);
   const [remember, setRemember] = useState(!!key);
@@ -370,7 +372,8 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
     const remember_key = remember ? key : null;
     if (kind === 'skip') return mark.run({ line_id: l.id, status: 'skipped', note: note || null, remember_key }).then(onDone).catch(() => {});
     return run.run({ line_id: l.id, amount: l.amount, action: kind, customer_id: customer, side, category, supplier_id: supplier, to, note: note || null,
-      method: n.method, remember_key, paid_to: kind === 'expense' ? n.name : null }).then(onDone).catch(() => {});
+      method: n.method, remember_key, paid_to: kind === 'expense' ? n.name : null,
+      ...(kind === 'supplier' ? { allocations: parts.map((x) => ({ ...x, amount: Number(x.amount) })).filter((x) => x.amount > 0) } : {}) }).then(onDone).catch(() => {});
   };
   const others = (accs || []).filter((a) => a.id !== d.account.id && !a.hidden);
   return (
@@ -395,7 +398,9 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
       {kind === 'supplier' && <><div class="lbl" style="margin-top:12px">{t('bk_which_supplier')}</div>
         <div class="card bk-pick">{d.suppliers.length ? d.suppliers.map((x) => (
           <button class={`li ${supplier === x.id ? 'on' : ''}`} onClick={() => setSupplier(x.id)}><div class="grow t">{x.name}</div><span class={`radio ${supplier === x.id ? 'on' : ''}`} /></button>))
-          : <div class="li muted">{t('bk_no_suppliers')}</div>}</div></>}
+          : <div class="li muted">{t('bk_no_suppliers')}</div>}</div>
+        {supplier && <><div class="lbl" style="margin-top:12px">{t('exp_supplier_bills')}</div>
+          <BillSplit supplierId={supplier} amount={Math.abs(l.amount)} value={parts} onChange={setParts} /></>}</>}
       {kind === 'move' && <><div class="lbl" style="margin-top:12px">{isIn ? t('bk_move_from') : t('bk_move_to')}</div>
         <div class="card bk-pick">{others.map((a) => (
           <button class={`li ${to === a.id ? 'on' : ''}`} onClick={() => setTo(a.id)}><div class="grow t">{accName(a)}</div><span class={`radio ${to === a.id ? 'on' : ''}`} /></button>))}</div></>}

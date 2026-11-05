@@ -9,7 +9,6 @@ import { call } from '../../lib/api.js';
 import { useAction } from '../../lib/action.js';
 import { online } from '../../lib/net.js';
 import { money } from '../../lib/format.js';
-import { fmtDay } from '../../lib/docs.js';
 import { addDays } from '../../lib/evening.js';
 import { loadAccounts, accountsCache, lastOutAccount, rememberOutAccount, useCreditWarn } from '../../lib/accounts.js';
 import { shopToday, catOf } from '../../lib/expenses.js';
@@ -18,10 +17,11 @@ import { EXPENSE_CATEGORIES } from '../../config/options.js';
 import { Icon } from '../kit.jsx';
 import { Sheet } from '../Sheet.jsx';
 import { AccountPick } from './AccountPick.jsx';
+import { BillSplit } from '../stock/BillSplit.jsx';
 import './money.css';
 
 const blank = () => ({ kind: 'expense', category: null, amount: '', accountId: null, accPicked: false, method: null, paidTo: '', note: '', day: 'today', date: '',
-  gstBill: false, gstAmount: '', billNo: '', sellerGstin: '', fileKey: null, supplierId: null, bills: [], more: false, chq: '' });
+  gstBill: false, gstAmount: '', billNo: '', sellerGstin: '', fileKey: null, supplierId: null, bills: [], parts: [], more: false, chq: '' });
 /** The account an expense starts with: the one used last for this kind of expense, else the cash drawer. */
 const startAccount = (list, what) => (list || []).find((a) => a.id === lastOutAccount(what) && a.usable !== false) || (list || []).find((a) => a.is_drawer) || (list || [])[0];
 
@@ -34,9 +34,10 @@ export const expenseKinds = () => [
 
 /**
  * open / onClose / onDone(result). edit: an expense from the list to change (it is replaced, the old one kept as cancelled).
- * suppliers: [{ id, name, unpaid: [{ id, bill_no, date, total }] }] for "paid a supplier".
+ * suppliers: [{ id, name }] for "paid a supplier" (its open bills come from the supplier khata: BillSplit).
+ * preset: { kind, supplierId, amount } to start with (the supplier khata's "Record payment").
  */
-export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [], startKind = 'expense' }) {
+export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [], startKind = 'expense', preset = null }) {
   const [f, setF] = useState(blank());
   const [accounts, setAccounts] = useState(accountsCache.value);
   const credWarn = useCreditWarn(f.accountId, f.amount);   // OD / CC: past the limit? (owners, estimate)
@@ -61,6 +62,8 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
         gstBill: !!edit.gst_bill, gstAmount: edit.gst_amount == null ? '' : String(Number(edit.gst_amount)), billNo: edit.bill_no || '', sellerGstin: edit.seller_gstin || '',
         supplierId: edit.supplier_id || null, bills: edit.purchase_ids || [], more: !!(edit.gst_bill || edit.note || edit.paid_to) });
     } else if (kinds.includes(startKind)) base.kind = startKind;
+    if (!edit && preset) Object.assign(base, preset.kind && kinds.includes(preset.kind) ? { kind: preset.kind } : {}, preset.supplierId ? { supplierId: preset.supplierId } : {},
+      preset.amount ? { amount: String(preset.amount) } : {});
     setF(base);
     loadAccounts().then((l) => {
       setAccounts(l);
@@ -70,7 +73,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
 
   const amount = Number(f.amount) || 0;
   const sup = suppliers.find((s) => s.id === f.supplierId);
-  const billsTotal = r2((sup?.unpaid || []).filter((b) => f.bills.includes(b.id)).reduce((a, b) => a + Number(b.total), 0));
+  const splitBad = f.kind === 'supplier' && (f.parts || []).reduce((a, x) => a + (Number(x.amount) || 0), 0) > amount + 0.005;
   const problem = expenseProblem({ kind: f.kind, category: f.category, amount: f.amount, accountId: f.accountId, gstBill: f.gstBill,
     gstAmount: f.gstAmount, sellerGstin: f.sellerGstin.trim(), supplierId: f.supplierId });
   const dayArg = f.day === 'today' ? null : f.day === 'yesterday' ? addDays(today, -1) : f.date || null;
@@ -83,14 +86,15 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
     catch (e) { setUpErr(e.message || t('err_generic')); } finally { setUpBusy(false); }
   };
   const submit = () => {
-    if (problem) return;
+    if (problem || splitBad) return;
     rememberOutAccount(f.kind === 'expense' ? f.category : f.kind, f.accountId);
     save.run({
       kind: f.kind, category: f.kind === 'expense' ? f.category : undefined, amount: r2(amount), account_id: f.accountId, method: f.method || undefined,
       day: dayArg || undefined, paid_to: f.paidTo.trim() || undefined, note: f.note.trim() || undefined,
       gst_bill: f.gstBill || undefined, gst_amount: f.gstBill && f.gstAmount !== '' ? Number(f.gstAmount) : undefined,
       bill_no: f.gstBill ? f.billNo.trim() || undefined : undefined, seller_gstin: f.gstBill ? f.sellerGstin.trim() || undefined : undefined,
-      supplier_id: f.kind === 'supplier' ? f.supplierId : undefined, purchase_ids: f.kind === 'supplier' && f.bills.length ? f.bills : undefined,
+      supplier_id: f.kind === 'supplier' ? f.supplierId : undefined,
+      allocations: f.kind === 'supplier' ? (f.parts || []).map((x) => ({ ...x, amount: Number(x.amount) })).filter((x) => x.amount > 0) : undefined,
       file_key: f.fileKey || undefined, replaces_id: edit?.id || undefined,
     }, {
       // without internet: kept on the phone and sent later; the list shows it as "waiting to send"
@@ -108,11 +112,11 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title={edit ? t('exp_change') : t('exp_add')}
+    <Sheet open={open} onClose={onClose} title={edit ? t('exp_change') : f.kind === 'supplier' ? t('sk_record_payment') : t('exp_add')}
       footer={<>
         {save.error && <div class="error" style="margin:0 0 8px">{save.error.message}</div>}
-        <button class="btn btn-accent btn-block" disabled={!!problem || save.busy || upBusy} onClick={submit}>
-          <Icon name="Check" size={20} stroke={2.6} />{save.busy ? '…' : problem && amount > 0 ? t(problem) : t('exp_save', amount > 0 ? money(amount) : '')}
+        <button class="btn btn-accent btn-block" disabled={!!problem || splitBad || save.busy || upBusy} onClick={submit}>
+          <Icon name="Check" size={20} stroke={2.6} />{save.busy ? '…' : problem && amount > 0 ? t(problem) : t(f.kind === 'supplier' ? 'sk_pay_save' : 'exp_save', amount > 0 ? money(amount) : '')}
         </button>
       </>}>
       {kinds.length > 1 && (
@@ -137,26 +141,13 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
 
       {f.kind === 'supplier' && <>
         <div class="lbl">{t('exp_supplier')}</div>
-        <select class="field" style="width:100%" value={f.supplierId || ''} onChange={(e) => set({ supplierId: e.currentTarget.value || null, bills: [] })}>
+        <select class="field" style="width:100%" value={f.supplierId || ''} onChange={(e) => set({ supplierId: e.currentTarget.value || null, bills: [], parts: [] })}>
           <option value="">—</option>
           {suppliers.map((s) => <option value={s.id}>{s.name}{s.unpaid?.length ? ` · ${s.unpaid.length}` : ''}</option>)}
         </select>
-        {sup && <>
+        {f.supplierId && <>
           <div class="lbl" style="margin-top:14px">{t('exp_supplier_bills')}</div>
-          {!sup.unpaid?.length ? <div class="muted" style="font-size:14px">{t('exp_supplier_none')}</div> : (
-            <div class="card">{sup.unpaid.map((b) => {
-              const on = f.bills.includes(b.id);
-              return (
-                <button class="li" onClick={() => set({ bills: on ? f.bills.filter((x) => x !== b.id) : [...f.bills, b.id] })}>
-                  <span class={`acc-tick ${on ? 'on' : ''}`}>{on && <Icon name="Check" size={16} stroke={3} />}</span>
-                  <span class="grow"><span class="t">{b.bill_no || '—'}</span><span class="s" style="display:block">{fmtDay(b.date)}</span></span>
-                  <b class="num">{money(b.total)}</b>
-                </button>
-              );
-            })}</div>
-          )}
-          {billsTotal > 0 && <div class="row" style="justify-content:space-between;margin-top:8px"><span class="muted" style="font-size:14px">{t('exp_bills_total', money(billsTotal))}</span>
-            {billsTotal !== amount && <button class="link" onClick={() => set({ amount: String(billsTotal) })}>{t('exp_use_total', money(billsTotal))}</button>}</div>}
+          <BillSplit supplierId={f.supplierId} amount={amount} value={f.parts} onChange={(parts) => set({ parts })} editing={edit?.id || null} />
         </>}
       </>}
       {f.kind === 'owner' && <div class="notice tone-warn" style="font-size:13.5px">{t('exp_k_owner_s')}</div>}

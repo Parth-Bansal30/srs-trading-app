@@ -377,8 +377,9 @@ export function PurchaseNew() {
                 {calc.tot.ok ? t('pu_adds_up') : t('pu_differs', money(calc.tot.computed, true), money(calc.tot.total, true), money(calc.tot.diff, true))}</div>
               {checks.filter((c) => c.type === 'duplicate').map((c) => <CheckNote c={c} tz={tz} onOk={() => sayOk(c)} />)}
               <div class="lbl" style="margin-top:12px">{t('pu_paid_q')}</div>
-              <div class="seg"><button class={f.pay_status === 'paid' ? 'on' : ''} onClick={() => set({ pay_status: 'paid' })}>{t('pu_paid')}</button>
-                <button class={f.pay_status === 'to_pay' ? 'on' : ''} onClick={() => set({ pay_status: 'to_pay' })}>{t('pu_to_pay')} {money(calc.tot.total, false)}</button></div>
+              <div class="seg"><button class={f.pay_status === 'to_pay' ? 'on' : ''} onClick={() => set({ pay_status: 'to_pay' })}>{t('pu_to_pay')} {money(calc.tot.total, false)}</button>
+                <button class={f.pay_status === 'paid' ? 'on' : ''} onClick={() => set({ pay_status: 'paid' })}>{t('pu_paid_outside')}</button></div>
+              <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{f.pay_status === 'paid' ? t('pu_paid_outside_s') : t('pu_to_pay_s')}</div>
             </div>
           </>
         )}

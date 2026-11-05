@@ -19,6 +19,7 @@ const MOVE = {
   purchase: ['mv_purchase', 'PackagePlus', 'ok'], purchase_undo: ['mv_purchase_undo', 'Undo2', 'neutral'],
   sale: ['mv_sale', 'PackageMinus', 'neutral'], sale_undo: ['mv_sale_undo', 'Undo2', 'ok'],
   adjust: ['mv_adjust', 'ClipboardCheck', 'warn'], scrap: ['mv_scrap', 'Minus', 'warn'],
+  return_out: ['st_k_return_out', 'Undo2', 'warn'], return_undo: ['st_k_return_undo', 'Undo2', 'ok'],   // goods sent back to the supplier (5 Nov 2026)
 };
 
 export function StockItem({ id }) {

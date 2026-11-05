@@ -26,6 +26,8 @@ export function Suppliers() {
   const list = (d?.suppliers || []).filter((s) => !q.trim() || `${s.name} ${s.gstin || ''} ${s.city || ''}`.toLowerCase().includes(q.trim().toLowerCase()));
   const bad = (d?.suppliers || []).filter((s) => s.gst_status && s.gst_status !== 'active');
   const unchecked = (d?.suppliers || []).filter((s) => s.gstin && !s.gst_status);
+  const owe = (d?.suppliers || []).reduce((x, s) => x + (s.to_pay || 0), 0);
+  const late = (d?.suppliers || []).reduce((x, s) => x + (s.overdue || 0), 0);
   return (
     <>
       <TopBar title={t('nav_suppliers')} sub={t('sup_title_s')}
@@ -39,18 +41,26 @@ export function Suppliers() {
               <span style="display:block;font-weight:500;font-size:12.5px;margin-top:2px">{d.service ? t('sup_service_on') : t('gst_service_off')}</span></span>
           </div>
           {unchecked.length > 0 && <div class="notice tone-warn" style="margin-top:8px;font-size:13.5px">{t('sup_unchecked_n', unchecked.length)}</div>}
+          {owe > 0 && <div class="card pad sup-total"><div><div class="faint">{t('sk_total_owe')}</div><b class="num" style="color:var(--bad)">{money(owe, false)}</b></div>
+            {late > 0 && <div><div class="faint">{t('sk_total_late')}</div><b class="num" style="color:var(--bad)">{money(late, false)}</b></div>}</div>}
           {(d.suppliers || []).length > 6 && <div class="field" style="margin-top:12px"><Icon name="Search" size={18} /><input value={q} placeholder={t('sup_search')} onInput={(e) => setQ(e.currentTarget.value)} /></div>}
           {!list.length ? <div class="card pad" style="margin-top:12px"><div class="muted">{t('sup_none')}</div></div> : (
             <div class="card" style="margin-top:12px">{list.map((s) => (
-              <button class="li" onClick={() => setOpen(s)}>
-                <div class={`iconbox tone-${s.gst_status ? GST_TONE[s.gst_status] : 'neutral'}`}><Icon name={!s.gst_status ? 'Truck' : s.gst_status === 'active' ? 'ShieldCheck' : 'ShieldX'} size={18} /></div>
-                <div class="grow" style="min-width:0">
+              <div class="li sup-row">
+                <button class={`iconbox tone-${s.gst_status ? GST_TONE[s.gst_status] : 'neutral'}`} onClick={() => setOpen(s)} aria-label={t('sup_gst_btn')}><Icon name={!s.gst_status ? 'Truck' : s.gst_status === 'active' ? 'ShieldCheck' : 'ShieldX'} size={18} /></button>
+                <button class="grow sup-main" style="min-width:0" onClick={() => go(`/supplier/${s.id}`)}>
                   <div class="t ellip">{s.name}</div>
                   <div class="s ellip num">{[s.gstin || t('sup_no_gstin'), s.city].filter(Boolean).join(' · ')}</div>
-                  <div class="s">{s.gst_checked_at ? t('gst_checked_on', shortDate(s.gst_checked_at), t(s.gst_source === 'service' ? 'gst_by_service' : 'gst_by_portal')) : ''}</div>
-                </div>
-                {s.gstin ? <GstBadge status={s.gst_status} small /> : null}
-              </button>
+                  <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:3px">{s.gstin ? <GstBadge status={s.gst_status} small /> : null}
+                    {s.overdue > 0 && <span class="chip tone-bad">{t('sk_overdue_short', money(s.overdue, false))}</span>}</div>
+                </button>
+                <button class="sup-due" onClick={() => go(`/supplier/${s.id}`)}>
+                  {s.to_pay > 0 ? <><b class="num" style="color:var(--bad)">{money(s.to_pay, false)}</b><span class="s">{t('sk_to_pay_short')}</span></>
+                    : s.advance > 0 ? <><b class="num" style="color:var(--ok)">{money(s.advance, false)}</b><span class="s">{t('sk_adv_short')}</span></>
+                    : <span class="s">{t('all_clear')}</span>}
+                  <Icon name="ChevronRight" size={16} style="color:var(--ink-3)" />
+                </button>
+              </div>
             ))}</div>
           )}
         </>}
@@ -70,6 +80,7 @@ export function Suppliers() {
             {open.last_bill && <Line a={t('sup_last_bill')} b={fmtDay(open.last_bill)} />}
           </div>
           {open.gstin ? <GstCheckPanel gstin={open.gstin} onDone={() => load()} /> : <div class="faint" style="font-size:13px;margin-top:10px">{t('sup_no_gstin_s')}</div>}
+          <button class="btn btn-ghost btn-block" style="margin-top:12px" onClick={() => go(`/supplier/${open.id}`)}><Icon name="BookOpenText" size={18} />{t('sk_open_khata')}</button>
         </>}
       </Sheet>
     </>

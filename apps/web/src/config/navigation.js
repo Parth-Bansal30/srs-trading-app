@@ -56,6 +56,7 @@ export const NEEDS = [
   { id: 'review', count: 'review', word: 'need_review', one: 'need_review_1', icon: 'ListChecks', tone: 'warn', route: '/review', perm: 'money' },
   { id: 'weigh', count: 'toWeigh', word: 'need_weigh', one: 'need_weigh_1', icon: 'Scale', tone: 'accent', route: '/weigh', perm: 'weigh' },
   { id: 'pickup', count: 'readyForPickup', word: 'need_pickup', icon: 'PackageCheck', tone: 'ok', route: '/slips?stage=weighed', perm: 'money' },
+  { id: 'suplate', count: 'supplierLate', word: 'need_sup_late', icon: 'Truck', tone: 'bad', route: '/suppliers', perm: 'stock' },
   { id: 'remind', count: 'reminders', word: 'need_remind', icon: 'BellRing', tone: 'bad', route: '/reminders', perm: 'khata' },
   { id: 'estimates', count: 'estimates', word: 'need_estimates', icon: 'FileClock', tone: 'neutral', route: '/slips?stage=estimate', perm: 'new' },
 ];

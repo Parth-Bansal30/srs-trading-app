@@ -11,6 +11,7 @@ import { money, kg, shortDate } from '../../lib/format.js';
 import { go } from '../../lib/router.js';
 import { toast } from '../../ui/toast.js';
 import { useCashRule } from '../../ui/money/CashRule.jsx';
+import { GstWhere, useGstContext } from '../../ui/gst/GstWhere.jsx';
 import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
@@ -27,12 +28,15 @@ export function Pickup({ id }) {
   const [o, setO] = useState(undefined);
   const [cat, setCat] = useState(null);
   const [bill, setBill] = useState(null);
+  const [where2, setWhere2] = useState({ delivery: 'pickup', dest: undefined });   // a GST slip: where the steel goes (F10)
   const [mode, setMode] = useState('now');
   const [paid, setPaid] = useState('');
   const [where, setWhere, accs] = useWhere(true);
   const [note, setNote] = useState('');
   const [again, setAgain] = useState(false);
   const fin = useAction('finalizeOrder');
+  const gstCtx = useGstContext(o?.customer_id, bill === 'pakka' && can('money'));
+  useEffect(() => { if (gstCtx?.customer?.dest_state && where2.dest === undefined) setWhere2((w) => ({ ...w, dest: gstCtx.customer.dest_state })); }, [gstCtx]);
   const [payAmt, setPayAmt] = useState(0);
   const rule = useCashRule({ open: !!o, customerId: o?.customer_id, orderId: o?.id, amount: payAmt, where, setWhere, accounts: accs });
   const tz = company.value?.timezone;
@@ -57,7 +61,8 @@ export function Pickup({ id }) {
   const cashBad = !problem && !placeBad && f.paidNow > 0 && rule.blocked ? 'cash_t' : null;   // the ₹2 lakh rule (F8)
   const submit = async (share) => {
     try {
-      const r = await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? { ...pickupPay(whereArgs(where, f.paidNow)), ...rule.args } : {}) }, {
+      const r = await fin.run({ order_id: o.id, bill, pay_mode: f.mode, paid: f.mode === 'part' ? Number(paid) : undefined, note, ...(f.paidNow > 0 ? { ...pickupPay(whereArgs(where, f.paidNow)), ...rule.args } : {}),
+        ...(bill === 'pakka' ? { gst_delivery: o.direct_purchase_id ? 'direct' : where2.delivery, ...(where2.dest ? { gst_dest: where2.dest } : {}) } : {}) }, {
         // without internet: kept on this phone; the slip shows as finished (the server works the bill out again when it arrives)
         local: { meta: { uses: usesOf(o.id), slipNo: o.slip_no, customer: o.customers?.name, patch: {
           bill_type: bill, in_khata: f.due > 0, payment: payPatch(f.paidNow, whereArgs(where, f.paidNow), accs),
@@ -99,6 +104,11 @@ export function Pickup({ id }) {
             {f.A > 0 && <L a={t('adv_less')} b={<span style="color:var(--ok)">− {money(f.A, true)}</span>} />}
             <div class="row collect"><span>{t('to_collect')}</span><span class="num">{money(f.B, true)}</span></div>
             {f.extra > 0 && <div class="notice tone-ok" style="margin-bottom:10px">{t('adv_excess', money(f.extra, true))}</div>}
+          </div>
+        )}
+        {f && bill === 'pakka' && can('money') && gstCtx && (
+          <div class="card pad" style="margin-top:14px">
+            <GstWhere ctx={gstCtx} value={where2} onChange={setWhere2} direct={!!o.direct_purchase_id} gst={f.T.gst} pct={f.T.pct} />
           </div>
         )}
 

@@ -47,6 +47,7 @@ import { Balances, AccountBook } from './screens/money/Balances.jsx';
 import { BankStart, BankReview } from './screens/money/Bank.jsx';
 import { Review } from './screens/review/Review.jsx';
 import { ChequeList } from './screens/money/ChequeList.jsx';
+import { ForCA } from './screens/ca/ForCA.jsx';
 import { SupplierKhata } from './screens/stock/SupplierKhata.jsx';
 import { DirectSlip } from './screens/stock/DirectSlip.jsx';
 import { Suppliers } from './screens/stock/Suppliers.jsx';
@@ -93,6 +94,7 @@ const SCREENS = {
   '/bank': () => <BankStart />,
   '/review': () => <Review />,
   '/cheques': () => <ChequeList />,
+  '/ca': () => <ForCA />,
   '/bank/:account/:imp': ({ account, imp }) => <BankReview account={account} imp={imp} key={`${account}/${imp}`} />,
   '/suppliers': () => <Suppliers />,
   '/supplier/:id': ({ id }) => <SupplierKhata id={id} key={id} />,

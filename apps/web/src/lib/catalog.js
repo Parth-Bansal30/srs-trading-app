@@ -10,7 +10,7 @@ const q = async (p) => { const { data, error } = await p; if (error) throw error
 export async function loadCatalog(force = false) {
   if (!force && cache && Date.now() - at < 60000) return cache;
   const [materials, rates, customers, settings] = await Promise.all([
-    q(db.from('materials').select('id,code,family,density_override,active,info').order('code')),
+    q(db.from('materials').select('id,code,family,density_override,active,info,hsn,gst_rate,hsn_checked_at').order('code')),
     q(db.from('current_material_rates').select('material_id,sell_rate,cut_rate')).catch(() => []),
     q(db.from('customers').select('id,name,phone,notes,active,joined_into').order('name')),
     q(db.from('company_settings').select('*').maybeSingle()),

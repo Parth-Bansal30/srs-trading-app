@@ -1182,3 +1182,29 @@ test('same customer twice + join (F9): "different person" goes to the database; 
   assert.deepEqual([j.args.p_kept, j.args.p_old, j.args.p_stamp, j.args.p_note], [K, O, 'st1', 'same firm']);
   assert.deepEqual(j.args.p_moves, p.moves, 'the server\'s own moves are written');
 });
+
+test('GST for the CA (F10): the month\'s registers add up to the slips; the Tally no. and the place of supply ride along', async () => {
+  const calls = [];
+  const rpc = async (fn, args) => { calls.push({ fn, args });
+    if (fn === 'api_gst_month') return { shop: { name: 'Test Steels', gstin: '07AABCS1429B1ZW', state: '07' }, settings: { gst_pct: 18, min_inch: 1 },
+      slips: [{ id: 's1', slip_no: 512, date: '2026-10-12', customer: 'Laxmi Tools', gstin: '06AABCS1429B1ZY', gst_pct: 18, base: 74000, gst: 13320, total: 87320, direct: false,
+        gst_details: { delivery: 'ours', dest_state: '06', pos: { from: '07', to: '06', kind: 'inter', sure: true, reason: null }, tally_no: 'SRS/26-27/0142',
+          items: [{ item_id: 'i1', hsn: '7214', gst_rate: 18, hsn_checked: true }] },
+        items: [{ id: 'i1', grade_code: 'EN8', shape: 'round', unit: 'mm', dims: ['40'], sell_rate: 74, cut_rate: 0, density: 7850, actual_weight: 1000, by_weight: true, lengths: [] }] },
+      { id: 's2', slip_no: 513, date: '2026-10-13', customer: 'Jain', gstin: null, gst_pct: 18, base: 1000, gst: 180, total: 1180, direct: false, gst_details: null,
+        items: [{ id: 'i2', grade_code: 'EN8', shape: 'round', unit: 'mm', dims: ['40'], sell_rate: 100, cut_rate: 0, density: 7850, actual_weight: 10, by_weight: true, lengths: [], hsn_now: '7214', hsn_checked_now: true }] }],
+      purchases: [{ bill_no: 'PKT/316', date: '2026-10-05', supplier: 'P K Steel', gstin: '07AABCS1429B1ZW', gst: 205560, freight: 0, other: 0, round_off: 0, total: 1347560,
+        stock_effect: 'stock', lines: [{ hsn: '7214', description: 'MS ROUND 40MM', kg: 2000, amount: 1142000 }] }] };
+    return {}; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  await rejects(ops.gstMonth(sales, { month: '2026-10' }), 403);
+  const m = await ops.gstMonth(owner, { month: '2026-10' });
+  assert.deepEqual([calls.at(-1).args.p_from, calls.at(-1).args.p_to], ['2026-10-01', '2026-10-31']);
+  assert.equal(m.sales.length, 2);
+  assert.deepEqual([m.sales[0].tally_no, m.sales[0].igst, m.sales[0].pos, m.sales[0].flags], ['SRS/26-27/0142', 13320, 'Haryana', []]);
+  assert.deepEqual(m.sales[1].flags, ['pos_no_dest', 'no_tally', 'hsn_not_saved'], 'no details yet: CA to check, no Tally bill, HSN not saved with the slip');
+  assert.equal(m.sales_totals.total, m.slips_total, 'the register equals the slips');
+  assert.deepEqual([m.purchases[0].cgst, m.purchases[0].sgst, m.purchase_totals.total], [102780, 102780, 1347560]);
+  await rejects(ops.slipTally(owner, { order_id: 'x', tally_no: 'A' }, 'k', 'h'), 400);
+  await rejects(ops.materialGst(owner, { material_id: '11111111-2222-4333-8444-000000000001', hsn: '72' }, 'k', 'h'), 400);
+});

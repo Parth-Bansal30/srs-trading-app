@@ -143,7 +143,7 @@ export function slipText(doc, url) {
         : `${it.pcs} ${tIn(l, 'pcs')}`;
     return [`${it.grade} ${size}${it.hsn ? ` HSN ${it.hsn}` : ''}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : '')];
   });
-  const lines = [[tIn(l, 'material'), s.material], [tIn(l, 'cutting'), s.cutting], ...(s.gst ? [[tIn(l, 'gst_line', s.gst_pct), s.gst_amount]] : [])];
+  const lines = slipSumLines(l, s);
   const pays = s.payments.map((p) => `${p.amount < 0 ? tIn(l, 'doc_returned') : p.kind === 'advance' ? tIn(l, 'doc_pay_adv') : tIn(l, 'doc_pay')} ${shortDate(p.at, doc.timezone)} ${modeWord(l, p.mode)}: ${p.amount < 0 ? '+' : '−'} ${money(Math.abs(p.amount), true)}`.replace(/\s+:/, ':'));
   return [
     `*${doc.shop.name}*`,
@@ -157,12 +157,28 @@ export function slipText(doc, url) {
     `*${tIn(l, 'total')}: ${money(s.total, true)}*`,
     ...pays,
     s.balance > 0 ? tIn(l, 'tx_bal', money(s.balance, true)) : `*${tIn(l, 'paid_full')}*`,
+    slipGstNote(l, s) || null,
     s.gst ? `_${tIn(l, 'slip_gst')}_` : null,
     s.balance > 0 ? upiLine(l, doc.upi) : null,
     url ? tIn(l, 'tx_slip_pdf', url) : null,
     tIn(l, 'thanks'),
   ].filter(Boolean).join('\n');
 }
+
+/**
+ * The money lines under a slip: material, cutting and GST — split into CGST + SGST or IGST when the place of supply is
+ * known (6 Nov 2026, F10: worked out for the CA to confirm; the total never changes).
+ */
+export function slipSumLines(l, s) {
+  const base = [[tIn(l, 'material'), s.material], [tIn(l, 'cutting'), s.cutting]];
+  if (!s.gst) return base;
+  const g = s.gst_split; const half = Math.round((Number(s.gst_pct) / 2) * 100) / 100;
+  if (g?.kind === 'local') return [...base, [tIn(l, 'cgst_line', half), g.cgst], [tIn(l, 'sgst_line', half), g.sgst]];
+  if (g?.kind === 'inter') return [...base, [tIn(l, 'igst_line', s.gst_pct), g.igst]];
+  return [...base, [tIn(l, 'gst_line', s.gst_pct), s.gst_amount]];
+}
+/** "Place of supply: Haryana (06) · GST bill (Tally): SRS/26-27/0142" for a GST slip, or ''. */
+export const slipGstNote = (l, s) => (s.gst ? [s.pos_state ? tIn(l, 'doc_pos', `${s.pos_state} (${s.pos_code})`) : null, s.tally_no ? tIn(l, 'doc_tally', s.tally_no) : null].filter(Boolean).join(' · ') : '');
 
 /** Short note that goes with a shared PDF. */
 export function pdfCaption(doc, url) {

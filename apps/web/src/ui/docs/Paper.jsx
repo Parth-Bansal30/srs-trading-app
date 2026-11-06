@@ -5,7 +5,7 @@ import qrcode from 'qrcode-generator';
 import { SHAPES } from '@srs/core';
 import { tIn } from '../../lib/i18n.js';
 import { money, shortDate, time } from '../../lib/format.js';
-import { upiLink, isSampleUpi, fmtDay } from '../../lib/docs.js';
+import { upiLink, isSampleUpi, fmtDay, slipSumLines, slipGstNote } from '../../lib/docs.js';
 import { SHAPE_LOOK, PAY_METHODS } from '../../config/options.js';
 import './docs.css';
 
@@ -97,7 +97,8 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
   const l = doc.lang; const s = doc.slip; const tz = doc.timezone;
   const when = `${shortDate(s.at, tz)} ${new Date(s.at).toLocaleString('en-IN', { timeZone: tz, year: 'numeric' })} · ${time(s.at, tz)}`;
   const upi = showQr ? doc.upi : null;
-  const lines = [[tIn(l, 'material'), s.material], [tIn(l, 'cutting'), s.cutting], ...(s.gst ? [[tIn(l, 'gst_line', s.gst_pct), s.gst_amount]] : [])];
+  const lines = slipSumLines(l, s);
+  const gstNote = slipGstNote(l, s);
   const paidUp = s.balance <= 0 && s.total > 0;
 
   if (size === 'roll') {
@@ -123,6 +124,7 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
         {paidUp && <div class="pp-c" style="font-weight:800;margin-top:4px">*** {tIn(l, 'doc_paid_stamp')} ***</div>}
         {upi && <div class="pp-c" style="margin-top:10px"><div style="display:inline-block"><UpiQr upi={upi} lang={l} cell={4} /></div><div>{tIn(l, 'doc_scan_pay', money(upi.amount, true))}</div></div>}
         <div class="pp-dash" />
+        {gstNote && <div class="pp-c pp-small">{gstNote}</div>}
         <div class="pp-c pp-small">{s.gst ? tIn(l, 'slip_gst') : tIn(l, 'doc_thanks_biz')}</div>
       </div>
     );
@@ -162,6 +164,7 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
       </div>
       {paidUp && <div class="pp-stamp">{tIn(l, 'doc_paid_stamp')}</div>}
       <div class="pp-grow" />
+      {gstNote && <div class="pp-mute pp-small" style="margin-top:6px">{gstNote}</div>}
       <div class="pp-bottom"><span>{s.gst ? tIn(l, 'slip_gst') : tIn(l, 'doc_thanks_biz')}</span></div>
     </div>
   );

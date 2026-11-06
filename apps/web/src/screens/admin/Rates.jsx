@@ -8,6 +8,7 @@ import { db } from '../../lib/backend.js';
 import { store } from '../../lib/store.js';
 import { useAction } from '../../lib/action.js';
 import { money, shortDate } from '../../lib/format.js';
+import { fmtDay } from '../../lib/docs.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, Chip, TopBar, Skeleton } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
@@ -78,6 +79,8 @@ function GradeSheet({ m, cat, onClose, onDone }) {
       <GradeInfo m={m} materials={cat.materials} open={infoOpen === 'see'} onClose={() => setInfoOpen(null)} />
       <GradeInfoEdit m={m} open={infoOpen === 'edit'} onClose={() => setInfoOpen(null)} onSaved={() => { setInfoOpen(null); toast(t('saved')); onDone(); }} />
 
+      <GradeGst m={m} pct={Number(cat.settings?.gst_pct ?? 18)} onDone={onDone} />
+
       <div class="sec"><h3>{t('special_rates')}</h3></div>
       <div class="card">
         {!specials ? <div class="pad"><Skeleton h={16} /></div> : specials.length === 0 ? <div class="li muted">{t('no_special')}</div> : specials.map((s) => (
@@ -125,5 +128,37 @@ function AddGrade({ open, onClose, onDone }) {
       </div>
       {a.error && <div class="error">{a.error.message}</div>}
     </Sheet>
+  );
+}
+
+/** A grade's HSN and GST rate for the CA (6 Nov 2026, F10) — saved with each GST slip when it is finished. */
+const RATES = ['', '0', '5', '12', '18', '28'];
+function GradeGst({ m, pct, onDone }) {
+  const [hsn, setHsn] = useState(m.hsn || '');
+  const [rate, setRate] = useState(m.gst_rate == null ? '' : String(Number(m.gst_rate)));
+  const [ok, setOk] = useState(!!m.hsn_checked_at);
+  const a = useAction('materialGst');
+  const owner = can('settings');
+  const changed = hsn !== (m.hsn || '') || rate !== (m.gst_rate == null ? '' : String(Number(m.gst_rate))) || ok !== !!m.hsn_checked_at;
+  const bad = hsn && !/^(\d{4}|\d{6}|\d{8})$/.test(hsn);
+  return (
+    <>
+      <div class="sec"><h3>{t('gg_title')}</h3>{m.hsn_checked_at ? <span class="chip tone-ok">{t('gg_checked_on', fmtDay(String(m.hsn_checked_at).slice(0, 10), false))}</span>
+        : <span class="chip tone-warn">{m.hsn ? t('gg_not_checked') : t('rf_hsn_missing')}</span>}</div>
+      <div class="card pad">
+        <div class="row" style="gap:10px">
+          <div class="grow"><div class="lbl">HSN</div><div class="field num"><input inputmode="numeric" maxLength={8} disabled={!owner} value={hsn} placeholder="7214"
+            onInput={(e) => { setHsn(e.currentTarget.value.replace(/\D/g, '')); setOk(false); }} /></div></div>
+          <div class="grow"><div class="lbl">{t('gg_rate')}</div><div class="field"><select disabled={!owner} value={rate} onChange={(e) => { setRate(e.currentTarget.value); setOk(false); }}>
+            {RATES.map((r) => <option value={r}>{r === '' ? t('gg_rate_shop', pct) : `${r}%`}</option>)}</select></div></div>
+        </div>
+        {owner && <label class="cash-taken" style="margin-top:12px"><input type="checkbox" checked={ok} disabled={!hsn || bad} onChange={(e) => setOk(e.currentTarget.checked)} /><span>{t('gg_ca_ok')}</span></label>}
+        {bad && <div class="error">{t('gg_hsn_bad')}</div>}
+        {a.error && <div class="error">{a.error.message}</div>}
+        {owner && changed && <button class="btn btn-brand btn-block" style="margin-top:12px" disabled={a.busy || bad}
+          onClick={() => a.run({ material_id: m.id, hsn: hsn || null, gst_rate: rate === '' ? null : Number(rate), checked: ok }).then(() => { forgetCatalog(); toast(t('saved')); onDone(); }).catch(() => {})}>{t('save')}</button>}
+        <div class="faint" style="font-size:12px;font-weight:600;margin-top:8px">{t('gg_s')}</div>
+      </div>
+    </>
   );
 }

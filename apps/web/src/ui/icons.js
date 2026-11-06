@@ -10,7 +10,7 @@ import {
  TriangleAlert, Copy, GitCompare, Bell, MessageSquareText, Calendar, ArrowDownUp, ChartNoAxesColumn, BadgeIndianRupee,
   EllipsisVertical, ListChecks, Boxes, Truck, FileUp, Camera, Keyboard, PackagePlus, PackageMinus, Undo2, ClipboardCheck, Minus,
   Wallet, Split, EyeOff, ArrowUp, ArrowDown, Shuffle, CircleDashed, CircleAlert, RotateCcw, Volume2,
-  Fingerprint, Vault, Coffee, HardHat, Fuel, Zap, Building, Flame, HandCoins, ScanFace, CloudOff, CloudUpload, ArrowRightLeft, Receipt, ShieldAlert, ShieldX, Cog, Wrench, CircleEllipsis, HandHeart, Paperclip, CloudCheck, Wifi, LoaderCircle, BanknoteArrowDown, BanknoteArrowUp, Scissors, Hourglass, ExternalLink, ImageUp, History, CircleX, ListTodo, UtensilsCrossed, ChevronUp, ChevronDown, Image, ShieldQuestion, TimerReset, Ban, SearchX, Repeat, FileCheck2, CheckCheck, SkipForward, Brain, Equal, Link, Percent, CircleHelp, FileSpreadsheet,
+  Fingerprint, Vault, Coffee, HardHat, Fuel, Zap, Building, Flame, HandCoins, ScanFace, CloudOff, CloudUpload, ArrowRightLeft, Receipt, ShieldAlert, ShieldX, Cog, Wrench, CircleEllipsis, HandHeart, Paperclip, CloudCheck, Wifi, LoaderCircle, BanknoteArrowDown, BanknoteArrowUp, Scissors, Hourglass, ExternalLink, ImageUp, History, CircleX, ListTodo, UtensilsCrossed, ChevronUp, ChevronDown, Image, ShieldQuestion, TimerReset, Ban, SearchX, Repeat, FileCheck2, CheckCheck, SkipForward, Brain, Equal, Link, Percent, CircleHelp, FileSpreadsheet, MapPin,
 } from 'lucide-preact';
 
 export const ICONS = {
@@ -24,7 +24,7 @@ export const ICONS = {
  TriangleAlert, Copy, GitCompare, Bell, MessageSquareText, Calendar, ArrowDownUp, ChartNoAxesColumn, BadgeIndianRupee,
   EllipsisVertical, ListChecks, Boxes, Truck, FileUp, Camera, Keyboard, PackagePlus, PackageMinus, Undo2, ClipboardCheck, Minus,
   Wallet, Split, EyeOff, ArrowUp, ArrowDown, Shuffle, CircleDashed, CircleAlert, RotateCcw, Volume2,
-  Fingerprint, Vault, Coffee, HardHat, Fuel, Zap, Building, Flame, HandCoins, ScanFace, CloudOff, CloudUpload, ArrowRightLeft, Receipt, ShieldAlert, ShieldX, Cog, Wrench, CircleEllipsis, HandHeart, Paperclip, CloudCheck, Wifi, LoaderCircle, BanknoteArrowDown, BanknoteArrowUp, Scissors, Hourglass, ExternalLink, ImageUp, History, CircleX, ListTodo, UtensilsCrossed, ChevronUp, ChevronDown, Image, ShieldQuestion, TimerReset, Ban, SearchX, Repeat, FileCheck2, CheckCheck, SkipForward, Brain, Equal, Link, Percent, CircleHelp, FileSpreadsheet,
+  Fingerprint, Vault, Coffee, HardHat, Fuel, Zap, Building, Flame, HandCoins, ScanFace, CloudOff, CloudUpload, ArrowRightLeft, Receipt, ShieldAlert, ShieldX, Cog, Wrench, CircleEllipsis, HandHeart, Paperclip, CloudCheck, Wifi, LoaderCircle, BanknoteArrowDown, BanknoteArrowUp, Scissors, Hourglass, ExternalLink, ImageUp, History, CircleX, ListTodo, UtensilsCrossed, ChevronUp, ChevronDown, Image, ShieldQuestion, TimerReset, Ban, SearchX, Repeat, FileCheck2, CheckCheck, SkipForward, Brain, Equal, Link, Percent, CircleHelp, FileSpreadsheet, MapPin,
 };
 
 // 4 Nov 2026 (plan v2): review list, cheques, overdraft, suppliers, joining customers, GST / Tally, Day book

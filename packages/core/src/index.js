@@ -31,3 +31,4 @@ export * from './cheques.js';
 export * from './supplierLedger.js';
 export * from './cashRules.js';
 export * from './customerMatch.js';
+export * from './gstPlace.js';

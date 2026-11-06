@@ -56,6 +56,9 @@ const kg = (v, what) => {
 const payMethod = (v) => { if (!PAY_METHODS.includes(v)) throw bad('Choose how it was paid (Cash, UPI, Bank or Cheque).'); return v; };
 const BANK_METHODS = ['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque'];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const GST_DELIVERY = ['pickup', 'ours', 'direct'];   // how a GST slip's steel went (F10)
+const STATE2 = /^(0[1-9]|[1-3][0-9])$/;
+const GST_RATES = [0, 0.1, 0.25, 1.5, 3, 5, 12, 18, 28, 40];
 /**
  * When an entry made without internet really happened (23 Oct 2026): the phone sends offline_at (ISO time).
  * The database checks it is not in the future and not too old. null = now.
@@ -635,7 +638,89 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
           totals: { weight: r3(T.wt), base: T.base, material: T.matK, cutting: T.cutK, gst: T.gst, total: T.total },
         },
       }, place, offlineAt(a.offline_at), cashReason(caller, a));
-      return { ...res, breakdown: { material: T.matK, cutting: T.cutK, gst: T.gst, pct: T.pct, total: T.total, advance: f.A, balance: f.B, extra: f.extra, paid_now: paidNow, due: f.due } };
+      // a GST slip: where the steel is going (6 Nov 2026, F10). Saved next to the finished slip; if it fails, the slip is
+      // still finished and the details can be set from its page.
+      let gst = null;
+      if (f.bill === 'pakka' && (a.gst_delivery != null || a.gst_dest != null)) {
+        gst = await rpc('api_slip_gst', { p_caller: caller.id, p_key: newKey(), p_hash: hash, p_order: orderId,
+          p_delivery: GST_DELIVERY.includes(a.gst_delivery) ? a.gst_delivery : null, p_dest: STATE2.test(a.gst_dest || '') ? a.gst_dest : null }).catch(() => null);
+      }
+      return { ...res, gst, breakdown: { material: T.matK, cutting: T.cutK, gst: T.gst, pct: T.pct, total: T.total, advance: f.A, balance: f.B, extra: f.extra, paid_now: paidNow, due: f.due } };
+    },
+
+    // ---------- GST details for the CA's Tally bills (6 Nov 2026, F10) ----------
+    async gstContext(caller, a) {
+      need(caller, 'money');
+      return rpc('api_gst_context', { p_caller: caller.id, p_customer: a?.customer_id && isUuid(a.customer_id) ? a.customer_id : null });
+    },
+    async slipGstGet(caller, a) {
+      need(caller, 'money');
+      return rpc('api_slip_gst_get', { p_caller: caller.id, p_order: uuid(a?.order_id, 'Which slip?') });
+    },
+    async slipGst(caller, a, key, hash) {
+      need(caller, 'money');
+      if (a?.delivery != null && !GST_DELIVERY.includes(a.delivery)) throw bad('How did the steel go?');
+      if (a?.dest != null && !STATE2.test(a.dest)) throw bad('Choose the state.');
+      return rpc('api_slip_gst', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a?.order_id, 'Which slip?'),
+        p_delivery: a?.delivery ?? null, p_dest: a?.dest ?? null });
+    },
+    async slipTally(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      const no = text(a?.tally_no, 40);
+      const day = a?.tally_date == null || a.tally_date === '' ? null : DAY.test(a.tally_date) ? a.tally_date : (() => { throw bad('Check the date.'); })();
+      return rpc('api_slip_tally', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a?.order_id, 'Which slip?'), p_no: no, p_date: day, p_force: a?.force === true });
+    },
+    async tallyPending(caller) {
+      need(caller, 'money', 'khata');
+      return rpc('api_tally_pending', { p_caller: caller.id });
+    },
+    async materialGst(caller, a, key, hash) {
+      need(caller, 'settings');
+      const hsn = text(a?.hsn, 8);
+      if (hsn && !core.hsnOk(hsn)) throw bad('HSN is 4, 6 or 8 digits.');
+      const rate = a?.gst_rate == null || a.gst_rate === '' ? null : Number(a.gst_rate);
+      if (rate != null && !GST_RATES.includes(rate)) throw bad('Choose a GST rate.');
+      return rpc('api_material_gst', { p_caller: caller.id, p_key: key, p_hash: hash, p_material: uuid(a?.material_id, 'Which grade?'),
+        p_hsn: hsn, p_rate: rate, p_checked: a?.checked === true });
+    },
+    /**
+     * A month for the CA (F10): the sales register (GST slips only, one row per slip and HSN) and the purchase register
+     * (GST bills, one row per bill and HSN), with totals and flags. The phone writes the Excel file from it.
+     */
+    async gstMonth(caller, a) {
+      need(caller, 'money', 'khata');
+      const m = /^(\d{4})-(\d{2})$/.exec(a?.month || '');
+      if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) throw bad('Choose the month.');
+      const from = `${m[1]}-${m[2]}-01`;
+      const to = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).toISOString().slice(0, 10);
+      const raw = await rpc('api_gst_month', { p_caller: caller.id, p_from: from, p_to: to });
+      const shop = raw.shop?.state || null;
+      const pct = Number(raw.settings?.gst_pct ?? 18);
+      const sales = [];
+      let slipsTotal = 0;
+      for (const sl of raw.slips || []) {
+        const g = sl.gst_details || {};
+        const saved = new Map((g.items || []).map((x) => [x.item_id, x]));
+        const minInch = sl.min_inch ?? raw.settings?.min_inch;
+        // each item's value before GST, the same maths as the slip; any paise left over go on the last item
+        const items = (sl.items || []).map((i) => {
+          const c = core.calcItem(coreItemFromDb(i), 'final', { minInch });
+          const sv = saved.get(i.id);
+          return { hsn: sv ? sv.hsn : i.hsn_now, gst_rate: sv ? sv.gst_rate : i.gst_rate_now, hsn_checked: sv ? !!sv.hsn_checked : !!i.hsn_checked_now,
+            desc: `${i.grade_code} ${i.shape}`, kg: c ? c.weight : Number(i.actual_weight || 0), taxable: c ? r2(c.mat + c.cut) : 0, saved: !!sv };
+        });
+        const sum = r2(items.reduce((t, x) => t + x.taxable, 0));
+        if (items.length && Math.abs(sum - Number(sl.base)) > 0.001) items[items.length - 1].taxable = r2(items[items.length - 1].taxable + Number(sl.base) - sum);
+        const pos = g.pos && Object.keys(g.pos).length ? g.pos : core.placeOfSupply({ shop, delivery: sl.direct ? 'direct' : null, dest: null });
+        const rows = core.salesRows({ date: sl.date, slip_no: sl.slip_no, tally_no: g.tally_no, customer: sl.customer, gstin: sl.gstin, pos,
+          delivery: g.delivery || (sl.direct ? 'direct' : ''), gst_pct: Number(sl.gst_pct ?? pct), gst: Number(sl.gst), items }, pct);
+        if (items.some((x) => !x.saved)) rows.forEach((r) => { if (!r.flags.includes('hsn_not_saved')) r.flags.push('hsn_not_saved'); });
+        sales.push(...rows);
+        slipsTotal = r2(slipsTotal + Number(sl.total));
+      }
+      const purchases = (raw.purchases || []).flatMap((b) => core.purchaseRows(b, shop));
+      return { month: `${m[1]}-${m[2]}`, from, to, shop: raw.shop, sales, sales_totals: core.registerTotals(sales), slips_total: slipsTotal,
+        purchases, purchase_totals: core.registerTotals(purchases.map((x) => ({ ...x, slip_no: `${x.bill_no}|${x.supplier}` }))) };
     },
 
     // ---------- khata ----------
@@ -1328,6 +1413,13 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
           })),
           material: Number(o.material), cutting: Number(o.cutting), gst_amount: gst ? Number(o.gst) : 0, total,
           payments, paid, balance,
+          // the GST split worked out for the CA to confirm (F10): CGST + SGST or IGST, the place of supply, the Tally bill no.
+          ...(gst && raw.gst_details ? (() => {
+            const pos = raw.gst_details.pos || {};
+            const split = core.gstSplit(Number(o.gst), pos.kind);
+            return { gst_split: split ? { ...split, kind: pos.kind } : null, pos_state: pos.to ? core.stateName(pos.to) : null, pos_code: pos.to || null,
+              tally_no: raw.gst_details.tally_no || null };
+          })() : {}),
         },
         upi: a.upi !== false && raw.upi && balance > 0 ? { ...raw.upi, amount: balance, note: `Slip ${o.slip_no}` } : null,
       };
@@ -2063,7 +2155,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['gstContext', 'slipGstGet', 'tallyPending', 'gstMonth', 'customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

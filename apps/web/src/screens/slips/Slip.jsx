@@ -1,4 +1,5 @@
 // One slip: items, weights, amounts, money taken — and the next step for its stage.
+import { GstCard } from '../../ui/gst/GstCard.jsx';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { r2, calcItem, weightCheck } from '@srs/core';
 import { t } from '../../lib/i18n.js';
@@ -119,6 +120,7 @@ export function Slip({ id }) {
           </div>
         )}
         {o.status === 'done' && can('money') && !waits && <GiveSlip o={o} autoOpen={route.value.query.send === '1'} />}
+        {o.status === 'done' && o.bill_type === 'pakka' && can('money') && !waits && <GstCard o={o} />}
         {o.status === 'done' && can('money') && waits && <div class="notice tone-warn" style="margin-bottom:12px;font-size:13.5px">{t('off_give_later')}</div>}
         {o.status === 'cancelled' && <div class="card pad tone-bad" style="margin-bottom:12px;font-weight:600">{t('cancelled_because', o.cancel_reason)}</div>}
         {deleted && (

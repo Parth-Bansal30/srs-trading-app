@@ -45,7 +45,7 @@ export async function readStatementFile(file, password = null, { dateStyle = nul
 }
 
 /** The file's own fingerprint: the exact same file uploaded again is recognised. */
-async function fileHash(file) {
+export async function fileHash(file) {
   try {
     const d = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
     return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');

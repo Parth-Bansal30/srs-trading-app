@@ -112,19 +112,29 @@ export function PurchaseNew() {
     return f;
   };
 
+  // a bill goes to Claude only when the owner allowed it in Settings and the person says yes for this file (F11)
+  const [askSend, setAskSend] = useState(null);
   const onFile = async (fl) => {
     if (!fl) return;
     if (fl.size > 15 * 1024 * 1024) { setErr(t('err_generic')); return; }
+    if (ctx?.can_read && cat?.settings?.ai_photos) { setAskSend(fl); return; }
+    return readFile(fl, false);
+  };
+  const readFile = async (fl, consent) => {
+    setAskSend(null);
     setErr(null); setStep('reading'); setFile({ url: URL.createObjectURL(fl), mime: fl.type, name: fl.name });
     try {
       const { mime, data } = await fileToData(fl);
-      const r = await call('readPurchaseBill', { mime, data });
+      const r = await call('readPurchaseBill', { mime, data, consent });
       if (r.ai && r.bill) {
         setForm(fromReading(r.bill, r.file_key)); setReadMsg({ ok: true });
         // a bill made out to another firm (a GST number that is not the shop's): its GST is not the shop's to claim
         if (r.bill.buyer?.gstin) db.from('companies').select('gstin').maybeSingle().then(({ data }) => setShopGstin(data?.gstin || '')).catch(() => {});
       }
-      else { setForm({ ...blankForm('bill'), file_key: r.file_key }); setReadMsg({ ok: false, why: r.reason || (ctx?.can_read ? 'unreadable' : 'off') }); }
+      else {
+        const why = r.reason === 'no_consent' && ctx?.can_read && !cat?.settings?.ai_photos ? 'photos_off' : r.reason || (ctx?.can_read ? 'unreadable' : 'off');
+        setForm({ ...blankForm('bill'), file_key: r.file_key }); setReadMsg({ ok: false, why });
+      }
       setStep('form');
     } catch (e) { setErr(e.message); setStep('start'); }
   };
@@ -178,6 +188,16 @@ export function PurchaseNew() {
           <input ref={pdfIn} type="file" accept="application/pdf,image/*" hidden onChange={(e) => onFile(e.currentTarget.files[0])} />
           <input ref={photoIn} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onFile(e.currentTarget.files[0])} />
         </div>
+        {askSend && (
+          <div class="card pad" style="margin-top:12px">
+            <div class="row" style="gap:10px"><Icon name="ShieldQuestion" size={22} /><b class="grow">{t('ai_send_t')}</b></div>
+            <div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.45">{t('ai_send_s', askSend.name)}</div>
+            <div class="row" style="gap:10px;margin-top:12px">
+              <button class="btn btn-ghost grow" onClick={() => readFile(askSend, false)}>{t('ai_send_no')}</button>
+              <button class="btn btn-brand grow" onClick={() => readFile(askSend, true)}><Icon name="Send" size={17} />{t('ai_send_yes')}</button>
+            </div>
+          </div>
+        )}
         {step === 'reading' && (
           <div class="card pad row" style="gap:12px;margin-top:12px">
             <Icon name="Sparkles" size={22} />
@@ -294,7 +314,8 @@ export function PurchaseNew() {
         right={file && <a class="round" href={file.url} target="_blank" rel="noopener" aria-label={t('pu_open_file')}><Icon name="FileText" size={19} /></a>} />
       <div class="page" style="padding-bottom:150px">
         {readMsg && <div class={`notice ${readMsg.ok ? 'tone-ok' : 'tone-warn'}`} style="margin-bottom:10px">
-          {readMsg.ok ? t('pu_read_ok') : t(readMsg.why === 'daily_limit' ? 'pu_read_limit' : readMsg.why === 'off' ? 'pu_read_off' : 'pu_read_fail')}</div>}
+          {readMsg.ok ? t('pu_read_ok') : t(readMsg.why === 'daily_limit' ? 'pu_read_limit' : readMsg.why === 'off' ? 'pu_read_off'
+            : readMsg.why === 'photos_off' ? 'pu_read_photos_off' : readMsg.why === 'no_consent' ? 'pu_read_typed' : 'pu_read_fail')}</div>}
         {readMsg?.ok && <div class="notice tone-warn" style="margin-bottom:10px;font-weight:600">{t('pu_unsure')}</div>}
         {f.buyer?.gstin && shopGstin != null && f.buyer.gstin !== shopGstin && (
           <div class="notice tone-bad" style="margin-bottom:10px;font-weight:600">{shopGstin

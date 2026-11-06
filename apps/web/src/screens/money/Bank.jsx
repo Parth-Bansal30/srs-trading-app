@@ -16,7 +16,9 @@ import { toast } from '../../ui/toast.js';
 import { online } from '../../lib/net.js';
 import { loadAccounts, kindOf, accName, accSub, forgetAccounts, balWords } from '../../lib/accounts.js';
 import { catOf } from '../../lib/expenses.js';
-import { readStatementFile } from '../../lib/bankfile.js';
+import { readStatementFile, fileHash } from '../../lib/bankfile.js';
+import { fileToData } from '../../lib/files.js';
+import { loadCatalog } from '../../lib/catalog.js';
 import { EXPENSE_CATEGORIES } from '../../config/options.js';
 import { store } from '../../lib/store.js';
 import { Icon, TopBar, Skeleton, Chip } from '../../ui/kit.jsx';
@@ -44,8 +46,11 @@ export function BankStart() {
   const [pw, setPw] = useState('');
   const [needPw, setNeedPw] = useState(false);
   const [waiting, setWaiting] = useState(null); // earlier statements with open lines
+  const [photo, setPhoto] = useState(null);     // a photo / scan: sent to Claude only with permission (F11)
+  const [aiOn, setAiOn] = useState(false);
   const input = useRef(null);
   const save = useAction('bankSave');
+  useEffect(() => { if (owner()) loadCatalog(true).then((c) => setAiOn(!!c.settings?.ai_photos)).catch(() => {}); }, []);
   useEffect(() => { if (!owner()) { go('/'); return; } loadAccounts(true).then((l) => { const b = (l || []).filter(bankLike); setAccs(b); if (!b.some((a) => a.id === acc)) setAcc(b[0]?.id || null); }).catch(() => setAccs([])); }, []);
   useEffect(() => {
     setWaiting(null);
@@ -53,14 +58,28 @@ export function BankStart() {
   }, [acc]);
 
   const open = async (f, password = null, dateStyle = null) => {
-    setErr(null); setRead(null); setBusy(true);
+    setErr(null); setRead(null); setPhoto(null);
+    if (String(f.type || '').startsWith('image/')) { setPhoto({ file: f }); return; }   // a photo: never read here, never sent without a yes
+    setBusy(true);
     try {
       const r = await readStatementFile(f, password, { dateStyle });
       setRead(r); setNeedPw(false);
     } catch (e) {
       if (e.code === 'password' || e.code === 'password_wrong') { setNeedPw(true); setErr(e.code === 'password_wrong' ? t('bk_pw_wrong') : null); }
+      else if (e.code === 'pdf_scan') setPhoto({ file: f });   // a scanned PDF: no text inside
       else setErr(t(`bk_err_${e.code}`) !== `bk_err_${e.code}` ? t(`bk_err_${e.code}`) : t('bk_err_read'));
     } finally { setBusy(false); }
+  };
+  /** The person said yes: the photo goes to Claude; every line comes back to check (nothing saved yet). */
+  const sendPhoto = async () => {
+    const f = photo.file;
+    setErr(null); setBusy(true);
+    try {
+      const { mime, data } = await fileToData(f, 2400);
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const r = await call('readStatementPhoto', { mime, data, consent: true, today });
+      setRead({ ...r, file_hash: await fileHash(f) }); setPhoto(null);
+    } catch (e) { setErr(e.message || t('bk_err_read')); setPhoto(null); } finally { setBusy(false); }
   };
   const pick = (e) => { const f = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (!f) return; setFile(f); setPw(''); open(f); };
   const ins = read ? read.lines.filter((l) => l.amount > 0) : [];
@@ -109,7 +128,7 @@ export function BankStart() {
           )}
 
           <div class="lbl" style="margin-top:16px">{t('bk_file')}</div>
-          <input ref={input} type="file" hidden accept=".pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={pick} />
+          <input ref={input} type="file" hidden accept=".pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,image/*" onChange={pick} />
           <button class="btn btn-ghost btn-block bk-file" disabled={!acc || busy} onClick={() => input.current?.click()}>
             <Icon name={busy ? 'LoaderCircle' : 'FileUp'} size={22} class={busy ? 'spin' : ''} />{busy ? t('bk_reading') : file ? file.name : t('bk_choose')}
           </button>
@@ -123,8 +142,25 @@ export function BankStart() {
               <button class="btn btn-brand btn-block" style="margin-top:10px" disabled={!pw || busy} onClick={() => open(file, pw)}>{t('bk_pw_open')}</button>
             </div>
           )}
+          {photo && (
+            <div class="card pad" style="margin-top:12px">
+              <div class="row" style="gap:10px"><Icon name={aiOn ? 'ShieldQuestion' : 'ShieldX'} size={22} /><b class="grow">{t('bk_photo_t')}</b></div>
+              {aiOn ? <>
+                <div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.45">{t('ai_send_s', photo.file.name)}</div>
+                <div class="muted" style="font-size:13px;margin-top:6px;line-height:1.45">{t('bk_photo_check')}</div>
+                <div class="row" style="gap:10px;margin-top:12px">
+                  <button class="btn btn-ghost grow" disabled={busy} onClick={() => { setPhoto(null); setFile(null); }}>{t('cancel')}</button>
+                  <button class="btn btn-brand grow" disabled={busy} onClick={sendPhoto}><Icon name="Send" size={17} />{t('ai_send_yes')}</button>
+                </div>
+              </> : <>
+                <div class="muted" style="font-size:13.5px;margin-top:6px;line-height:1.45">{t('bk_photo_off')}</div>
+                <button class="btn btn-ghost btn-block" style="margin-top:12px" onClick={() => go('/settings')}><Icon name="Settings" size={17} />{t('bk_photo_settings')}</button>
+              </>}
+            </div>
+          )}
           {err && <div class="error" style="margin-top:10px">{err}</div>}
 
+          {read && read.kind === 'photo' && <div class="notice tone-warn" style="margin-top:14px;font-size:13.5px">{t('bk_photo_read', read.lines.length, read.lines.filter((l) => l.balance_agrees).length)}</div>}
           {read && (
             <div class="card pad bk-summary" style="margin-top:14px">
               <div class="row" style="gap:10px"><Icon name="FileCheck2" size={22} style="color:var(--ok)" />
@@ -306,7 +342,7 @@ function LineRow({ r, text, busy, onOk, onChange, onSkip, own, onDir }) {
           <button class="grow bk-txt" onClick={() => setMore(!more)}>
             <div class="t">{more ? l.narration : shortNarration(l.narration, own)}</div>
             {l.status === 'open' && l.note && <div class="bk-reopen"><Icon name="Undo2" size={13} />{t('bk_reopened')} {l.note}</div>}
-            {l.status === 'open' && s.doubt && <div class="bk-reopen"><Icon name="CircleHelp" size={13} />{s.doubt.map((d) => t(`bk_d_${d}`)).join(' · ')}</div>}
+            {l.status === 'open' && s.doubt && <div class="bk-reopen"><Icon name="CircleHelp" size={13} />{s.doubt.map((d) => t(`bk_d_${d}`)).join(' · ')}{s.doubt.includes('photo') && !s.doubt.includes('balance') && l.balance != null ? ` · ${t('bk_d_photo_ok')}` : ''}</div>}
             <div class="s">{fmtDay(l.day, false)}{l.ref ? ` · ${l.ref}` : ''}</div>
           </button>
           <b class="num bk-amt" style={`color:${l.amount > 0 ? 'var(--ok)' : 'var(--bad)'}`}>{l.amount > 0 ? '+' : '−'}{money(Math.abs(l.amount), false)}</b>

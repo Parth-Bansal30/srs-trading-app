@@ -651,11 +651,12 @@ test('delete preview: owners only, shows the money, never sends a code or the ph
 // ---------- stock and purchases (30 Sept 2026) ----------
 import { parseBillJson, normalizeBill } from './ops.js';
 const MAT = '50000000-0000-4000-8000-000000000001';
-function stockDb({ reader = null, quota = true } = {}) {
+function stockDb({ reader = null, quota = true, photos = true } = {}) {
   const calls = []; const saved = [];
   const rpc = async (fn, args) => {
     calls.push({ fn, args });
     if (fn === 'api_ai_take') return quota;
+    if (fn === 'api_ai_photo_take') return photos === false ? 'off' : quota ? 'ok' : 'limit';   // (F11)
     if (fn === 'api_save_purchase') return { purchase_id: 'p1', lines: args.p.lines.map((l, i) => ({ stock_item_id: `s${i}`, new: true })) };
     if (fn === 'api_stock_data') return { can_cost: false, materials: [], items: [{ id: 's1', material_id: MAT, code: 'EN8', shape: 'round', on_hand: 500, rate: null }],
       booked: [{ stock_item_id: 's1', slip_no: '1072', shape: 'round', unit: 'mm', dims: ['32'], density: 7850, min_inch: 1, lengths: [{ len: '1000', pcs: 12, cuts: null }] }] };
@@ -701,15 +702,18 @@ test('reading a bill: file kept; without the AI the person types it; with it, th
       { description: 'MS Square Bars 20mm', hsn: '7214', qty: 1050, qty_unit: 'kg', rate: 53, rate_unit: 'kg', amount: 55650 }],
     freight: 6000, cgst: null, sgst: null, igst: 58536, round_off: 0, total: 383736, unsure: ['lines.1.qty'] }) + '\n```';
   d = stockDb({ reader: async () => answer });
-  r = await d.ops.readPurchaseBill(owner, { mime: 'image/jpeg', data: 'aGVsbG8=' });
+  // F11 (7 Nov 2026): a file goes to Claude only when the person says yes for it, and the owner allowed it
+  assert.equal((await d.ops.readPurchaseBill(owner, { mime: 'image/jpeg', data: 'aGVsbG8=' })).reason, 'no_consent');
+  assert.equal((await stockDb({ reader: async () => answer, photos: false }).ops.readPurchaseBill(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true })).reason, 'photos_off');
+  r = await d.ops.readPurchaseBill(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true });
   assert.equal(r.ai, true);
   assert.deepEqual(r.bill.lines.map((l) => [l.qty_kg, l.rate, l.amount, l.line_ok]), [[5020, 52.5, 263550, true], [1050, 53, 55650, true]]);
   assert.deepEqual(r.bill.lines[1].unsure, ['qty']);
   assert.equal(r.bill.gst, 58536); assert.equal(r.bill.bill_type, 'pakka'); assert.ok(r.bill.totals.ok);
   d = stockDb({ reader: async () => 'sorry, I cannot read this' });
-  assert.deepEqual(await d.ops.readPurchaseBill(owner, { mime: 'image/png', data: 'aGVsbG8=' }), { file_key: 'c1/f1.pdf', ai: false, reason: 'unreadable' });
+  assert.deepEqual(await d.ops.readPurchaseBill(owner, { mime: 'image/png', data: 'aGVsbG8=', consent: true }), { file_key: 'c1/f1.pdf', ai: false, reason: 'unreadable' });
   d = stockDb({ reader: async () => answer, quota: false });
-  assert.equal((await d.ops.readPurchaseBill(owner, { mime: 'image/png', data: 'aGVsbG8=' })).reason, 'daily_limit');
+  assert.equal((await d.ops.readPurchaseBill(owner, { mime: 'image/png', data: 'aGVsbG8=', consent: true })).reason, 'daily_limit');
   await rejects(stockDb().ops.readPurchaseBill(weigher, { mime: 'image/png', data: 'aGVsbG8=' }), 403);
 });
 
@@ -1207,4 +1211,24 @@ test('GST for the CA (F10): the month\'s registers add up to the slips; the Tall
   assert.deepEqual([m.purchases[0].cgst, m.purchases[0].sgst, m.purchase_totals.total], [102780, 102780, 1347560]);
   await rejects(ops.slipTally(owner, { order_id: 'x', tally_no: 'A' }, 'k', 'h'), 400);
   await rejects(ops.materialGst(owner, { material_id: '11111111-2222-4333-8444-000000000001', hsn: '72' }, 'k', 'h'), 400);
+});
+
+
+test('statement photos (F11): only with permission and a yes; every line is "read from a photo"; balance-proven lines say so', async () => {
+  const { photoStatementRows } = await import('./ops.js');
+  const answer = 'Here: ' + JSON.stringify({ opening: 10000, closing: 13500, lines: [
+    { date: '2026-10-03', narration: 'UPI/SHARMA ENGG/123', ref: '', withdrawal: null, deposit: 5000, balance: 15000 },
+    { date: '2026-10-04', narration: 'NEFT DR/GUPTA IRON', ref: 'N123', withdrawal: 1500, deposit: null, balance: 13500 }] });
+  assert.equal(photoStatementRows('no json'), null);
+  assert.equal(photoStatementRows(answer).length, 3);
+  const d = stockDb({ reader: async (b, m, prompt) => { assert.match(prompt, /bank account statement/); return answer; } });
+  await rejects(d.ops.readStatementPhoto(owner, { mime: 'image/jpeg', data: 'aGVsbG8=' }), 400, 'no_consent');
+  await rejects(d.ops.readStatementPhoto(sales, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true }), 403);
+  await rejects(stockDb({ reader: async () => answer, photos: false }).ops.readStatementPhoto(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true }), 403, 'photos_off');
+  await rejects(stockDb({ reader: async () => answer, quota: false }).ops.readStatementPhoto(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true }), 429, 'daily_limit');
+  await rejects(stockDb({ reader: async () => 'blurry' }).ops.readStatementPhoto(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true }), 422, 'unreadable');
+  await rejects(stockDb().ops.readStatementPhoto(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true }), 503, 'ai_off');
+  const r = await d.ops.readStatementPhoto(owner, { mime: 'image/jpeg', data: 'aGVsbG8=', consent: true, today: '2026-11-07' });
+  assert.equal(r.kind, 'photo');
+  assert.deepEqual(r.lines.map((l) => [l.amount, l.doubts.includes('photo'), l.balance_agrees]), [[5000, true, true], [-1500, true, true]]);
 });

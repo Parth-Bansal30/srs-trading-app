@@ -109,9 +109,35 @@ export function Settings() {
           {row({ k: "unlock_hours", w: "unlock_hours" })}
           {row({ k: "ai_daily_limit", w: "ai_limit" })}
         </div>
+        <AiPhotos s={s} edit={edit} onDone={load} />
         {a.error && <div class="error">{a.error.message}</div>}
       </div>
       {edit && dirty && <div class="actionbar"><button class="btn btn-accent btn-block" disabled={a.busy} onClick={save}>{t('save')}</button></div>}
+    </>
+  );
+}
+
+/** Reading photos and scans with Claude (7 Nov 2026, F11): off until the owner switches it on, after a plain explanation. */
+function AiPhotos({ s, edit, onDone }) {
+  const [sure, setSure] = useState(false);
+  const a = useAction('aiPhotos');
+  const on = !!s.ai_photos;
+  const flip = (next) => a.run({ on: next }).then(() => { setSure(false); forgetCatalog(); toast(t(next ? 'aip_on_done' : 'aip_off_done')); onDone(); }).catch(() => {});
+  return (
+    <>
+      <div class="sec"><h3>{t('aip_title')}</h3><span class={`chip ${on ? 'tone-ok' : 'tone-neutral'}`}>{t(on ? 'aip_is_on' : 'aip_is_off')}</span></div>
+      <div class="card pad">
+        <div style="font-size:14px;line-height:1.5">{t('aip_what')}</div>
+        <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:8px;line-height:1.45">{t('aip_never')}</div>
+        {on && s.ai_photos_at && <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:6px">{t('aip_since', new Date(s.ai_photos_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</div>}
+        {edit && (on
+          ? <button class="btn btn-ghost btn-block" style="margin-top:12px" disabled={a.busy} onClick={() => flip(false)}><Icon name="ShieldX" size={17} />{t('aip_turn_off')}</button>
+          : <>
+            <label class="cash-taken"><input type="checkbox" checked={sure} onChange={(e) => setSure(e.currentTarget.checked)} /><span>{t('aip_agree')}</span></label>
+            <button class="btn btn-brand btn-block" style="margin-top:10px" disabled={!sure || a.busy} onClick={() => flip(true)}><Icon name="ShieldCheck" size={17} />{t('aip_turn_on')}</button>
+          </>)}
+        {a.error && <div class="error">{a.error.message}</div>}
+      </div>
     </>
   );
 }

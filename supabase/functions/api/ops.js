@@ -196,6 +196,28 @@ export function coreItemFromDb(i) {
 const BILL_MIMES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
 /** What the AI is asked (reading an Indian steel purchase bill). */
+/** What the AI is asked when the owner sends a PHOTO / scan of a bank statement (7 Nov 2026, F11). */
+export const STATEMENT_PROMPT = `You read a photo or scan of an Indian bank account statement (or passbook page).
+Copy every transaction row exactly as printed — do not add, merge, guess or skip rows. Answer with JSON only:
+{"opening": number|null, "closing": number|null, "lines": [{"date": "YYYY-MM-DD", "narration": "text as printed", "ref": "cheque / UTR no. or empty",
+"withdrawal": number|null, "deposit": number|null, "balance": number|null}]}
+Rules: amounts are plain numbers in rupees (no commas, no Dr/Cr); a balance shown as Dr / overdrawn is negative; when a
+value can't be read, use null (never invent it); dates in the order printed.`;
+
+/** The AI's answer for a statement photo → the rows the phone's statement reader understands. */
+export function photoStatementRows(text) {
+  let j;
+  try { j = JSON.parse(String(text).replace(/^[^{]*/, '').replace(/[^}]*$/, '')); } catch { return null; }
+  if (!j || !Array.isArray(j.lines) || !j.lines.length || j.lines.length > 2000) return null;
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? '' : String(Number(v)));
+  const rows = [['Date', 'Narration', 'Chq./Ref.No.', 'Withdrawal Amt.', 'Deposit Amt.', 'Closing Balance']];
+  for (const l of j.lines) {
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(l?.date || '')) ? `${l.date.slice(8, 10)}/${l.date.slice(5, 7)}/${l.date.slice(0, 4)}` : String(l?.date || '');
+    rows.push([d, String(l?.narration || '').slice(0, 300), String(l?.ref || '').slice(0, 60), num(l?.withdrawal), num(l?.deposit), num(l?.balance)]);
+  }
+  return rows;
+}
+
 /** What a statement reader may say it could not prove about a line (4 Nov 2026). */
 export const BANK_DOUBTS = ['direction', 'balance', 'date_style', 'layout', 'photo'];
 
@@ -1728,11 +1750,44 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       if (bytes > 8 * 1024 * 1024) throw bad('The file is too big (over 8 MB). Send a smaller photo or the PDF.');
       const fileKey = files ? await files.save(caller, data, mime) : null;
       if (!readBill) return { file_key: fileKey, ai: false };
-      const allowed = await rpc('api_ai_take', { p_caller: caller.id });
-      if (!allowed) return { file_key: fileKey, ai: false, reason: 'daily_limit' };
+      // sent to Claude only when the owner allowed it (Settings) and the person said yes for this file (F11)
+      if (a?.consent !== true) return { file_key: fileKey, ai: false, reason: 'no_consent' };
+      const take = await rpc('api_ai_photo_take', { p_caller: caller.id });
+      if (take === 'off') return { file_key: fileKey, ai: false, reason: 'photos_off' };
+      if (take !== 'ok') return { file_key: fileKey, ai: false, reason: 'daily_limit' };
       let parsed;
       try { parsed = parseBillJson(await readBill(data, mime)); } catch (e) { console.error('readBill:', e?.message); return { file_key: fileKey, ai: false, reason: 'unreadable' }; }
       return { file_key: fileKey, ai: true, bill: normalizeBill(core, parsed) };
+    },
+
+    /** The owner allows (or stops) sending photos / scans to Claude to be read (F11). */
+    async aiPhotos(caller, a, key, hash) {
+      need(caller, 'settings');
+      return rpc('api_ai_photos', { p_caller: caller.id, p_key: key, p_hash: hash, p_on: a?.on === true });
+    },
+    /**
+     * A photo / scanned PDF of a bank statement (F11): read by Claude only when the owner allowed it and the person said
+     * yes for this file. Every line comes back marked "read from a photo" — never Ready; the balance check still runs
+     * and lines it proves say so, but each needs the owner's tick. Nothing is saved here.
+     */
+    async readStatementPhoto(caller, a) {
+      need(caller, 'settings');
+      const mime = String(a?.mime || '');
+      if (!BILL_MIMES.includes(mime)) throw bad('Send a photo (JPG / PNG) or a scanned PDF.');
+      if (a?.consent !== true) throw bad('Say yes to sending this file to Claude first.', 'no_consent');
+      const data = String(a?.data || '').replace(/^data:[^,]*,/, '');
+      if (!data || !/^[A-Za-z0-9+/=\s]+$/.test(data)) throw bad('That file could not be read.');
+      if (Math.floor(data.replace(/\s/g, '').length * 3 / 4) > 8 * 1024 * 1024) throw bad('The file is too big (over 8 MB).');
+      if (!readBill) throw new ApiError(503, 'ai_off', 'Reading photos is not set up yet. Use the Excel or PDF from the bank app.');
+      const take = await rpc('api_ai_photo_take', { p_caller: caller.id });
+      if (take === 'off') throw new ApiError(403, 'photos_off', 'Reading photos is off. The owner can switch it on in Settings.');
+      if (take !== 'ok') throw new ApiError(429, 'daily_limit', "Today's limit for reading with Claude is used up. Try tomorrow.");
+      let rows;
+      try { rows = photoStatementRows(await readBill(data, mime, STATEMENT_PROMPT)); } catch (e) { console.error('statement photo:', e?.message); rows = null; }
+      if (!rows) throw new ApiError(422, 'unreadable', 'The photo could not be read. Nothing was saved — try a clearer photo or the bank\'s Excel / PDF.');
+      const r = core.readStatementRows(rows, { today: typeof a?.today === 'string' && DAY.test(a.today) ? a.today : undefined });
+      if (!r.lines?.length) throw new ApiError(422, 'unreadable', 'No entries could be read from the photo. Nothing was saved.');
+      return { ...r, kind: 'photo', lines: r.lines.map((l) => ({ ...l, doubts: [...new Set([...(l.doubts || []), 'photo'])], balance_agrees: !(l.doubts || []).includes('balance') && l.balance != null })) };
     },
 
     /** Save a checked bill: every line into its stock item (grade + shape + HSN + rate). */

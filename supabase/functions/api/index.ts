@@ -121,15 +121,15 @@ const files = {
   },
 };
 
-/** The AI reads a bill (PDF or photo) and answers with the JSON asked for in BILL_PROMPT. */
-async function readBill(base64: string, mime: string): Promise<string> {
+/** The AI reads a bill (PDF or photo) — or a statement photo (F11, STATEMENT_PROMPT) — and answers with the JSON asked for. */
+async function readBill(base64: string, mime: string, prompt: string = BILL_PROMPT): Promise<string> {
   const doc = mime === 'application/pdf'
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
     : { type: 'image', source: { type: 'base64', media_type: mime, data: base64 } };
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: BILL_MODEL, max_tokens: 4096, messages: [{ role: 'user', content: [doc, { type: 'text', text: BILL_PROMPT }] }] }),
+    body: JSON.stringify({ model: BILL_MODEL, max_tokens: 4096, messages: [{ role: 'user', content: [doc, { type: 'text', text: prompt }] }] }),
   });
   if (!r.ok) {
     console.error('readBill: model call failed', r.status, (await r.text()).slice(0, 300));

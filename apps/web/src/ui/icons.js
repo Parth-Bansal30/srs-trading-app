@@ -28,5 +28,5 @@ export const ICONS = {
 };
 
 // 4 Nov 2026 (plan v2): review list, cheques, overdraft, suppliers, joining customers, GST / Tally, Day book
-import { CornerDownRight, GitMerge, Gauge, BookCheck, CalendarDays, Link2, Unlink, ScanText, UserRoundSearch, ScrollText, ArrowDownLeft, NotebookPen } from 'lucide-preact';
-Object.assign(ICONS, { CornerDownRight, GitMerge, Gauge, BookCheck, CalendarDays, Link2, Unlink, ScanText, UserRoundSearch, ScrollText, ArrowDownLeft, NotebookPen });
+import { CornerDownRight, GitMerge, Gauge, BookCheck, CalendarDays, Link2, Unlink, ScanText, UserRoundSearch, ScrollText, ArrowDownLeft, NotebookPen, TrendingUp, TrendingDown } from 'lucide-preact';
+Object.assign(ICONS, { CornerDownRight, GitMerge, Gauge, BookCheck, CalendarDays, Link2, Unlink, ScanText, UserRoundSearch, ScrollText, ArrowDownLeft, NotebookPen, TrendingUp, TrendingDown });

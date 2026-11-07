@@ -29,7 +29,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },
-  { id: 'reports', route: '/reports', word: 'tile_today', icon: 'ChartColumn', perm: 'money' },
+  { id: 'daybook', route: '/daybook', word: 'nav_daybook', icon: 'BookCheck', perm: 'money' },   // one day, a week or a month (7 Nov 2026); today's summary opens from it
   { id: 'evening', route: '/evening', word: 'nav_evening', icon: 'Moon', perm: 'money' },
   { id: 'close', route: '/close-day', word: 'close_title', icon: 'ClipboardCheck', perm: 'today' },
   { id: 'deleted', route: '/slips/deleted', word: 'nav_deleted', icon: 'Trash2', perm: 'delete' },

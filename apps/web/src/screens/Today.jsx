@@ -70,6 +70,9 @@ export function Today() {
           <div class="hero-glow" />
           <div class="row" style="justify-content:space-between">
             <div class="hero-cap">{t('sales_today_cap')}</div>
+            {/* the Day book: any day, week or month (7 Nov 2026) */}
+            <button class="row" style="gap:2px;font-size:13px;font-weight:700;color:inherit;opacity:.85;min-height:32px;position:relative" onClick={() => go('/daybook')}>
+              <Icon name="BookCheck" size={15} style="margin-right:4px" />{t('nav_daybook')}<Icon name="ChevronRight" size={15} /></button>
           </div>
           <div class="hero-num num">{d?.sales ? money(d.sales.total, false) : <Skeleton h={40} w={180} style="opacity:.2" />}</div>
           <div class="hero-row">

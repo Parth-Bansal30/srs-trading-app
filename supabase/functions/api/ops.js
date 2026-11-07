@@ -56,6 +56,8 @@ const kg = (v, what) => {
 const payMethod = (v) => { if (!PAY_METHODS.includes(v)) throw bad('Choose how it was paid (Cash, UPI, Bank or Cheque).'); return v; };
 const BANK_METHODS = ['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque'];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** A day plus / minus k days ('YYYY-MM-DD'). */
+const addDays = (d, k) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); };
 const GST_DELIVERY = ['pickup', 'ours', 'direct'];   // how a GST slip's steel went (F10)
 const STATE2 = /^(0[1-9]|[1-3][0-9])$/;
 const GST_RATES = [0, 0.1, 0.25, 1.5, 3, 5, 12, 18, 28, 40];
@@ -743,6 +745,65 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const purchases = (raw.purchases || []).flatMap((b) => core.purchaseRows(b, shop));
       return { month: `${m[1]}-${m[2]}`, from, to, shop: raw.shop, sales, sales_totals: core.registerTotals(sales), slips_total: slipsTotal,
         purchases, purchase_totals: core.registerTotals(purchases.map((x) => ({ ...x, slip_no: `${x.bill_no}|${x.supplier}` }))) };
+    },
+
+    // ---------- the Day book (7 Nov 2026, plan v2 step 11) ----------
+    /**
+     * One day, a week or a month at a glance — { kind: 'day' | 'week' | 'month', at } or { from, to }: sales (GST bill /
+     * no bill only for people who may see no-bill), money in and out, what was bought, a rough profit, GST for the CA,
+     * compared with the period before. Read-only.
+     */
+    async dayBook(caller, a) {
+      need(caller, 'money');
+      const today = core.businessDate(new Date().toISOString());
+      let p;
+      if (a?.from != null || a?.to != null) {
+        if (!DAY.test(a?.from || '') || !DAY.test(a?.to || '') || a.to < a.from || a.from > today) throw bad('Choose the days.');
+        const to = a.to > today ? today : a.to;
+        const span = Math.round((Date.parse(to) - Date.parse(a.from)) / 86400000);
+        if (span > 400) throw bad('Choose at most a year.');
+        const prevTo = addDays(a.from, -1);
+        p = { kind: 'range', from: a.from, to, prevFrom: addDays(prevTo, -span), prevTo };
+      } else {
+        const kind = ['day', 'week', 'month'].includes(a?.kind) ? a.kind : 'day';
+        p = core.dayBookPeriod(kind, DAY.test(a?.at || '') ? a.at : today, today);
+      }
+      const raw = await rpc('api_day_book', { p_caller: caller.id, p_from: p.from, p_to: p.to, p_prev_from: p.prevFrom, p_prev_to: p.prevTo });
+      const num = (x) => (x == null ? null : Number(x));
+      const slips = (raw.slips || []).map((o) => ({ id: o.id, slip_no: o.slip_no, customer: o.customer, customer_id: o.customer_id, bill: o.bill,
+        total: Number(o.total), gst: Number(o.gst || 0), kg: Number(o.kg || 0), at: o.at, day: o.day, direct: !!o.direct, paid: Number(o.paid || 0),
+        cost: num(o.cost), items: (o.items || []).map((i) => ({ g: i.g, sh: i.sh, d: i.d, u: i.u, kg: Number(i.kg || 0) })) }));
+      return {
+        period: p, today, kacha: !!raw.kacha, can_stock: raw.bought != null, can_expenses: raw.money_out != null,
+        summary: core.dayBookSummary({ ...raw, slips }),
+        slips,
+        money_in: (raw.money_in || []).map((x) => ({ mode: x.mode, amount: Number(x.amount), kind: x.kind, day: x.day })),
+        money_out: raw.money_out == null ? null : raw.money_out.map((e) => ({ kind: e.kind, category: e.category, amount: Number(e.amount), cash: !!e.cash, gst: Number(e.gst || 0), day: e.day })),
+        bought: raw.bought == null ? null : raw.bought.map((b) => ({ id: b.id, supplier: b.supplier, supplier_id: b.supplier_id, bill_no: b.bill_no, date: b.date,
+          bill: b.bill, total: Number(b.total), gst: Number(b.gst || 0), kg: Number(b.kg || 0), effect: b.effect, first: b.first, paid: !!b.paid,
+          left: Number(b.left || 0), due: b.due || null })),
+      };
+    },
+    /** Sales on each day of a month ({ month: 'YYYY-MM' }) — the calendar's colours (0 nothing … 4 the busiest). */
+    async salesDays(caller, a) {
+      need(caller, 'money');
+      const m = /^(\d{4})-(\d{2})$/.exec(a?.month || '');
+      if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) throw bad('Choose the month.');
+      const from = `${m[1]}-${m[2]}-01`;
+      const to = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).toISOString().slice(0, 10);
+      const rows = (await rpc('api_sales_days', { p_caller: caller.id, p_from: from, p_to: to })) || [];
+      const max = rows.reduce((x, r) => Math.max(x, Number(r.total)), 0);
+      return { month: `${m[1]}-${m[2]}`, from, to, today: core.businessDate(new Date().toISOString()), max,
+        days: rows.map((r) => ({ day: r.day, total: Number(r.total), slips: Number(r.slips), step: core.heatStep(r.total, max) })) };
+    },
+    /** The stock as it was at the end of a day ({ day, from }): what came in and went out from `from` to that day, and now. */
+    async stockOn(caller, a) {
+      need(caller, 'orders');
+      const today = core.businessDate(new Date().toISOString());
+      const day = DAY.test(a?.day || '') ? (a.day > today ? today : a.day) : today;
+      const from = DAY.test(a?.from || '') && a.from <= day ? a.from : day;
+      const rows = await rpc('api_stock_on', { p_caller: caller.id, p_day: day, p_from: from });
+      return { day, from, ...core.stockOnSummary(rows) };
     },
 
     // ---------- khata ----------
@@ -2210,7 +2271,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['gstContext', 'slipGstGet', 'tallyPending', 'gstMonth', 'customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['dayBook', 'salesDays', 'stockOn', 'gstContext', 'slipGstGet', 'tallyPending', 'gstMonth', 'customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

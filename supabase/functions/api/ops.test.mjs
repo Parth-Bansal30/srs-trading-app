@@ -1232,3 +1232,40 @@ test('statement photos (F11): only with permission and a yes; every line is "rea
   assert.equal(r.kind, 'photo');
   assert.deepEqual(r.lines.map((l) => [l.amount, l.doubts.includes('photo'), l.balance_agrees]), [[5000, true, true], [-1500, true, true]]);
 });
+
+test('the Day book (step 11): periods checked, the server gathers, @srs/core sums; read-only', async () => {
+  const calls = [];
+  const rpc = async (fn, args) => {
+    calls.push({ fn, args });
+    if (fn === 'api_day_book') return { kacha: true,
+      slips: [{ id: 's1', slip_no: 'A-1', customer: 'Sharma Engg', bill: 'pakka', total: '11800', gst: '1800', kg: '100', day: args.p_from, paid: '5000', cost: '8000',
+        items: [{ g: 'EN8', sh: 'round', d: ['40'], u: 'mm', kg: '100' }] },
+      { id: 's2', slip_no: 'A-2', customer: 'Gupta Iron', bill: 'kacha', total: '5000', gst: '0', kg: '60', day: args.p_from, paid: '5000', cost: null, items: [] }],
+      prev: { total: 10000, slips: 1 }, money_in: [{ mode: 'Cash', amount: '5000' }, { mode: 'UPI', amount: '5000' }],
+      money_out: [{ kind: 'expense', category: 'Tea', amount: '200', cash: true, gst: 0 }, { kind: 'owner', category: 'Home', amount: '1000', cash: true }],
+      bought: [{ id: 'b1', supplier: 'P K Steel', bill: 'pakka', total: '11800', gst: '1800', kg: '200', left: '11800' }], to_pay: { amount: 11800, bills: 1 } };
+    if (fn === 'api_sales_days') return [{ day: '2026-10-01', total: '1000', slips: 1 }, { day: '2026-10-02', total: '4000', slips: 3 }];
+    if (fn === 'api_stock_on') return [{ material_id: 'm1', code: 'EN8', shape: 'round', then: '500', in: '200', out: '100', now: '450', cost: null }];
+    return null;
+  };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  const d = await ops.dayBook(owner, { kind: 'month', at: '2026-10-15' });
+  assert.deepEqual([calls.at(-1).args.p_from, calls.at(-1).args.p_to, calls.at(-1).args.p_prev_from, calls.at(-1).args.p_prev_to], ['2026-10-01', '2026-10-31', '2026-09-01', '2026-09-30']);
+  assert.deepEqual([d.summary.sales.total, d.summary.sales.gst_bills, d.summary.sales.no_bill, d.summary.sales.left], [16800, 11800, 5000, 6800]);
+  assert.deepEqual([d.summary.profit.amount, d.summary.profit.known, d.summary.profit.unknown], [2000, 1, 1], 'rough profit only where the cost is known');
+  assert.deepEqual([d.summary.money_out.total, d.summary.money_out.home, d.summary.change], [200, 1000, 68], 'taken home is not a shop expense');
+  assert.equal(d.summary.gst.to_pay, 0);
+  const r = await ops.dayBook(owner, { from: '2026-10-10', to: '2026-10-19' });
+  assert.deepEqual([r.period.prevFrom, r.period.prevTo], ['2026-09-30', '2026-10-09'], 'dates: compared with as many days before');
+  await rejects(ops.dayBook(owner, { from: '2026-10-19', to: '2026-10-10' }), 400);
+  await rejects(ops.dayBook(owner, { from: '2024-01-01', to: '2026-10-10' }), 400);
+  await rejects(ops.dayBook(clerk, { kind: 'day' }), 403);
+  const s = await ops.salesDays(owner, { month: '2026-10' });
+  assert.deepEqual(s.days.map((x) => x.step), [1, 4]);
+  await rejects(ops.salesDays(owner, { month: '2026-13' }), 400);
+  const st = await ops.stockOn(sales, { day: '2026-10-31', from: '2026-10-01' });
+  assert.deepEqual([st.kg, st.worth, st.items[0].in, st.items[0].out], [500, null, 200, 100], 'no cost: no worth shown');
+  await rejects(ops.stockOn({ id: 'p-x', company_id: 'c1', perms: { weigh: 1 } }, { day: '2026-10-31' }), 403);
+  const { READ_OPS } = await import('./ops.js');
+  assert.ok(['dayBook', 'salesDays', 'stockOn'].every((o) => READ_OPS.has(o)));
+});

@@ -7,7 +7,7 @@ import { can, company } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
 import { money } from '../../lib/format.js';
 import { fmtDay } from '../../lib/docs.js';
-import { go } from '../../lib/router.js';
+import { go, route } from '../../lib/router.js';
 import { makeXlsx, saveFile } from '../../lib/xlsx.js';
 import { toast } from '../../ui/toast.js';
 import { Icon, TopBar, Skeleton } from '../../ui/kit.jsx';
@@ -49,7 +49,9 @@ function workbook(m) {
 
 export function ForCA() {
   const months = monthsBack(12);
-  const [month, setMonth] = useState(months[1] && new Date().getUTCDate() < 11 ? months[1] : months[0]);
+  // #/ca?month=2026-10 (from the Day book) opens on that month
+  const asked = /^\d{4}-\d{2}$/.test(route.value.query.month || '') && route.value.query.month <= months[0] ? route.value.query.month : null;
+  const [month, setMonth] = useState(asked || (months[1] && new Date().getUTCDate() < 11 ? months[1] : months[0]));
   const [m, setM] = useState(null);
   const [err, setErr] = useState(null);
   const [pend, setPend] = useState(null);
@@ -70,7 +72,7 @@ export function ForCA() {
         <div class="gw-chips">
           {months.slice(0, 3).map((x) => <button class={month === x ? 'on' : ''} onClick={() => setMonth(x)}>{monthName(x)}</button>)}
           <div class="field" style="min-height:42px;padding:0 10px"><select value={months.slice(0, 3).includes(month) ? '' : month} onChange={(e) => e.currentTarget.value && setMonth(e.currentTarget.value)}>
-            <option value="">{t('ca_earlier')}</option>{months.slice(3).map((x) => <option value={x}>{monthName(x)}</option>)}</select></div>
+            <option value="">{t('ca_earlier')}</option>{[...months.slice(3), ...(months.includes(month) ? [] : [month])].map((x) => <option value={x}>{monthName(x)}</option>)}</select></div>
         </div>
 
         {err && <div class="error">{err}</div>}

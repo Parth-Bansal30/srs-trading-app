@@ -4,11 +4,13 @@
 // owes, bank charges), ALREADY IN THE APP (nothing new is added), PLEASE CHECK (a name or phone in the bank text), NEEDS YOU.
 // Nothing is saved until the owner taps. Choosing once teaches the app ("SHARMA ENGG" → Sharma Engineering).
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { shortNarration, payerKey, readNarration, bankDay, chequeShow } from '@srs/core';
+import { shortNarration, payerKey, readNarration, bankDay, chequeShow, similarSuppliers, bankNameGuess } from '@srs/core';
 import { t } from '../../lib/i18n.js';
 import { can } from '../../lib/session.js';
 import { call } from '../../lib/api.js';
 import { useAction } from '../../lib/action.js';
+import { newKey } from '../../lib/api.js';
+import { forgetCatalog } from '../../lib/catalog.js';
 import { money } from '../../lib/format.js';
 import { fmtDay } from '../../lib/docs.js';
 import { go } from '../../lib/router.js';
@@ -25,6 +27,8 @@ import { Icon, TopBar, Skeleton, Chip } from '../../ui/kit.jsx';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { chqName, chqStatus, STATUS_TONE } from '../../ui/money/Cheques.jsx';
 import { BillSplit } from '../../ui/stock/BillSplit.jsx';
+import { AddSupplier } from '../../ui/stock/AddSupplier.jsx';
+import { useSameCustomer } from '../khata/SameCustomer.jsx';
 import '../../ui/money/money.css';
 import './money-screens.css';
 
@@ -395,6 +399,8 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
   const [note, setNote] = useState('');
   const [parts, setParts] = useState([]);      // which of the supplier's bills (5 Nov 2026, F6)
   const [q, setQ] = useState('');
+  const [adding, setAdding] = useState(null);   // 'supplier' | 'customer': a new one, right here (9 Nov 2026)
+  const [sq, setSq] = useState('');
   const key = payerKey(l.narration, d.own);
   const [remember, setRemember] = useState(!!key);
   const run = useAction('bankRun');
@@ -403,6 +409,10 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
   const list = (kind === 'refund' ? d.customers.filter((c) => (d.dues[c.id]?.credit || 0) > 0) : d.customers)
     .filter((c) => !q.trim() || c.name.toLowerCase().includes(q.trim().toLowerCase()) || String(c.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '') || '§'));
   const shown = (customer && !list.slice(0, 8).some((c) => c.id === customer) ? [d.customers.find((c) => c.id === customer), ...list] : list).filter(Boolean).slice(0, 8);
+  // suppliers: the ones whose name looks like the bank line first (9 Nov 2026)
+  const looksLike = new Set(n.name ? similarSuppliers(d.suppliers, { name: n.name }).map((x) => x.s.id) : []);
+  const supList = d.suppliers.filter((x) => !sq.trim() || x.name.toLowerCase().includes(sq.trim().toLowerCase()))
+    .sort((a, b) => Number(looksLike.has(b.id)) - Number(looksLike.has(a.id)));
   const ok = kind === 'skip' || ((kind === 'payment' || kind === 'refund') ? !!customer : kind === 'supplier' ? !!supplier : kind === 'move' ? !!to : true);
   const save = () => {
     const remember_key = remember ? key : null;
@@ -425,16 +435,25 @@ function LineSheet({ r, d, accs, onClose, onDone }) {
           <button class={`li ${customer === c.id ? 'on' : ''}`} onClick={() => setCustomer(c.id)}>
             <div class="grow"><div class="t">{c.name}</div><div class="s">{c.phone || ''}{d.dues[c.id]?.pakka || d.dues[c.id]?.kacha ? ` · ${t('bk_owes', money((d.dues[c.id].pakka || 0) + (d.dues[c.id].kacha || 0), false))}` : ''}</div></div>
             <span class={`radio ${customer === c.id ? 'on' : ''}`} />
-          </button>)) : <div class="li muted">{t('bk_no_match')}</div>}</div>
+          </button>)) : <div class="li muted">{t('bk_no_match')}</div>}
+          {kind === 'payment' && can('new') && adding !== 'customer' && <button class="add-new-btn" onClick={() => setAdding('customer')}><Icon name="UserPlus" size={18} />{t('nc_add_here')}</button>}</div>
+        {kind === 'payment' && adding === 'customer' && <AddCustomer d={d} hint={q.trim() || n.name} phone={n.phone} onCancel={() => setAdding(null)}
+          onPick={(c) => { if (!d.customers.some((x) => x.id === c.id)) d.customers.unshift(c); setCustomer(c.id); setQ(''); setAdding(null); }} />}
         {can('kacha') && <><div class="lbl" style="margin-top:12px">{t('which_account')}</div>
           <div class="seg"><button class={side === 'pakka' ? 'on' : ''} onClick={() => setSide('pakka')}>{t('bill_gst_short')}</button><button class={side === 'kacha' ? 'on' : ''} onClick={() => setSide('kacha')}>{t('bill_none_short')}</button></div></>}
       </>}
       {kind === 'expense' && <><div class="lbl" style="margin-top:12px">{t('bk_what_for')}</div>
         <div class="bk-cats">{EXPENSE_CATEGORIES.map((c) => <button class={category === c.id ? 'on' : ''} onClick={() => setCategory(c.id)}><Icon name={c.icon} size={18} />{t(c.word)}</button>)}</div></>}
       {kind === 'supplier' && <><div class="lbl" style="margin-top:12px">{t('bk_which_supplier')}</div>
-        <div class="card bk-pick">{d.suppliers.length ? d.suppliers.map((x) => (
-          <button class={`li ${supplier === x.id ? 'on' : ''}`} onClick={() => setSupplier(x.id)}><div class="grow t">{x.name}</div><span class={`radio ${supplier === x.id ? 'on' : ''}`} /></button>))
-          : <div class="li muted">{t('bk_no_suppliers')}</div>}</div>
+        {d.suppliers.length > 6 && <div class="field" style="margin-bottom:8px"><Icon name="Search" size={16} style="color:var(--ink-3)" /><input value={sq} placeholder={n.name || t('sup_search')} onInput={(e) => setSq(e.currentTarget.value)} /></div>}
+        <div class="card bk-pick">{supList.length ? supList.map((x) => (
+          <button class={`li ${supplier === x.id ? 'on' : ''}`} onClick={() => { setSupplier(x.id); setParts([]); }}><div class="grow"><div class="t">{x.name}</div>
+            {looksLike.has(x.id) && supplier !== x.id && <div class="s" style="color:var(--accent)">{t('ns_looks_like')}</div>}</div><span class={`radio ${supplier === x.id ? 'on' : ''}`} /></button>))
+          : <div class="li muted">{d.suppliers.length ? t('bk_no_match') : t('bk_no_suppliers')}</div>}
+          {adding !== 'supplier' && <button class="add-new-btn" onClick={() => setAdding('supplier')}><Icon name="Plus" size={18} stroke={2.4} />{t('ns_add_here')}</button>}</div>
+        {adding === 'supplier' && <AddSupplier suppliers={d.suppliers} hint={sq.trim() || n.name} onCancel={() => setAdding(null)}
+          onUse={(x) => { setSupplier(x.id); setParts([]); setAdding(null); }}
+          onAdded={(x) => { d.suppliers.unshift(x); setSupplier(x.id); setParts([]); setSq(''); setAdding(null); toast(t('ns_added', x.name)); }} />}
         {supplier && <><div class="lbl" style="margin-top:12px">{t('exp_supplier_bills')}</div>
           <BillSplit supplierId={supplier} amount={Math.abs(l.amount)} value={parts} onChange={setParts} /></>}</>}
       {kind === 'move' && <><div class="lbl" style="margin-top:12px">{isIn ? t('bk_move_from') : t('bk_move_to')}</div>
@@ -479,6 +498,7 @@ function ChequeSheet({ r, d, rows, onClose, onDone, onOther }) {
   const [side, setSide] = useState(s.side || 'pakka');
   const [number, setNumber] = useState(c.number ? chequeShow(c.number) : '');
   const [q, setQ] = useState('');
+  const [addCust, setAddCust] = useState(false);   // a new customer right here (9 Nov 2026)
   const clear = useAction('chequeClear');
   const back = useAction('chequeReturn');
   const link = useAction('bankLink');
@@ -564,7 +584,10 @@ function ChequeSheet({ r, d, rows, onClose, onDone, onOther }) {
         <div class="card bk-pick">{(customer && !list.some((x) => x.id === customer) ? [d.customers.find((x) => x.id === customer), ...list] : list).filter(Boolean).map((x) => (
           <button class={`li ${customer === x.id ? 'on' : ''}`} onClick={() => setCustomer(x.id)}>
             <div class="grow"><div class="t">{x.name}</div><div class="s">{d.dues[x.id]?.pakka || d.dues[x.id]?.kacha ? t('bk_owes', money((d.dues[x.id].pakka || 0) + (d.dues[x.id].kacha || 0), false)) : x.phone || ''}</div></div>
-            <span class={`radio ${customer === x.id ? 'on' : ''}`} /></button>))}</div>
+            <span class={`radio ${customer === x.id ? 'on' : ''}`} /></button>))}
+          {can('new') && !addCust && <button class="add-new-btn" onClick={() => setAddCust(true)}><Icon name="UserPlus" size={18} />{t('nc_add_here')}</button>}</div>
+        {addCust && <AddCustomer d={d} hint={q.trim() || readNarration(l.narration, d.own).name} onCancel={() => setAddCust(false)}
+          onPick={(x) => { if (!d.customers.some((y) => y.id === x.id)) d.customers.unshift(x); setCustomer(x.id); setQ(''); setAddCust(false); }} />}
         <div class="lbl" style="margin-top:12px">{t(c.instrument === 'dd' ? 'chq_number_dd' : 'chq_number')}</div>
         <div class="field"><input class="num" value={number} maxLength={20} onInput={(e) => setNumber(e.currentTarget.value.replace(/[^0-9A-Za-z/-]/g, '').toUpperCase())} placeholder="004512" /></div>
         {can('kacha') && <><div class="lbl" style="margin-top:12px">{t('which_account')}</div>
@@ -576,5 +599,36 @@ function ChequeSheet({ r, d, rows, onClose, onDone, onOther }) {
       <button class="btn btn-ghost btn-block" style="margin-top:14px" disabled={busy} onClick={onOther}><Icon name="ListChecks" size={16} />{t('bk_chq_other')}</button>
       {err && <div class="error">{err.message}</div>}
     </Sheet>
+  );
+}
+
+/** A new customer right here, from a bank line (9 Nov 2026): the name (and phone, if the bank line has one) to check,
+ *  "already in khata?" first (F9) — never the same customer twice. */
+function AddCustomer({ d, hint, phone: ph, onPick, onCancel }) {
+  const [name, setName] = useState(bankNameGuess(hint));
+  const [phone, setPhone] = useState(ph ? String(ph).replace(/\D/g, '').slice(-10) : '');
+  const add = useAction('createCustomer');
+  const same = useSameCustomer(d.customers);
+  const id = useRef(newKey());
+  const save = async (notSame = same.notSame) => {
+    if (!name.trim()) return;
+    if (notSame === same.notSame && !(await same.ask({ name, phone }))) return;
+    const c = await add.run({ id: id.current, name: name.trim(), phone: phone.trim() || null, ...(notSame.length ? { not_same: notSame } : {}) }).catch(() => null);
+    if (c) { id.current = newKey(); forgetCatalog(); same.reset(); toast(t('nc_added', c.name)); onPick({ id: c.id, name: c.name, phone: c.phone || null }); }
+  };
+  return (
+    <div class="card pad add-party">
+      <div class="row" style="gap:8px;margin-bottom:10px"><Icon name="UserPlus" size={18} /><b class="grow">{t('new_customer')}</b>
+        <button class="link" style="min-height:0" onClick={onCancel}>{t('cancel')}</button></div>
+      <div class="lbl">{t('name')}</div>
+      <div class="field"><input value={name} maxLength={200} onInput={(e) => { setName(e.currentTarget.value); same.reset(); }} autofocus /></div>
+      {hint && name === bankNameGuess(hint) && <div class="faint add-party-hint">{t('ns_from_bank')}</div>}
+      <div class="lbl" style="margin-top:12px">{t('phone')}</div>
+      <div class="field"><span class="faint">+91</span><input type="tel" inputmode="numeric" value={phone} onInput={(e) => { setPhone(e.currentTarget.value); same.reset(); }} /></div>
+      {same.box((c) => { same.reset(); onPick({ id: c.id, name: c.name, phone: c.phone || null }); }, (ids) => save(ids))}
+      {add.error && <div class="error" style="margin-top:10px">{add.error.message}</div>}
+      <button class="btn btn-accent btn-block" style="margin-top:12px" disabled={!name.trim() || add.busy || same.asking} onClick={() => save()}>
+        <Icon name="Plus" size={18} stroke={2.4} />{t('nc_add')}</button>
+    </div>
   );
 }

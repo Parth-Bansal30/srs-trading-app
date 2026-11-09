@@ -2007,6 +2007,17 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       return rpc('api_passkey_remove', { p_caller: caller.id, p_key: key, p_hash: hash, p_id: uuid(a?.id, 'Which phone?') });
     },
 
+    // ---------- a new supplier where it is needed (9 Nov 2026: from a bank statement line, an expense) ----------
+    /** { id?, name, gstin?, phone?, city? } → the new supplier. The same name or GST number as one already there = 409. */
+    async createSupplier(caller, a, key, hash) {
+      if (!core.can(caller.perms, 'stock') && !core.can(caller.perms, 'expenses')) need(caller, 'stock');
+      const name = text(a?.name, 120);
+      if (!name) throw bad('Write the supplier’s name.');
+      const gstin = a?.gstin ? gstinValue(a.gstin) : '';
+      return rpc('api_create_supplier', { p_caller: caller.id, p_key: key, p_hash: hash,
+        p: { ...(isUuid(a?.id) ? { id: a.id } : {}), name, gstin: gstin || null, phone: text(a?.phone, 30), city: text(a?.city, 80) } });
+    },
+
     // ---------- is the supplier's GST number active? (23 Oct 2026) ----------
     /** Suppliers with their GST status; service = whether the automatic check is switched on. */
     async suppliers(caller) {

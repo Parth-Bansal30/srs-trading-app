@@ -1269,3 +1269,15 @@ test('the Day book (step 11): periods checked, the server gathers, @srs/core sum
   const { READ_OPS } = await import('./ops.js');
   assert.ok(['dayBook', 'salesDays', 'stockOn'].every((o) => READ_OPS.has(o)));
 });
+
+test('a new supplier where it is needed (9 Nov 2026): checked, then the database decides', async () => {
+  const calls = [];
+  const rpc = async (fn, args) => { calls.push({ fn, args }); return { id: 'sup-1', name: args.p.name }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+  const r = await ops.createSupplier(owner, { name: '  Ridhi Sidhi Enterprises ', city: 'Delhi' }, 'k1', 'h');
+  assert.equal(r.id, 'sup-1');
+  assert.deepEqual([calls[0].fn, calls[0].args.p.name, calls[0].args.p.gstin, calls[0].args.p.city], ['api_create_supplier', 'Ridhi Sidhi Enterprises', null, 'Delhi']);
+  await rejects(ops.createSupplier(owner, { name: ' ' }, 'k2', 'h'), 400);
+  await rejects(ops.createSupplier(owner, { name: 'X', gstin: '07AAAAA0000A1Z0' }, 'k3', 'h'), 400);
+  await rejects(ops.createSupplier({ id: 'p-x', company_id: 'c1', perms: { weigh: 1 } }, { name: 'X' }, 'k4', 'h'), 403);
+});

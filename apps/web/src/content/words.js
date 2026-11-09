@@ -2229,6 +2229,22 @@ const NEW_WORDS = {
   dbk_tap_day: ['Tap a day to see it', 'देखने के लिए दिन दबाएं', 'Dekhne ke liye din dabao'],
   dbk_tap_first: ['Tap the first day', 'पहला दिन दबाएं', 'Pehla din dabao'],
   dbk_tap_last: ['From {0} — now tap the last day', '{0} से — अब आखिरी दिन दबाएं', '{0} se — ab aakhri din dabao'],
+  // ---- add a supplier / customer right where it is chosen (9 Nov 2026) ----
+  ns_title: ['New supplier', 'नया सप्लायर', 'Naya supplier'],
+  ns_add_here: ['Add a new supplier', 'नया सप्लायर जोड़ें', 'Naya supplier jodo'],
+  ns_name: ["Supplier's name", 'सप्लायर का नाम', 'Supplier ka naam'],
+  ns_gstin: ['GST number (if you have it)', 'GST नंबर (अगर पता हो)', 'GST number (agar pata ho)'],
+  ns_city: ['City (if you like)', 'शहर (चाहें तो)', 'Shehar (chahein to)'],
+  ns_from_bank: ['Taken from the bank line — please check the spelling.', 'बैंक की लाइन से लिया — स्पेलिंग जांच लें।', 'Bank ki line se liya — spelling check kar lo.'],
+  ns_same_name: ['Already in your suppliers?', 'क्या यह पहले से सप्लायरों में है?', 'Kya yeh pehle se suppliers mein hai?'],
+  ns_same_gstin: ['This GST number is already there', 'यह GST नंबर पहले से है', 'Yeh GST number pehle se hai'],
+  ns_add: ['Add supplier', 'सप्लायर जोड़ें', 'Supplier jodo'],
+  ns_add_anyway: ['No, add a new supplier', 'नहीं, नया सप्लायर जोड़ें', 'Nahin, naya supplier jodo'],
+  ns_added: ['{0} added to suppliers', '{0} सप्लायरों में जुड़ गया', '{0} suppliers mein jud gaya'],
+  ns_looks_like: ['Looks like the name on the bank line', 'बैंक की लाइन वाले नाम जैसा', 'Bank ki line wale naam jaisa'],
+  nc_add_here: ['Add a new customer', 'नया ग्राहक जोड़ें', 'Naya grahak jodo'],
+  nc_add: ['Add customer', 'ग्राहक जोड़ें', 'Grahak jodo'],
+  nc_added: ['{0} added to khata', '{0} खाते में जुड़ गया', '{0} khate mein jud gaya'],
 };
 
 export const WORDS = { ...PROTOTYPE_WORDS, ...NEW_WORDS };

@@ -18,6 +18,7 @@ import { Icon } from '../kit.jsx';
 import { Sheet } from '../Sheet.jsx';
 import { AccountPick } from './AccountPick.jsx';
 import { BillSplit } from '../stock/BillSplit.jsx';
+import { AddSupplier } from '../stock/AddSupplier.jsx';
 import './money.css';
 
 const blank = () => ({ kind: 'expense', category: null, amount: '', accountId: null, accPicked: false, method: null, paidTo: '', note: '', day: 'today', date: '',
@@ -43,6 +44,8 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   const credWarn = useCreditWarn(f.accountId, f.amount);   // OD / CC: past the limit? (owners, estimate)
   const [upBusy, setUpBusy] = useState(false);
   const [upErr, setUpErr] = useState(null);
+  const [newSup, setNewSup] = useState(false);   // adding a new supplier right here (9 Nov 2026)
+  const [added, setAdded] = useState([]);
   const [allCats, setAllCats] = useState(false);   // the 8 usual kinds first, the rest behind "More kinds" (26 Oct 2026)
   const save = useAction('saveExpense');
   const [why, setWhy] = useState(null);   // ₹2 lakh cash to a supplier was stopped: only the owner can record it, with what happened (F8)
@@ -55,7 +58,7 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
 
   useEffect(() => {
     if (!open) return;
-    save.setError(null); setUpErr(null); setAllCats(false); setWhy(null);
+    save.setError(null); setUpErr(null); setAllCats(false); setWhy(null); setNewSup(false);
     const base = blank();
     if (edit) {
       Object.assign(base, { kind: edit.kind, category: edit.category, amount: String(Number(edit.amount)), accountId: edit.account_id, method: edit.method || null,
@@ -73,7 +76,8 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
   }, [open, edit?.id]);
 
   const amount = Number(f.amount) || 0;
-  const sup = suppliers.find((s) => s.id === f.supplierId);
+  const allSup = [...added, ...suppliers.filter((s) => !added.some((x) => x.id === s.id))];
+  const sup = allSup.find((s) => s.id === f.supplierId);
   const splitBad = f.kind === 'supplier' && (f.parts || []).reduce((a, x) => a + (Number(x.amount) || 0), 0) > amount + 0.005;
   const problem = expenseProblem({ kind: f.kind, category: f.category, amount: f.amount, accountId: f.accountId, gstBill: f.gstBill,
     gstAmount: f.gstAmount, sellerGstin: f.sellerGstin.trim(), supplierId: f.supplierId });
@@ -150,8 +154,13 @@ export function ExpenseSheet({ open, onClose, onDone, edit = null, suppliers = [
         <div class="lbl">{t('exp_supplier')}</div>
         <select class="field" style="width:100%" value={f.supplierId || ''} onChange={(e) => set({ supplierId: e.currentTarget.value || null, bills: [], parts: [] })}>
           <option value="">—</option>
-          {suppliers.map((s) => <option value={s.id}>{s.name}{s.unpaid?.length ? ` · ${s.unpaid.length}` : ''}</option>)}
+          {allSup.map((s) => <option value={s.id}>{s.name}{s.unpaid?.length ? ` · ${s.unpaid.length}` : ''}</option>)}
         </select>
+        {/* a supplier not in the app yet: add it right here (9 Nov 2026) */}
+        {!edit && !newSup && <button class="link" style="margin-top:6px" onClick={() => setNewSup(true)}><Icon name="Plus" size={15} stroke={2.4} style="vertical-align:-2px;margin-right:4px" />{t('ns_add_here')}</button>}
+        {newSup && <AddSupplier suppliers={allSup} hint={f.paidTo} onCancel={() => setNewSup(false)}
+          onUse={(x) => { set({ supplierId: x.id, bills: [], parts: [] }); setNewSup(false); }}
+          onAdded={(x) => { setAdded((l) => [x, ...l]); set({ supplierId: x.id, bills: [], parts: [] }); setNewSup(false); }} />}
         {f.supplierId && <>
           <div class="lbl" style="margin-top:14px">{t('exp_supplier_bills')}</div>
           <BillSplit supplierId={f.supplierId} amount={amount} value={f.parts} onChange={(parts) => set({ parts })} editing={edit?.id || null} />

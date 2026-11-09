@@ -60,3 +60,15 @@ test('join: the moves come from the khata; the total of both khatas does not cha
   assert.equal(r(K.due - K.adv + O.due - O.adv), r(K2.due - K2.adv + O2.due - O2.adv), 'same total before and after');
 });
 const r = (x) => Math.round(x * 100) / 100;
+
+test('a new supplier: who looks the same (9 Nov 2026), and a name off a bank line', async () => {
+  const { similarSuppliers, bankNameGuess } = await import('../src/customerMatch.js');
+  const list = [{ id: 's1', name: 'Ridhi Sidhi Enterprises' }, { id: 's2', name: 'PK Traders', gstin: '07AABCP1234Q1Z5' }, { id: 's3', name: 'Old Co', active: false }];
+  assert.deepEqual(similarSuppliers(list, { name: 'RIDHI SIDHI EN TERPRISES' }).map((x) => [x.s.id, x.why]), [['s1', 'name']]);
+  assert.deepEqual(similarSuppliers(list, { name: 'New Steel', gstin: '07aabcp1234q1z5' }).map((x) => [x.s.id, x.strong]), [['s2', true]]);
+  assert.equal(similarSuppliers(list, { name: 'Old Co' }).length, 0, 'not the ones switched off');
+  assert.equal(similarSuppliers(list, { name: 'Bansal Metals' }).length, 0);
+  assert.equal(bankNameGuess('RIDHI SIDHI EN TERPRISES'), 'Ridhi Sidhi En Terprises');
+  assert.equal(bankNameGuess('  M/S  sharma  & sons '), 'M/S Sharma & Sons');
+  assert.equal(bankNameGuess(''), '');
+});

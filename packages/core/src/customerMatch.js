@@ -72,6 +72,35 @@ export function similarCustomers(list, who, notSame = []) {
 }
 
 /**
+ * Suppliers that look like the one about to be added (9 Nov 2026): same GST number (strong), or a name that is the
+ * same or nearly so ("RIDHI SIDHI EN TERPRISES" vs "Ridhi Sidhi Enterprises"). Returns [{ s, why: 'gstin' | 'name', strong }].
+ */
+export function similarSuppliers(list, who) {
+  const g = String(who?.gstin || '').replace(/\s/g, '').toUpperCase();
+  const out = [];
+  for (const s of list || []) {
+    if (!s || s.active === false) continue;
+    if (g && String(s.gstin || '').toUpperCase() === g) out.push({ s, why: 'gstin', strong: true });
+    else if (similarNames(who?.name, s.name) || squashSame(who?.name, s.name)) out.push({ s, why: 'name', strong: false });
+  }
+  return out.sort((p, q) => Number(q.strong) - Number(p.strong)).slice(0, 5);
+}
+// banks break names in odd places ("EN TERPRISES"): the same letters with the spaces taken out, or one letter off
+const squash = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9ऀ-ॿ]+/g, '');
+function squashSame(a, b) {
+  const x = squash(a); const y = squash(b);
+  if (x.length < 6 || y.length < 6) return x === y && x !== '';
+  return x === y || (Math.min(x.length, y.length) >= 10 && editDistance(x, y) <= 1);
+}
+
+/** A name read off a bank line, ready to edit: "RIDHI SIDHI EN TERPRISES" → "Ridhi Sidhi En Terprises" (never guessed further). */
+export function bankNameGuess(name) {
+  const s = String(name || '').replace(/[^A-Za-z0-9&.'\/ -]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  return s.split(' ').map((w) => (/^(M\/S|LLP|HUF|UPI|GST|PVT|LTD)$/i.test(w) ? w.toUpperCase() : w.length <= 1 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1).toLowerCase())).join(' ').slice(0, 120);
+}
+
+/**
  * What a join moves, side by side, from the two khatas (customerLedger bySide: { side: { due, adv } }).
  * The old customer's due on a side moves as a due; money it has with us (extra paid) moves as a credit.
  * Returns { moves: [{ side, kind: 'due' | 'credit', amount }], before: { kept, old }, after: { kept, old } }.

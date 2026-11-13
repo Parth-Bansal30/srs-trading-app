@@ -84,3 +84,4 @@
 .rep .rep-tot td{border-top:1.5px solid #14161B;border-bottom:0;font-weight:800}
 .rep .rep-cols{display:flex;gap:24px}.rep .rep-cols > div{flex:1}
 .rep .rep-look{font-size:12.5px;padding:3px 0;line-height:1.4}
+.pp-shop{font-weight:800;letter-spacing:.12em;border:1.5px dashed currentColor;padding:2px 6px;margin-bottom:4px}

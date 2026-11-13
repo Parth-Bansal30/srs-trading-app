@@ -1,6 +1,6 @@
 // Reading orders (slips) for the screens. Changes go through api.js.
 import { db } from './backend.js';
-import { SHAPES } from '@srs/core';
+import { SHAPES, sizeText, lenText } from '@srs/core';
 import { t } from './i18n.js';
 import { SHAPE_LOOK } from '../config/options.js';
 import { money, kg, shortDate } from './format.js';
@@ -45,12 +45,13 @@ export async function listOrders({ stage, search, limit = 60 } = {}) {
 // ---------- how an item is written ----------
 export const shapeName = (s) => t(SHAPE_LOOK[s]?.word || s);
 export const unitTxt = (u) => (u === 'in' ? '"' : ' mm');
-export const dimText = (it) => `${(it.dims || it.d || []).slice(0, SHAPES[it.shape]?.dims.length || 1).join(' × ')}${unitTxt(it.unit)}`;
+// a number can carry its own unit (2in, 10ft — 13 Nov 2026); plain numbers read as before
+export const dimText = (it) => sizeText((it.dims || it.d || []).slice(0, SHAPES[it.shape]?.dims.length || 1), it.unit);
 export const lengthsText = (it) => {
   if (it.by_weight) return t('by_weight');   // a direct delivery: sold by the bill's weight (5 Nov 2026)
   const rows = it.order_item_lengths || it.lengths || [];
   if (!SHAPES[it.shape]?.len) return `${rows.reduce((a, r) => a + Number(r.pcs), 0)} ${t('pcs')}`;
-  return rows.map((r) => `${r.len}${unitTxt(it.unit).trim()} × ${r.pcs}`).join(', ');
+  return rows.map((r) => `${lenText(r.len, it.unit)} × ${r.pcs}`).join(', ');
 };
 export const totalPcs = (it) => (it.order_item_lengths || it.lengths || []).reduce((a, r) => a + Number(r.pcs), 0);
 

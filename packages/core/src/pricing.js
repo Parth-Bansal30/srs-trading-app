@@ -82,3 +82,23 @@ export function orderTotals(order, mode, { bill, gstPct = 18, kachaPct = 10, min
 export const pricingModeFor = (status) => (status === 'estimate' || status === 'accepted' ? 'est' : 'final');
 
 export const finalTotal = (order, opts) => orderTotals(order, pricingModeFor(order.status), opts);
+
+/**
+ * Each line's share of a finished slip (13 Nov 2026, Parth: the customer's slip shows each line's amount — steel by
+ * weight + cutting — never the rates). items: the core items with their final weights; material / cutting: the slip's
+ * saved amounts. Each line is worked out with the usual formula, then the lines are made to add up exactly to the
+ * saved amounts (the last line takes the paisa left over). → [{ material, cutting, amount }] in the items' order.
+ */
+export function lineShares(items, { material, cutting, minInch = 0 }) {
+  const calc = (items || []).map((it) => calcItem(it, 'final', { minInch }) || calcItem(it, 'est', { minInch }) || { mat: 0, cut: 0 });
+  const spread = (key, target) => {
+    const raw = calc.map((c) => Number(c[key]) || 0);
+    const sum = raw.reduce((a, x) => a + x, 0);
+    const f = sum > 0 ? Number(target) / sum : 0;
+    const out = raw.map((x) => r2(x * f));
+    if (out.length) out[out.length - 1] = r2(out[out.length - 1] + Number(target) - out.reduce((a, x) => a + x, 0));
+    return out;
+  };
+  const mat = spread('mat', material); const cut = spread('cut', cutting);
+  return calc.map((_, k) => ({ material: mat[k], cutting: cut[k], amount: r2(mat[k] + cut[k]) }));
+}

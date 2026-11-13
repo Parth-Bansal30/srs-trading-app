@@ -1465,7 +1465,8 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
     /**
      * The slip as the customer sees it — built here from the saved figures (never from the phone),
      * saved as a snapshot with a secret link. send=true marks it as sent on WhatsApp.
-     * Never contains rates per kg, cutting rates, payment notes or the word "kacha".
+     * Never contains rates per kg, cutting rates, payment notes or the word "kacha" (each line's amount since 13 Nov 2026);
+     * shop_copy: true gives the shop's own copy with the rates, not saved.
      */
     async slipDoc(caller, a, key, hash) {
       need(caller, 'money');
@@ -1478,6 +1479,15 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       const paid = r2(payments.reduce((x, p) => x + p.amount, 0));
       const total = Number(o.total);
       const balance = r2(Math.max(0, total - paid));
+      // each line's amount (steel by weight + cutting), adding up exactly to the slip (13 Nov 2026); the rates stay off
+      // the customer's slip — only the shop copy (shop_copy: true, never saved or shared) shows them
+      const shop = !!a.shop_copy;
+      const its = raw.items || [];
+      const shares = core.lineShares(its.map((i) => (i.by_weight
+        ? { byWeight: true, aw: Number(i.weight), rate: Number(i.rate) }
+        : { shape: i.shape, unit: i.unit, d: i.dims, rows: (i.lengths || []).map((l) => ({ len: l.len ?? '', pcs: Number(l.pcs), cuts: l.cuts ?? '' })),
+          rate: Number(i.rate), cutRate: Number(i.cut_rate), density: Number(i.density), aw: i.batch ? null : (i.weight == null ? null : Number(i.weight)) })),
+      { material: Number(o.material), cutting: Number(o.cutting), minInch: o.min_inch == null ? 1 : Number(o.min_inch) });
       const doc = {
         v: 1, kind: 'slip', lang, timezone: raw.timezone,
         shop: docShop(raw.shop, gst),
@@ -1486,14 +1496,17 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
           no: o.slip_no, at: o.done_at, gst, gst_pct: gst ? Number(o.gst_pct) : null,
           show_weight: raw.show_weight !== false,
           total_weight: raw.show_weight !== false ? Number(o.total_weight) : null,
-          items: (raw.items || []).map((i) => ({
+          items: its.map((i, k) => ({
             grade: i.grade, shape: i.shape, unit: i.unit, dims: i.dims,
             lengths: i.by_weight ? [] : (i.lengths || []).map((l) => ({ len: l.len, pcs: Number(l.pcs) })),
             pcs: i.by_weight ? null : (i.lengths || []).reduce((x, l) => x + Number(l.pcs), 0),
             by_weight: !!i.by_weight,
             weight: raw.show_weight !== false && i.weight != null ? Number(i.weight) : null,
             hsn: gst && i.hsn ? String(i.hsn) : null, // GST slips only, from the stock the item came from
+            amount: shares[k] ? shares[k].amount : null,
+            ...(shop ? { rate: Number(i.rate), cut_rate: Number(i.cut_rate), cutting: shares[k] ? shares[k].cutting : null } : {}),
           })),
+          ...(shop ? { shop_copy: true } : {}),
           material: Number(o.material), cutting: Number(o.cutting), gst_amount: gst ? Number(o.gst) : 0, total,
           payments, paid, balance,
           // the GST split worked out for the CA to confirm (F10): CGST + SGST or IGST, the place of supply, the Tally bill no.
@@ -1506,6 +1519,7 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         },
         upi: a.upi !== false && raw.upi && balance > 0 ? { ...raw.upi, amount: balance, note: `Slip ${o.slip_no}` } : null,
       };
+      if (shop) return { doc };   // the shop copy: printed at the counter, never saved, never sent
       const saved = await rpc('api_save_doc', {
         p_caller: caller.id, p_key: key, p_hash: hash, p_kind: 'slip', p_order: orderId, p_customer: raw.customer.id,
         p_lang: lang, p_doc: doc, p_send: !!a.send, p_no_bill: !gst,

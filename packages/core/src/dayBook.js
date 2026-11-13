@@ -1,6 +1,7 @@
 // The Day book (7 Nov 2026, plan v2 step 11): the sums behind one day, a week or a month — sales (GST bill / no bill),
 // money in and out, bought, a rough profit, GST for the CA, the most sold steel. Pure: the server gathers the rows.
 import { r2 } from './round.js';
+import { sizeText } from './units.js';
 
 const r3 = (x) => Math.round((Number(x) || 0) * 1000) / 1000;
 const n = (x) => Number(x) || 0;
@@ -40,7 +41,7 @@ export function dayBookShift(p, step, today) {
 }
 
 /** "EN8 round 40mm" — the key the most-sold list groups by. */
-export const steelKey = (it) => `${it.g} ${it.sh} ${(it.d || []).filter((x) => x !== '' && x != null).join('×')}${it.u === 'in' ? '"' : 'mm'}`;
+export const steelKey = (it) => `${it.g} ${it.sh} ${sizeText(it.d, it.u).replace(/ × /g, '×').replace(/ mm$/, 'mm')}`;
 
 /** Everything the Day book shows, from the server's rows (api_day_book). */
 export function dayBookSummary(raw) {

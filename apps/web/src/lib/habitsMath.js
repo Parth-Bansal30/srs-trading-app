@@ -1,5 +1,6 @@
 // What this shop usually does (26 Oct 2026, pure — tested in apps/web/test/habits.test.mjs): the regular customers, the usual
 // sizes and cut lengths of a grade, and turning a customer's last order into new order items ("Same as last time").
+import { toMm } from '../../../../packages/core/src/units.js';   // (relative: the web tests run it in plain Node)
 
 /** Customers with the most slips (from rows [{ customer_id }]), at least `min` slips. → [{ id, n }] best first. */
 export function topCustomers(rows, { limit = 6, min = 2 } = {}) {
@@ -28,8 +29,8 @@ export function usualFor(items, materialId, shape, unit, { dims = null, limit = 
   const want = dims && dims.some((d) => cleanNum(d)) ? sizeKey(dims) : null;
   const lenFrom = (list) => {
     const m = new Map();
-    for (const i of list) for (const l of i.order_item_lengths || []) { const v = cleanNum(l.len); if (v && Number(v) > 0) m.set(v, (m.get(v) || 0) + 1); }
-    return [...m.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0])).slice(0, limit).map(([v]) => v);
+    for (const i of list) for (const l of i.order_item_lengths || []) { const v = cleanNum(l.len); if (v && toMm(v, 'mm') > 0) m.set(v, (m.get(v) || 0) + 1); }
+    return [...m.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1] || toMm(a[0], 'mm') - toMm(b[0], 'mm')).slice(0, limit).map(([v]) => v);
   };
   let lengths = want ? lenFrom(same.filter((i) => sizeKey(i.dims) === want)) : [];
   if (!lengths.length) lengths = lenFrom(same);

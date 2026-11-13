@@ -61,12 +61,18 @@ export function useGiveSlip(o) {
     } finally { cleanup(); }
   }, forWa ? 'wa' : 'pdf', given);
   const print = (given) => withDoc(async (r) => printPaper(<SlipPaper doc={r.doc} size={prefs.size} showQr={prefs.upi} />, prefs.size), 'print', given);
+  // the shop's own copy with the rates (13 Nov 2026): printed here, never saved or sent
+  const shopCopy = async () => {
+    setBusy('print');
+    try { const r = await makeSlipDoc({ orderId: o.id, lang: prefs.lang, shopCopy: true }); await printPaper(<SlipPaper doc={r.doc} size={prefs.size} showQr={false} />, prefs.size); }
+    catch (e) { toast(e.message || t('err_generic')); } finally { setBusy(null); }
+  };
   const again = async () => {
     const p = pending; setPending(null);
     if (p?.kind === 'wa') openWhatsApp(p.url);
     if (p?.kind === 'pdf') { const res = await shareOrSave(p.file, p.text); if (res === 'saved') toast(t('pdf_saved')); if (res === 'shared' && p.forWa) markSent(); }
   };
-  return { prefs, change, info, busy, pending, again, sendWa, pdf, print, phone, choose, setChoose, pick };
+  return { prefs, change, info, busy, pending, again, sendWa, pdf, print, shopCopy, phone, choose, setChoose, pick };
 }
 
 function SentLine({ info }) {
@@ -104,6 +110,7 @@ function GiveSlipCard({ g, o, openSheet }) {
       </div>
       <AgainButton g={g} />
       <SentLine info={g.info} />
+      <button class="link" style="margin:8px auto 0;display:flex" disabled={!!g.busy} onClick={g.shopCopy}><Icon name="Store" size={16} />{t('print_shop')}</button>
     </div>
   );
 }

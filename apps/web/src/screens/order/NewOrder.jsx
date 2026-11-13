@@ -22,6 +22,7 @@ import { MoneyTo, useWhere } from '../../ui/money/MoneyTo.jsx';
 import { whereArgs, whereProblem, whereLabel } from '../../lib/accounts.js';
 import { moneySaved } from '../../lib/easy.js';
 import { ItemCard } from './ItemCard.jsx';
+import { QuickList, blankLine, isBlankLine } from './QuickList.jsx';
 import { loadStock } from '../../lib/stock.js';
 import { choicesFor } from '../../ui/stock/StockPick.jsx';
 import { CustomerPicker } from './CustomerPicker.jsx';
@@ -32,6 +33,7 @@ import { shortDate } from '../../lib/format.js';
 import './order.css';
 
 const DRAFT = 'draft:new-order';
+const MODE = 'order-mode';   // 'list' (the quick list, 13 Nov 2026) or 'full' — remembered on this phone
 const blankItem = (unit = 'mm') => ({ key: Math.random().toString(36).slice(2), material_id: null, shape: 'round', unit, d: [''], rows: [{ len: '', pcs: '', cuts: '' }], rate: null, cut_rate: null });
 
 export function NewOrder() {
@@ -49,6 +51,10 @@ export function NewOrder() {
   const [last, setLast] = useState(null);
   const [regs, setRegs] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [mode, setMode] = useState(() => (store.get(MODE) === 'full' ? 'full' : 'list'));
+  const [kp, setKp] = useState(false);              // the quick list's keypad is open (the save bar waits under it)
+  const [focusItem, setFocusItem] = useState(null); // "Full" for one line: that card is shown first
+  const pending = useRef(null);                     // Save / Accept pressed with no customer yet: carry on once one is chosen
   const create = useAction('createOrder');
   const update = useAction('updateOrder');
   // the slip's own ids are chosen here, so a slip made without internet can be weighed and finished on this phone too
@@ -127,10 +133,12 @@ export function NewOrder() {
     setItem(i, { unit: to, d: it.d.map((v) => convLen(v, it.unit, to)), rows: it.rows.map((r) => ({ ...r, len: convLen(r.len, it.unit, to) })) });
   };
 
+  // an empty line at the end of the quick list is not an item
+  const kept = () => items.map((it, i) => ({ it, i })).filter((x) => !isBlankLine(x.it));
   const payload = () => ({
     customer_id: customer?.id,
     ...(editing ? {} : { order_id: ids.current.order }),
-    items: items.map((it, i) => ({
+    items: kept().map(({ it, i }) => ({
       ...(editing ? {} : { id: itemId(it.key) }),
       material_id: it.material_id, shape: it.shape, unit: it.unit, d: it.d.slice(0, SHAPES[it.shape].dims.length),
       stock_item_id: resolved[i]?.stockId ?? null,
@@ -140,10 +148,27 @@ export function NewOrder() {
     })),
   });
   const check = () => {
+    const k = kept();
+    if (!k.length) return t('ql_need_line');
+    const bad = k.find((x) => !resolved[x.i]?.calc);
+    if (bad) return t('need_item', bad.i + 1);
     if (!customer) return t('need_cust');
-    const bad = resolved.findIndex((r) => !r.calc);
-    return bad >= 0 ? t('need_item', bad + 1) : null;
+    return null;
   };
+  /** Save / Accept: a missing customer is asked for now (the order could be written before — a walk-in). */
+  const go2 = (accept) => {
+    const p = check();
+    if (p === t('need_cust')) { setProblem(null); pending.current = accept ? 'accept' : 'save'; setPickCust(true); return; }
+    setProblem(p);
+    if (p) return;
+    if (accept) setAdvOpen(true); else save(false);
+  };
+  useEffect(() => {
+    if (!customer || !pending.current) return;
+    const what = pending.current; pending.current = null;
+    go2(what === 'accept');
+  }, [customer?.id]);
+  const switchMode = (m) => { setMode(m); store.set(MODE, m); setFocusItem(null); setKp(false); };
 
   const save = async (accept, advance, label) => {
     const told = (slipNo) => { if (advance?.amount > 0) moneySaved({ amount: advance.amount, customer: customer?.name, slipNo, account: label }); };
@@ -164,8 +189,8 @@ export function NewOrder() {
         const r = await create.run(args, { local: () => {
           // no internet: the slip is kept on this phone with a phone number (P1, P2 …); the real number comes when it is sent
           const localNo = nextLocalNo();
-          const shown = items.map((it, i) => ({ id: args.items[i].id, material: it.material_id, code: resolved[i].m?.code, shape: it.shape, unit: it.unit,
-            d: args.items[i].d, rows: args.items[i].rows, rate: resolved[i].rate, cutRate: resolved[i].cutRate, density: resolved[i].core.density,
+          const shown = kept().map(({ it, i }, n) => ({ id: args.items[n].id, material: it.material_id, code: resolved[i].m?.code, shape: it.shape, unit: it.unit,
+            d: args.items[n].d, rows: args.items[n].rows, rate: resolved[i].rate, cutRate: resolved[i].cutRate, density: resolved[i].core.density,
             special: resolved[i].isSpecial, stockItemId: resolved[i].stockId }));
           const order = localOrderShape({ id: args.order_id, localNo, customer, items: shown, accepted: accept, settings,
             advance: advance ? { amount: advance.amount, note: advance.note, mode: modeOfArgs(advance, accountsCache.value || []) } : null });
@@ -188,7 +213,9 @@ export function NewOrder() {
   return (
     <div class="order-screen">
       <TopBar title={editing ? t('edit_order') : t('nav_new')} sub={editing ? `#${editing.slip_no} · ${t('st_estimate')}` : t('st_estimate')}
-        right={!editing && <button class="pill" onClick={() => { store.set(DRAFT, null); setCustomer(null); setItems([blankItem(settings.default_unit)]); }}><Icon name="RefreshCw" size={15} /></button>} />
+        right={<div class="row" style="gap:6px">
+          <div class="seg ql-mode"><button class={mode === 'list' ? 'on' : ''} onClick={() => switchMode('list')}>{t('ql_list')}</button><button class={mode === 'full' ? 'on' : ''} onClick={() => switchMode('full')}>{t('ql_full_tab')}</button></div>
+          {!editing && <button class="pill" aria-label={t('ql_clear')} onClick={() => { store.set(DRAFT, null); setCustomer(null); setItems([blankItem(settings.default_unit)]); }}><Icon name="RefreshCw" size={15} /></button>}</div>} />
       <div class="page order-page">
         <button class="card li cust" onClick={() => setPickCust(true)}>
           {customer ? (
@@ -200,7 +227,7 @@ export function NewOrder() {
           ) : (
             <>
               <div class="iconbox tone-accent"><Icon name="Users" /></div>
-              <div class="grow t">{t('choose_customer')}</div><Icon name="ChevronRight" size={18} />
+              <div class="grow"><div class="t">{t('choose_customer')}</div>{mode === 'list' && <div class="s">{t('ql_cust_later')}</div>}</div><Icon name="ChevronRight" size={18} />
             </>
           )}
         </button>
@@ -215,16 +242,24 @@ export function NewOrder() {
           </div>
         )}
 
-        {items.map((it, i) => (
-          <ItemCard key={it.key} index={i} item={it} r={resolved[i]} cat={cat} customer={customer} editingId={editing?.id} stock={stock} recent={recent}
-            onChange={(patch) => setItem(i, patch)} onUnit={(u) => changeUnit(i, u)}
-            onRemove={items.length > 1 ? () => setItems(items.filter((_, k) => k !== i)) : null} />
-        ))}
-        <button class="add-item" onClick={() => setItems([...items, blankItem(settings.default_unit)])}><Icon name="Plus" size={18} stroke={2.4} />{t('add_item')}</button>
+        {mode === 'list' ? (
+          <QuickList items={items} setItems={setItems} resolved={resolved} cat={cat} recent={recent} unit={settings.default_unit || 'mm'}
+            onKeypad={setKp} onFull={(i) => { switchMode('full'); setFocusItem(items[i].key); }} />
+        ) : (
+          <>
+            {items.map((it, i) => ((focusItem && it.key !== focusItem) ? null : (
+              <ItemCard key={it.key} index={i} item={it} r={resolved[i]} cat={cat} customer={customer} editingId={editing?.id} stock={stock} recent={recent}
+                onChange={(patch) => setItem(i, patch)} onUnit={(u) => changeUnit(i, u)}
+                onRemove={items.length > 1 ? () => setItems(items.filter((_, k) => k !== i)) : null} />
+            )))}
+            {focusItem ? <button class="add-item" onClick={() => switchMode('list')}><Icon name="ChevronLeft" size={18} />{t('ql_back_list')}</button>
+              : <button class="add-item" onClick={() => setItems([...items, blankItem(settings.default_unit)])}><Icon name="Plus" size={18} stroke={2.4} />{t('add_item')}</button>}
+          </>
+        )}
         {problem && <div class="error" style="text-align:center">{problem}</div>}
       </div>
 
-      <div class="quotebar">
+      <div class="quotebar" style={kp ? 'display:none' : ''}>
         {can('money') && (
           <div class="quote-row">
             <div><div class="faint cap">{t('est_total')}</div><div class="num big">{money(totals.plain.total, true)}</div></div>
@@ -233,12 +268,12 @@ export function NewOrder() {
           </div>
         )}
         <div class="row">
-          <button class="btn btn-ghost" style="width:128px" disabled={busy} onClick={() => save(false)}>{t('save_est').split(' ')[0]}</button>
-          <button class="btn btn-accent grow" disabled={busy} onClick={() => { const p = check(); setProblem(p); if (!p) setAdvOpen(true); }}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button>
+          <button class="btn btn-ghost" style="width:128px" disabled={busy} onClick={() => go2(false)}>{t('save_est').split(' ')[0]}</button>
+          <button class="btn btn-accent grow" disabled={busy} onClick={() => go2(true)}><Icon name="Check" size={20} stroke={2.6} />{t('accept')}</button>
         </div>
       </div>
 
-      <CustomerPicker open={pickCust} customers={cat.customers} regulars={regs} onClose={() => setPickCust(false)}
+      <CustomerPicker open={pickCust} customers={cat.customers} regulars={regs} onClose={() => { setPickCust(false); pending.current = null; }}
         onPick={(c) => { setCustomer(c); setPickCust(false); }} />
       <AdvanceSheet open={advOpen} busy={busy} customerId={customer?.id} onClose={() => setAdvOpen(false)} total={totals.plain.total}
         onAccept={(adv, label) => { setAdvOpen(false); save(true, adv, label); }} />

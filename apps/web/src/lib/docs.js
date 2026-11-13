@@ -1,7 +1,7 @@
 // Slips and statements for the CUSTOMER: the backend builds each one from the saved figures and
 // keeps a copy behind a secret link (#/d/<token>). This file makes the link, the WhatsApp message,
 // the UPI payment link and the PDF file name. Words come from content/words.js in the doc's language.
-import { whatsappLink, calcItem, orderTotals } from '@srs/core';
+import { whatsappLink, calcItem, orderTotals, sizeText, lenText } from '@srs/core';
 import { call } from './api.js';
 import { db } from './backend.js';
 import { tIn } from './i18n.js';
@@ -26,7 +26,7 @@ export const docPrefs = () => ({ size: 'page', lang: 'en', upi: true, ...store.j
 export const saveDocPrefs = (p) => store.setJson('doc-prefs', { ...docPrefs(), ...p });
 
 /** Build (or refresh) the slip copy. send=true also marks it as sent. */
-export const makeSlipDoc = ({ orderId, lang, upi = true, send = false }) => call('slipDoc', { order_id: orderId, lang, upi, send });
+export const makeSlipDoc = ({ orderId, lang, upi = true, send = false, shopCopy = false }) => call('slipDoc', { order_id: orderId, lang, upi, send, ...(shopCopy ? { shop_copy: true } : {}) });
 /** Statement: preview=true only works out the numbers; otherwise a new copy + link is saved. */
 export const makeStatementDoc = ({ customerId, from, to, which, lang, upi = true, send = false, preview = false }) =>
   call('statementDoc', { customer_id: customerId, from, to, which, lang, upi, send, preview });
@@ -134,14 +134,15 @@ export function statementText(doc, url) {
 
 export function slipText(doc, url) {
   const l = doc.lang; const s = doc.slip;
-  const unit = (u) => (u === 'in' ? '"' : ' mm');
   const items = s.items.flatMap((it) => {
-    const size = `${it.shape === 'round' ? 'Ø' : ''}${(it.dims || []).filter((x) => x !== '' && x != null).join('×')}${unit(it.unit)}`;
+    const size = `${it.shape === 'round' ? 'Ø' : ''}${sizeText(it.dims, it.unit).replace(/ × /g, '×')}`;
     const lens = it.by_weight ? tIn(l, 'by_weight')
       : it.lengths.length && it.lengths[0].len != null && it.lengths[0].len !== ''
-        ? it.lengths.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ')
+        ? it.lengths.map((r) => `${lenText(r.len, it.unit)}×${r.pcs}`).join(', ')
         : `${it.pcs} ${tIn(l, 'pcs')}`;
-    return [`${it.grade} ${size}${it.hsn ? ` HSN ${it.hsn}` : ''}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : '')];
+    // each line's amount (13 Nov 2026) — never the rate
+    return [`${it.grade} ${size}${it.hsn ? ` HSN ${it.hsn}` : ''}`, line(` ${lens}`, it.weight != null ? `${it.weight.toFixed(2)} kg` : ''),
+      ...(it.amount != null ? [line('', money(it.amount, true))] : [])];
   });
   const lines = slipSumLines(l, s);
   const pays = s.payments.map((p) => `${p.amount < 0 ? tIn(l, 'doc_returned') : p.kind === 'advance' ? tIn(l, 'doc_pay_adv') : tIn(l, 'doc_pay')} ${shortDate(p.at, doc.timezone)} ${modeWord(l, p.mode)}: ${p.amount < 0 ? '+' : '−'} ${money(Math.abs(p.amount), true)}`.replace(/\s+:/, ':'));
@@ -195,16 +196,15 @@ export function pdfCaption(doc, url) {
 export function quoteText(o, { bill = 'pakka', lang = 'en', shop = '', gstPct = 18, kachaPct = 10, tz = 'Asia/Kolkata' } = {}) {
   const l = lang;
   const minInch = o.pricing_rules?.min_inch ?? 1;
-  const unit = (u) => (u === 'in' ? '"' : ' mm');
   const core = (it) => ({ shape: it.shape, unit: it.unit, d: it.dims, rows: (it.order_item_lengths || []).map((r) => ({ len: r.len ?? '', pcs: r.pcs, cuts: r.cuts ?? '' })),
     rate: Number(it.sell_rate), cutRate: Number(it.cut_rate), density: Number(it.density), aw: null });
   const items = o.order_items.map(core);
   const T = orderTotals({ items }, 'est', { bill, gstPct, kachaPct, minInch });
   const rows = o.order_items.flatMap((it, k) => {
     const c = calcItem(items[k], 'est', { minInch });
-    const size = `${it.shape === 'round' ? 'Ø' : ''}${(it.dims || []).filter((x) => x !== '' && x != null).join('×')}${unit(it.unit)}`;
+    const size = `${it.shape === 'round' ? 'Ø' : ''}${sizeText(it.dims, it.unit).replace(/ × /g, '×')}`;
     const ls = it.order_item_lengths || [];
-    const lens = ls.length && ls[0].len != null && ls[0].len !== '' ? ls.map((r) => `${r.len}${unit(it.unit).trim()}×${r.pcs}`).join(', ') : `${ls.reduce((a, r) => a + Number(r.pcs), 0)} ${tIn(l, 'pcs')}`;
+    const lens = ls.length && ls[0].len != null && ls[0].len !== '' ? ls.map((r) => `${lenText(r.len, it.unit)}×${r.pcs}`).join(', ') : `${ls.reduce((a, r) => a + Number(r.pcs), 0)} ${tIn(l, 'pcs')}`;
     return [`${it.grade_code} ${size}`, line(` ${lens}`, c ? `≈${c.est.toFixed(2)} kg` : '')];
   });
   const day = new Date().toLocaleDateString('en-CA', { timeZone: tz });

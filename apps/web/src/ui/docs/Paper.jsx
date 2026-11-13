@@ -2,7 +2,7 @@
 // Everything comes from the saved copy (doc) the backend made; words are in the doc's own language.
 // Never shows rates per kg, the shop's notes, or the word "kacha".
 import qrcode from 'qrcode-generator';
-import { SHAPES } from '@srs/core';
+import { SHAPES, sizeText as sizeOf, lenText } from '@srs/core';
 import { tIn } from '../../lib/i18n.js';
 import { money, shortDate, time } from '../../lib/format.js';
 import { upiLink, isSampleUpi, fmtDay, slipSumLines, slipGstNote } from '../../lib/docs.js';
@@ -11,14 +11,13 @@ import './docs.css';
 
 const n2 = (v) => money(v, true).replace('₹', '');      // 3,719.01 (tables)
 const initials = (name) => (name || '?').split(/\s+/).filter(Boolean).slice(0, 3).map((w) => w[0]).join('').toUpperCase();
-const unit = (u) => (u === 'in' ? '"' : ' mm');
 const sizeText = (it) => {
   const d = (it.dims || []).slice(0, SHAPES[it.shape]?.dims.length || 1);
-  return `${it.shape === 'round' ? 'Ø ' : ''}${d.join(' × ')}${unit(it.unit)}`;
+  return `${it.shape === 'round' ? 'Ø ' : ''}${sizeOf(d, it.unit)}`;
 };
 const lengthRows = (it, l) => (it.by_weight ? [tIn(l, 'by_weight')]   // a direct delivery: sold by the bill's weight
   : SHAPES[it.shape]?.len
-    ? it.lengths.map((r) => `${r.len}${unit(it.unit)} × ${r.pcs}`)
+    ? it.lengths.map((r) => `${lenText(r.len, it.unit)} × ${r.pcs}`)
     : [`${it.pcs} ${tIn(l, 'pcs')}`]);
 // a payment split across accounts shows its modes, e.g. "Cash + Bank" (never an account name)
 const modeWord = (l, mode) => String(mode || '').split('+').map((x) => PAY_METHODS.find((m) => m.id === x)).filter(Boolean).map((m) => tIn(l, m.word)).join(' + ') || null;
@@ -100,6 +99,10 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
   const lines = slipSumLines(l, s);
   const gstNote = slipGstNote(l, s);
   const paidUp = s.balance <= 0 && s.total > 0;
+  // each line's amount (13 Nov 2026) — steel by weight + cutting; slips saved before have none. The shop's own copy
+  // also shows the rate per kg and the cutting of each line (it is printed at the counter, never sent).
+  const amounts = s.items.some((it) => it.amount != null);
+  const shop = !!s.shop_copy;
 
   if (size === 'roll') {
     return (
@@ -107,12 +110,14 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
         <div class="pp-c pp-rollshop">{doc.shop.name}</div>
         <div class="pp-c">{doc.shop.address}{doc.shop.phone && <><br />Ph {doc.shop.phone}</>}{s.gst && doc.shop.gstin && <><br />GSTIN {doc.shop.gstin}</>}</div>
         <div class="pp-dash" />
+        {shop && <div class="pp-c pp-shop">{tIn(l, 'doc_shop_copy')}</div>}
         <b>{tIn(l, 'order_slip')} #{s.no}</b><div>{when}</div><div>{doc.customer.name}{s.gst && doc.customer.gstin ? ` · ${doc.customer.gstin}` : ''}</div>
         <div class="pp-dash" />
         {s.items.map((it) => (
           <div>
-            <div>{it.grade} {tIn(l, SHAPE_LOOK[it.shape]?.word || it.shape)} {sizeText(it)}{it.hsn ? ` · HSN ${it.hsn}` : ''}</div>
+            <div class="pp-lr"><span>{it.grade} {tIn(l, SHAPE_LOOK[it.shape]?.word || it.shape)} {sizeText(it)}{it.hsn ? ` · HSN ${it.hsn}` : ''}</span>{amounts && <b>{it.amount != null ? n2(it.amount) : ''}</b>}</div>
             <div class="pp-lr"><span> {lengthRows(it, l).join(', ')}</span><span>{it.weight != null ? `${it.weight.toFixed(2)}kg` : ''}</span></div>
+            {shop && <div class="pp-lr pp-small"><span> ₹{n2(it.rate)}/kg</span><span>{tIn(l, 'cutting')} {n2(it.cutting || 0)}</span></div>}
           </div>
         ))}
         {s.total_weight != null && <div class="pp-lr"><span>{tIn(l, 'weight_total')}</span><span>{Number(s.total_weight).toFixed(2)}kg</span></div>}
@@ -133,13 +138,13 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
   return (
     <div class="pp pp-page">
       <ShopHead shop={doc.shop} gst={s.gst} right={<>
-        <div class="pp-cap pp-kind">{tIn(l, 'order_slip')}</div>
+        <div class="pp-cap pp-kind">{shop ? `${tIn(l, 'doc_shop_copy')} · ` : ''}{tIn(l, 'order_slip')}</div>
         <div class="pp-no pp-num">#{s.no}</div>
         <div class="pp-mute pp-small">{when}</div>
       </>} />
       <CustomerBox c={doc.customer} l={l} gst={s.gst} />
       <table class="pp-table">
-        <thead><tr><th style="width:22px">#</th><th>{tIn(l, 'doc_item')}</th><th>{tIn(l, 'doc_size')}</th><th>{tIn(l, 'doc_len_pcs')}</th>{s.show_weight && <th class="r">{tIn(l, 'doc_weight')}</th>}</tr></thead>
+        <thead><tr><th style="width:22px">#</th><th>{tIn(l, 'doc_item')}</th><th>{tIn(l, 'doc_size')}</th><th>{tIn(l, 'doc_len_pcs')}</th>{s.show_weight && <th class="r">{tIn(l, 'doc_weight')}</th>}{shop && <><th class="r">{tIn(l, 'doc_rate_kg')}</th><th class="r">{tIn(l, 'cutting')}</th></>}{amounts && <th class="r">{tIn(l, 'doc_amount')}</th>}</tr></thead>
         <tbody>
           {s.items.map((it, i) => (
             <tr>
@@ -148,9 +153,11 @@ export function SlipPaper({ doc, size = 'page', showQr = true }) {
               <td class="pp-num">{sizeText(it)}</td>
               <td class="pp-num">{lengthRows(it, l).map((x) => <div>{x}</div>)}</td>
               {s.show_weight && <td class="pp-num r" style="font-weight:700">{it.weight != null ? `${it.weight.toFixed(2)} kg` : ''}</td>}
+              {shop && <><td class="pp-num r">₹{n2(it.rate)}</td><td class="pp-num r">{n2(it.cutting || 0)}</td></>}
+              {amounts && <td class="pp-num r" style="font-weight:800">{it.amount != null ? n2(it.amount) : ''}</td>}
             </tr>
           ))}
-          {s.show_weight && s.total_weight != null && <tr class="pp-noline"><td /><td colSpan={3} class="pp-mute">{tIn(l, 'doc_weighed')}</td><td class="pp-num r" style="font-weight:800">{Number(s.total_weight).toFixed(2)} kg</td></tr>}
+          {s.show_weight && s.total_weight != null && <tr class="pp-noline"><td /><td colSpan={3} class="pp-mute">{tIn(l, 'doc_weighed')}</td><td class="pp-num r" style="font-weight:800">{Number(s.total_weight).toFixed(2)} kg</td>{shop && <><td /><td /></>}{amounts && <td />}</tr>}
         </tbody>
       </table>
       <div class="pp-foot">

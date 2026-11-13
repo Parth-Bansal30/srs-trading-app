@@ -37,6 +37,9 @@ const KIND_WORD = { advance: 'kind_adv', pickup: 'kind_pick', khata: 'kind_khata
 export function Slip({ id }) {
   const [o, setO] = useState(undefined);
   const [sheet, setSheet] = useState(null); // 'advance' | 'adjust' | 'cancel' | 'accept' | 'menu' | 'delete' | 'ask'
+  // our cost stays hidden at the counter until the owner taps "Owner info" (13 Nov 2026); hides again after 15 seconds
+  const [peek, setPeek] = useState(false);
+  useEffect(() => { if (!peek) return undefined; const k = setTimeout(() => setPeek(false), 15000); return () => clearTimeout(k); }, [peek]);
   const [req, setReq] = useState(null);     // an open "please delete" request (owners)
   const [deleter, setDeleter] = useState('');
   const [stock, setStock] = useState(null);      // to show / change which stock each item comes from
@@ -159,10 +162,12 @@ export function Slip({ id }) {
                 <Icon name="TriangleAlert" size={16} stroke={2.4} /><span class="grow">{t('pu_far', kg(needOf({ ...it, actual_weight: null }).kg, 1))}</span></div>}
               {stock && (it.stock_item_id || stockOpen) && <div style="flex-basis:100%;padding-left:52px">
                 <StockLine stock={stock} value={it.stock_item_id || null} need={needOf(it)} sellRate={it.sell_rate}
-                  readOnly={!stockOpen} onOpen={() => setPickFor(it.id)} /></div>}
+                  readOnly={!stockOpen} onOpen={() => setPickFor(it.id)} hideCost={!peek} /></div>}
             </div>
           ))}
         </div>
+        {stock && can('stock') && o.order_items.some((it) => it.stock_item_id) && (
+          <button class="link" style="min-height:0;margin-top:8px;font-size:13px" onClick={() => setPeek(!peek)}><Icon name={peek ? 'EyeOff' : 'Lock'} size={14} />{peek ? t('owner_hide') : t('owner_info')}</button>)}
 
         {can('money') && ['estimate', 'accepted'].includes(o.status) && !local && (
           <button class={`btn ${o.status === 'estimate' ? 'btn-wa' : 'btn-ghost'} btn-block`} style="margin-top:12px" onClick={() => setSheet('quote')}>

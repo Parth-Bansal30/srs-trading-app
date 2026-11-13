@@ -18,6 +18,10 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, rece
   const [pickStock, setPickStock] = useState(false);
   const [info, setInfo] = useState(false);
   const [hint, setHint] = useState(null);
+  // the customer can see the screen at the counter (13 Nov 2026): our cost and other customers' rates stay hidden until the
+  // owner taps "Owner info" (it hides again after 15 seconds)
+  const [peek, setPeek] = useState(false);
+  useEffect(() => { if (!peek) return undefined; const k = setTimeout(() => setPeek(false), 15000); return () => clearTimeout(k); }, [peek]);
   const sh = SHAPES[item.shape];
   const m = r.m;
   const tz = company.value?.timezone;
@@ -109,7 +113,7 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, rece
                 <input class="num" inputmode="decimal" disabled={!can('price')} value={item.cut_rate ?? r.cutRate} onInput={(e) => onChange({ cut_rate: e.currentTarget.value })} /></span>
             </label>
           </div>
-          {hint && (
+          {hint && (hint.mine || peek) && (
             <div class={`hint ${h ? (diff > 0 ? 'tone-warn' : diff < 0 ? 'tone-pakka' : 'tone-ok') : 'tone-neutral'}`}>
               <Icon name="Info" size={15} stroke={2.2} />
               <span class="grow">{hint.mine ? t('last_cust', hint.mine.name, hint.mine.rate, hint.mine.cut, shortDate(hint.mine.at, tz), hint.mine.slip)
@@ -121,7 +125,9 @@ export function ItemCard({ index, item, r, cat, customer, editingId, stock, rece
         </>
       )}
 
-      {m && stock && <StockLine stock={stock} value={r.stockId} need={r.need} sellRate={r.rate} onOpen={() => setPickStock(true)} />}
+      {m && stock && <StockLine stock={stock} value={r.stockId} need={r.need} sellRate={r.rate} onOpen={() => setPickStock(true)} hideCost={!peek} />}
+      {m && (can('stock') || can('price')) && (hint?.any || stock) && (
+        <button class="link" style="min-height:0;margin-top:6px;font-size:13px" onClick={() => setPeek(!peek)}><Icon name={peek ? 'EyeOff' : 'Lock'} size={14} />{peek ? t('owner_hide') : t('owner_info')}</button>)}
 
       <div class="itemfoot">
         {r.calc ? (

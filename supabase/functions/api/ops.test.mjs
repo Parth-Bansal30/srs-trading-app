@@ -407,7 +407,10 @@ function docDb({ bill = 'pakka', upi = { id: 'srs.sample@upi', name: 'SRS Tradin
     if (fn === 'api_slip_data') {
       return { ...header, order: { id: ORDER, slip_no: '1061', done_at: '2026-09-28T06:12:00Z', bill, gst_pct: 18, total_weight: 37.2,
         material: 3018, cutting: 133.7, gst: bill === 'pakka' ? 567.31 : 0, total: bill === 'pakka' ? 3719.01 : 3151.7 },
-        items: [{ grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], weight: 25.8, hsn: '722830', lengths: [{ len: '300', pcs: 12 }, { len: '150', pcs: 4 }] }],
+        items: [{ grade: 'EN8', shape: 'round', unit: 'mm', dims: ['32'], weight: 25.8, hsn: '722830', rate: 82, cut_rate: 3, density: 7850, batch: false,
+          lengths: [{ len: '300', pcs: 12, cuts: null }, { len: '150', pcs: 4, cuts: null }] },
+        { grade: 'MS', shape: 'flat', unit: 'mm', dims: ['50', '2in'], weight: 11.4, hsn: null, rate: 72, cut_rate: 3, density: 7850, batch: false,
+          lengths: [{ len: '10ft', pcs: 1, cuts: null }] }],
         payments: [{ at: '2026-09-26T08:00:00Z', amount: 2000, mode: 'UPI', kind: 'advance' }] };
     }
     if (fn === 'api_doc_header') return structuredClone(header);
@@ -440,10 +443,23 @@ test('slipDoc: the customer copy has totals, paid and balance — never rates, n
   assert.equal(d.customer.gstin, '03AAKFR5521L1Z4');
   assert.equal(d.slip.items[0].pcs, 16);
   assert.equal(d.slip.items[0].hsn, '722830'); // GST slip: HSN from the stock it came from
+  // each line's amount (13 Nov 2026): adds up exactly to material + cutting; no rates on the customer's copy
+  assert.equal(Math.round((d.slip.items[0].amount + d.slip.items[1].amount) * 100) / 100, 3151.7);
+  assert.ok(d.slip.items[1].amount > 0 && d.slip.items[0].amount > d.slip.items[1].amount);
   const text = JSON.stringify(d);
   assert.ok(!/kacha|sell_rate|cut_rate|rate/i.test(text), text);
   const s = last('api_save_doc');
   assert.equal(s.p_kind, 'slip'); assert.equal(s.p_send, true); assert.equal(s.p_no_bill, false); assert.equal(s.p_lang, 'hi');
+});
+
+test('slipDoc shop copy (13 Nov 2026): the rates and each line\'s cutting, never saved or sent', async () => {
+  const { ops, calls } = docDb();
+  const r = await ops.slipDoc(owner, { order_id: ORDER, shop_copy: true }, 'k', 'h');
+  assert.equal(r.doc.slip.shop_copy, true);
+  assert.deepEqual([r.doc.slip.items[0].rate, r.doc.slip.items[0].cut_rate, r.doc.slip.items[1].rate], [82, 3, 72]);
+  assert.equal(Math.round((r.doc.slip.items[0].cutting + r.doc.slip.items[1].cutting) * 100) / 100, 133.7);
+  assert.ok(!calls.some((c) => c.fn === 'api_save_doc'), 'the shop copy is never saved');
+  assert.equal(r.token, undefined);
 });
 
 test('slipDoc: no-bill slip has no GST numbers; paid in full → no QR; weight hidden when the setting is off', async () => {

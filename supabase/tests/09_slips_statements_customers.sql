@@ -35,7 +35,9 @@ begin
   assert r -> 'upi' ->> 'id' = 'srs.sample@upi', 'UPI ID';
   assert jsonb_array_length(r -> 'items') = 1 and (r -> 'items' -> 0 -> 'lengths' -> 0 ->> 'pcs')::int = 5, 'items with lengths';
   assert (r -> 'payments' -> 0 ->> 'amount')::numeric = 17434.50, 'payment on the slip';
-  assert not (r::text ~* 'sell_rate|cut_rate|note'), 'no rates or notes in the slip data';
+  -- 13 Nov 2026: the slip data carries each line's rate / cutting rate so the server can work out each line's amount; the
+  -- server leaves them off the customer's slip (checked in the api tests: slipDoc). Notes are never in it.
+  assert not (r::text ~* 'sell_rate|note'), 'no notes in the slip data';
   perform pg_temp.expect(format('select public.api_slip_data(%L, %L)', owner, open_slip), '23514', 'open order has no slip yet');
   perform pg_temp.expect(format('select public.api_slip_data(%L, %L)', weigher, gst_slip), '42501', 'weigher sees no money');
   perform pg_temp.expect(format('select public.api_slip_data(%L, %L)', sales, nb_slip), '42501', 'no-bill slip needs that permission');

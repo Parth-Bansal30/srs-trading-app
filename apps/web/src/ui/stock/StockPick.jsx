@@ -15,7 +15,7 @@ export function choicesFor(stock, { materialId, shape, kg }) {
 }
 
 /** One line under an order item: "From stock: EN19 · Round · ₹75 · 1,820 kg free  [Change]". */
-export function StockLine({ stock, value, need, sellRate, onOpen, readOnly }) {
+export function StockLine({ stock, value, need, sellRate, onOpen, readOnly, hideCost = false }) {
   if (!stock || !need.materialId) return null;
   const ch = choicesFor(stock, need);
   const it = value ? stock.items.find((s) => s.id === value) : null;
@@ -30,9 +30,9 @@ export function StockLine({ stock, value, need, sellRate, onOpen, readOnly }) {
     <button class={`stockline ${!it ? 'tone-warn' : short ? 'tone-warn' : 'tone-ok'}`} onClick={readOnly ? undefined : onOpen} disabled={readOnly}>
       <Icon name="Boxes" size={16} />
       <span class="grow">
-        {it ? <><b>{t('pick_from')}: {stockName(it)}</b>{it.rate != null ? ` · ${money(it.rate)}` : ''} · {t('st_free', kgTxt(c ? c.free : it.on_hand))}
+        {it ? <><b>{t('pick_from')}: {stockName(it)}</b>{it.rate != null && !hideCost ? ` · ${money(it.rate)}` : ''} · {t('st_free', kgTxt(c ? c.free : it.on_hand))}
           {short && <><br />{t('pick_short', kgTxt(c.free))}</>}
-          {margin != null && can('stock') && <><br /><span style={margin < 0 ? 'color:var(--bad);font-weight:700' : ''}>{margin >= 0 ? t('pick_over', money(margin)) : t('pick_under', money(-margin))}</span></>}
+          {margin != null && can('stock') && !hideCost && <><br /><span style={margin < 0 ? 'color:var(--bad);font-weight:700' : ''}>{margin >= 0 ? t('pick_over', money(margin)) : t('pick_under', money(-margin))}</span></>}
         </> : <b>{t('pick_none')}</b>}
       </span>
       {!readOnly && <span class="link" style="min-height:0">{t('pick_change')}</span>}

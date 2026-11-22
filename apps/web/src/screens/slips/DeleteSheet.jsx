@@ -1,7 +1,7 @@
 // Deleting slips (owners, with a one-time SMS code) and asking an owner to delete (staff).
 // Step 1 shows what will be undone and asks why; step 2 is the code from the SMS.
 import { useEffect, useState } from 'preact/hooks';
-import { r2 } from '@srs/core';
+import { r2, businessDate } from '@srs/core';
 import { t, tIn } from '../../lib/i18n.js';
 import { call } from '../../lib/api.js';
 import { useAction } from '../../lib/action.js';
@@ -144,6 +144,15 @@ export function DeleteSheet({ open, ids, onClose, onDone }) {
                   </div>
                 )}
               </div>
+              {/* a GST slip whose Tally bill is made (22 Nov 2026): deleting here doesn't cancel it in Tally */}
+              {orders.filter((o) => o.tally_no).map((o) => {
+                const same = o.done_at && businessDate(o.done_at).slice(0, 7) === businessDate(new Date().toISOString()).slice(0, 7);
+                return (
+                  <div class="notice tone-bad del-tally" style="margin-top:12px;font-size:13.5px;line-height:1.45">
+                    <div class="row" style="gap:8px;align-items:flex-start"><Icon name="FileX" size={18} /><b class="grow">{t('del_tally', `${o.tally_no}${one ? '' : ` · #${o.slip_no}`}`, money(o.total, true))}</b></div>
+                    <div style="margin-top:6px;font-weight:600">{same ? t('del_tally_same') : t('del_tally_later')}</div>
+                  </div>);
+              })}
               <Reason value={reason} other={other} onPick={pickReason} onOther={setOther} />
             </>
           )}

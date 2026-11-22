@@ -11,6 +11,9 @@ import { toast } from '../toast.js';
 import { Sheet } from '../Sheet.jsx';
 import { Icon } from '../kit.jsx';
 import { GstWhere, PosLine } from './GstWhere.jsx';
+import { TallySheet } from './TallySheet.jsx';
+import { businessDate } from '@srs/core';
+import { money } from '../../lib/format.js';
 import './gst.css';
 
 const flagsOf = (g) => {
@@ -39,12 +42,17 @@ export function GstCard({ o, onChange }) {
       <div class="row" style="margin-top:12px;align-items:center">
         <span class="grow"><span class="k">{t('gc_tally')}</span><br />
           {g?.tally_no ? <b class="num">{g.tally_no}</b> : <span class="muted" style="font-weight:700">{t('gc_tally_none')}</span>}
-          {g?.tally_no && <span class="faint" style="font-size:12px;font-weight:600"> · {fmtDay(g.tally_date, false)}{g.tally_by ? ` · ${g.tally_by}` : ''}</span>}</span>
-        {can('khata') && (!g?.tally_no || can('settings')) && <button class="btn btn-ghost" style="min-height:42px" onClick={() => setSheet('tally')}><Icon name="Pencil" size={15} />{g?.tally_no ? t('gc_tally_change') : t('gc_tally_add')}</button>}
+          {g?.tally_no && <span class="faint" style="font-size:12px;font-weight:600"> · {fmtDay(g.tally_date, false)}{g.tally_by ? ` · ${g.tally_by}` : ''}</span>}
+          {g?.tally_no && g.tally_total != null && Math.abs(Number(g.tally_total) - Number(o.total_amount)) > 1
+            && <span class="gst-flag" style="display:block;width:fit-content">{t('gbl_differs', money(Number(g.tally_total), true), money(Number(o.total_amount), true))}</span>}</span>
+        {can('khata') && <button class="btn btn-ghost" style="min-height:42px" onClick={() => setSheet('tally')}><Icon name="Pencil" size={15} />{g?.tally_no ? t('gc_tally_change') : t('gc_tally_add')}</button>}
       </div>
       <div class="faint" style="font-size:12px;font-weight:600;margin-top:8px">{t('gc_s')}</div>
       <WhereSheet open={sheet === 'where'} o={o} g={g} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); onChange?.(); }} />
-      <TallySheet open={sheet === 'tally'} o={o} g={g} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); onChange?.(); }} />
+      <TallySheet open={sheet === 'tally'} bill={{ id: o.id, slip_no: o.slip_no, date: o.done_at ? businessDate(o.done_at) : null, customer: o.customers?.name || '',
+        gstin: o.customers?.gstin || '', total: Number(o.total_amount), gst: Number(o.gst_amount), tally_no: g?.tally_no || null, tally_date: g?.tally_date || null,
+        tally_total: g?.tally_total == null ? null : Number(g.tally_total) }}
+        onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(); onChange?.(); }} />
     </div>
   );
 }
@@ -66,29 +74,6 @@ function WhereSheet({ open, o, g, onClose, onDone }) {
         .then(() => { toast(t('gc_saved')); onDone(); }).catch(() => {})}><Icon name="Check" size={18} />{t('save')}</button>}>
       {ctx && <GstWhere ctx={ctx} value={v} onChange={setV} direct={direct} gst={Number(o.gst_amount)} pct={Number(o.gst_pct)} />}
       {a.error && <div class="error">{a.error.message}</div>}
-    </Sheet>
-  );
-}
-
-function TallySheet({ open, o, g, onClose, onDone }) {
-  const [no, setNo] = useState('');
-  const [day, setDay] = useState('');
-  const [twice, setTwice] = useState(false);
-  const a = useAction('slipTally');
-  useEffect(() => { if (open) { setNo(g?.tally_no || ''); setDay(g?.tally_date || ''); setTwice(false); a.setError(null); } }, [open]);
-  const save = (force) => a.run({ order_id: o.id, tally_no: no.trim() || null, tally_date: day || null, force })
-    .then(() => { toast(no.trim() ? t('gc_tally_saved', no.trim()) : t('gc_tally_off')); onDone(); })
-    .catch((e) => { if (e.code === 'duplicate' || e.status === 409) setTwice(true); });
-  return (
-    <Sheet open={open} onClose={onClose} title={t('gc_tally')}
-      footer={<button class="btn btn-brand btn-block" disabled={a.busy || (!no.trim() && !g?.tally_no)} onClick={() => save(twice)}>
-        <Icon name="Check" size={18} />{twice ? t('gc_tally_anyway') : no.trim() ? t('save') : t('gc_tally_remove')}</button>}>
-      <div class="lbl">{t('gc_tally_no')}</div>
-      <div class="field"><input value={no} onInput={(e) => { setNo(e.currentTarget.value); setTwice(false); }} placeholder="SRS/26-27/0142" maxLength={40} autofocus /></div>
-      <div class="lbl" style="margin-top:12px">{t('gc_tally_date')}</div>
-      <div class="field"><input type="date" value={day} onInput={(e) => setDay(e.currentTarget.value)} /></div>
-      <div class="faint" style="font-size:12.5px;font-weight:600;margin-top:8px">{t('gc_tally_s')}</div>
-      {a.error && <div class={twice ? 'notice tone-warn' : 'error'} style="margin-top:10px">{a.error.message}</div>}
     </Sheet>
   );
 }

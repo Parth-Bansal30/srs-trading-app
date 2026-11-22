@@ -273,7 +273,7 @@ export function NewOrder() {
         </div>
       </div>
 
-      <CustomerPicker open={pickCust} customers={cat.customers} regulars={regs} onClose={() => { setPickCust(false); pending.current = null; }}
+      <CustomerPicker open={pickCust} customers={cat.customers} refresh regulars={regs} onClose={() => { setPickCust(false); pending.current = null; }}
         onPick={(c) => { setCustomer(c); setPickCust(false); }} />
       <AdvanceSheet open={advOpen} busy={busy} customerId={customer?.id} onClose={() => setAdvOpen(false)} total={totals.plain.total}
         onAccept={(adv, label) => { setAdvOpen(false); save(true, adv, label); }} />

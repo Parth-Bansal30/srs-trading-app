@@ -48,6 +48,7 @@ import { BankStart, BankReview } from './screens/money/Bank.jsx';
 import { Review } from './screens/review/Review.jsx';
 import { ChequeList } from './screens/money/ChequeList.jsx';
 import { ForCA } from './screens/ca/ForCA.jsx';
+import { GstBills } from './screens/ca/GstBills.jsx';
 import { DayBook } from './screens/daybook/DayBook.jsx';
 import { SupplierKhata } from './screens/stock/SupplierKhata.jsx';
 import { DirectSlip } from './screens/stock/DirectSlip.jsx';
@@ -96,6 +97,7 @@ const SCREENS = {
   '/review': () => <Review />,
   '/cheques': () => <ChequeList />,
   '/ca': () => <ForCA />,
+  '/gst-bills': () => <GstBills />,
   '/daybook': () => <DayBook />,
   '/bank/:account/:imp': ({ account, imp }) => <BankReview account={account} imp={imp} key={`${account}/${imp}`} />,
   '/suppliers': () => <Suppliers />,

@@ -58,6 +58,12 @@ const BANK_METHODS = ['UPI', 'IMPS', 'NEFT', 'RTGS', 'Cheque'];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** A day plus / minus k days ('YYYY-MM-DD'). */
 const addDays = (d, k) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); };
+/** 'YYYY-MM' → the month's first and last day. */
+const monthRange = (m0) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(m0 || '');
+  if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) throw bad('Choose the month.');
+  return { month: `${m[1]}-${m[2]}`, from: `${m[1]}-${m[2]}-01`, to: new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).toISOString().slice(0, 10) };
+};
 const GST_DELIVERY = ['pickup', 'ours', 'direct'];   // how a GST slip's steel went (F10)
 const STATE2 = /^(0[1-9]|[1-3][0-9])$/;
 const GST_RATES = [0, 0.1, 0.25, 1.5, 3, 5, 12, 18, 28, 40];
@@ -692,7 +698,59 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
       need(caller, 'money', 'khata');
       const no = text(a?.tally_no, 40);
       const day = a?.tally_date == null || a.tally_date === '' ? null : DAY.test(a.tally_date) ? a.tally_date : (() => { throw bad('Check the date.'); })();
-      return rpc('api_slip_tally', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a?.order_id, 'Which slip?'), p_no: no, p_date: day, p_force: a?.force === true });
+      // the Tally bill's total as the CA's bill shows it (22 Nov 2026) — optional; a difference shows at once
+      const total = a?.tally_total == null || a.tally_total === '' ? null : rateValue(a.tally_total, 'Tally bill total');
+      return rpc('api_slip_tally', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a?.order_id, 'Which slip?'), p_no: no, p_date: day,
+        p_force: a?.force === true, p_total: total });
+    },
+    /** A GST slip deleted after its Tally bill: the CA cancelled the bill, or made a credit note (its no. and date). */
+    async tallyCancel(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      if (!['bill_cancelled', 'credit_note'].includes(a?.how)) throw bad('Choose: Tally bill cancelled, or credit note made.');
+      const no = text(a?.cn_no, 40);
+      if (a.how === 'credit_note' && !no) throw bad('Type the credit note no.');
+      const day = a?.cn_date == null || a.cn_date === '' ? null : DAY.test(a.cn_date) ? a.cn_date : (() => { throw bad('Check the date.'); })();
+      return rpc('api_tally_cancel', { p_caller: caller.id, p_key: key, p_hash: hash, p_order: uuid(a?.order_id, 'Which slip?'), p_how: a.how,
+        p_no: a.how === 'credit_note' ? no : null, p_date: a.how === 'credit_note' ? day : null });
+    },
+    /** The month's file went to the CA (download or share) — noted, so "last sent" shows. */
+    async caSent(caller, a, key, hash) {
+      need(caller, 'money', 'khata');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(a?.month || '')) throw bad('Choose the month.');
+      if (!['download', 'share'].includes(a?.how)) throw bad('How was it sent?');
+      const slips = Number.isInteger(a?.slips) && a.slips >= 0 ? a.slips : null;
+      const total = a?.total == null ? null : Number(a.total);
+      return rpc('api_ca_sent', { p_caller: caller.id, p_key: key, p_hash: hash, p_month: a.month, p_how: a.how, p_slips: slips,
+        p_total: Number.isFinite(total) ? Math.round(total * 100) / 100 : null });
+    },
+    /**
+     * The GST bills of a month, to type each Tally bill no. (22 Nov 2026): every GST slip with its Tally no., date and
+     * total, which GSTR-1 table it goes in, and where it stands — waiting · done · differs (Tally's total is not the
+     * slip's) · deleted (the CA cancels the bill or makes a credit note). Also the next Tally no. to suggest.
+     */
+    async gstBills(caller, a) {
+      need(caller, 'money', 'khata');
+      const { from, to, month } = monthRange(a?.month);
+      const raw = await rpc('api_gst_bills', { p_caller: caller.id, p_from: from, p_to: to });
+      const bills = (raw.bills || []).map((b) => {
+        const total = Number(b.total);
+        const tt = b.tally_total == null ? null : Number(b.tally_total);
+        const differs = !!b.tally_no && tt != null && Math.abs(tt - total) > 1;
+        const deleted = b.status === 'deleted';
+        const cancelled = deleted ? core.cancelledRow({ date: b.date, deleted_on: b.deleted_on, how: b.cancel_how, cn_no: b.cn_no, total, gst: Number(b.gst), pos_kind: b.pos?.kind }) : null;
+        return { id: b.id, slip_no: b.slip_no, date: b.date, customer: b.customer, customer_id: b.customer_id, gstin: b.gstin || '', total, gst: Number(b.gst),
+          base: Number(b.base), tally_no: b.tally_no || null, tally_date: b.tally_date || null, tally_total: tt, tally_by: b.tally_by || null,
+          table: core.gstr1Table({ gstin: b.gstin, posKind: b.pos?.kind, value: total }), pos_sure: !!b.pos?.sure,
+          b2c_details: !(b.gstin && core.checkGstin(b.gstin).ok) && total >= core.B2C_DETAILS_LIMIT && (!b.has_address || !b.pos?.to),
+          deleted, deleted_on: b.deleted_on || null, delete_reason: b.delete_reason || null, cancel_how: b.cancel_how || null, cn_no: b.cn_no || null, cn_date: b.cn_date || null,
+          need: cancelled?.need || null, cancel_done: cancelled ? cancelled.done : null,
+          in_month: String(b.date).slice(0, 7) === month,
+          state: deleted ? 'deleted' : !b.tally_no ? 'waiting' : differs ? 'differs' : 'done' };
+      });
+      const count = (st) => bills.filter((b) => b.state === st && (b.in_month || st === 'deleted')).length;
+      return { month, from, to, bills, waiting_before: Number(raw.waiting_before || 0), last_tally: raw.last_tally || null,
+        next_tally: raw.last_tally?.no ? core.nextBillNo(raw.last_tally.no) : null,
+        counts: { waiting: count('waiting'), done: count('done'), differs: count('differs'), deleted: bills.filter((b) => b.deleted && !b.cancel_done).length } };
     },
     async tallyPending(caller) {
       need(caller, 'money', 'khata');
@@ -713,15 +771,14 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
      */
     async gstMonth(caller, a) {
       need(caller, 'money', 'khata');
-      const m = /^(\d{4})-(\d{2})$/.exec(a?.month || '');
-      if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) throw bad('Choose the month.');
-      const from = `${m[1]}-${m[2]}-01`;
-      const to = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).toISOString().slice(0, 10);
+      const { from, to, month } = monthRange(a?.month);
       const raw = await rpc('api_gst_month', { p_caller: caller.id, p_from: from, p_to: to });
       const shop = raw.shop?.state || null;
       const pct = Number(raw.settings?.gst_pct ?? 18);
-      const sales = [];
+      let sales = [];
+      const bills = [];
       let slipsTotal = 0;
+      let laterTotal = 0;
       for (const sl of raw.slips || []) {
         const g = sl.gst_details || {};
         const saved = new Map((g.items || []).map((x) => [x.item_id, x]));
@@ -738,13 +795,48 @@ export function makeOps({ core, rpc, companySettings, askModel, newKey = () => c
         const pos = g.pos && Object.keys(g.pos).length ? g.pos : core.placeOfSupply({ shop, delivery: sl.direct ? 'direct' : null, dest: null });
         const rows = core.salesRows({ date: sl.date, slip_no: sl.slip_no, tally_no: g.tally_no, customer: sl.customer, gstin: sl.gstin, pos,
           delivery: g.delivery || (sl.direct ? 'direct' : ''), gst_pct: Number(sl.gst_pct ?? pct), gst: Number(sl.gst), items }, pct);
-        if (items.some((x) => !x.saved)) rows.forEach((r) => { if (!r.flags.includes('hsn_not_saved')) r.flags.push('hsn_not_saved'); });
+        const total = Number(sl.total);
+        const deleted = sl.status === 'deleted';
+        // deleted after its Tally bill: the same month → the CA cancels the bill (not a sale); a later month → the bill stays here
+        const sameMonth = deleted && String(sl.deleted_on).slice(0, 7) === month;
+        const extra = [];
+        if (items.some((x) => !x.saved)) extra.push('hsn_not_saved');
+        if (deleted) extra.push(sameMonth ? 'cancelled_same' : 'cancelled_later');
+        const tt = g.tally_total == null ? null : Number(g.tally_total);
+        if (g.tally_no && tt != null && Math.abs(tt - total) > 1) extra.push('tally_differs');
+        if (g.tally_no && g.tally_date && String(g.tally_date).slice(0, 7) !== String(sl.date).slice(0, 7)) extra.push('tally_month');
+        if (!(sl.gstin && core.checkGstin(sl.gstin).ok) && total >= core.B2C_DETAILS_LIMIT && (!sl.has_address || !pos?.to)) extra.push('b2c_address');
+        rows.forEach((r) => { for (const f of extra) if (!r.flags.includes(f)) r.flags.push(f); if (sameMonth) r.excluded = true;
+          r.tally_total = tt; r.tally_date = g.tally_date || ''; r.status = sl.status; });
         sales.push(...rows);
-        slipsTotal = r2(slipsTotal + Number(sl.total));
+        bills.push({ slip_no: sl.slip_no, date: sl.date, total, tally_no: g.tally_no || null, tally_total: tt, tally_date: g.tally_date || null,
+          deleted, cancelled: sameMonth });
+        if (!deleted) slipsTotal = r2(slipsTotal + total); else if (!sameMonth) laterTotal = r2(laterTotal + total);
       }
+      sales = core.withTables(sales);
+      const live = sales.filter((r) => !r.excluded);
+      const salesTotals = core.registerTotals(live);
       const purchases = (raw.purchases || []).flatMap((b) => core.purchaseRows(b, shop));
-      return { month: `${m[1]}-${m[2]}`, from, to, shop: raw.shop, sales, sales_totals: core.registerTotals(sales), slips_total: slipsTotal,
-        purchases, purchase_totals: core.registerTotals(purchases.map((x) => ({ ...x, slip_no: `${x.bill_no}|${x.supplier}` }))) };
+      const purchaseBills = (raw.purchases || []).map((b) => ({ bill_no: b.bill_no, supplier: b.supplier, date: b.date, gst: Number(b.gst || 0), total: Number(b.total),
+        gst_status: b.gst_status || null, sup_bad: core.SUP_BAD.includes(b.gst_status) }));
+      const expenses = raw.expenses == null ? null : core.expenseRows(raw.expenses, shop);
+      const creditNotes = core.creditNoteRows((raw.supplier_notes || []).map((x) => ({ ...x, amount: Number(x.amount),
+        bill: x.bill ? { bill_no: x.bill.bill_no, gst: Number(x.bill.gst || 0), total: Number(x.bill.total || 0) } : null })), shop, pct);
+      const cancelled = (raw.cancelled || []).map((x) => core.cancelledRow({ ...x, total: Number(x.total), gst: Number(x.gst), taxable: Number(x.taxable),
+        pos_kind: x.pos?.kind || null, pos: x.pos?.to ? core.stateName(x.pos.to) : '' }));
+      const series = core.tallySeries(bills);
+      const unpaid180 = (raw.unpaid180 || []).map((x) => ({ ...x, total: Number(x.total), gst: Number(x.gst || 0), left: Number(x.left) }));
+      const pendingBefore = (raw.pending_before || []).map((x) => ({ ...x, total: Number(x.total) }));
+      const g3b = core.gst3b({ sales: live, purchases, expenses: expenses || [], creditNotes, cancelled });
+      const register = r2(slipsTotal + laterTotal);
+      const matchesDayBook = Math.abs(salesTotals.total - register) < 0.01;
+      const checks = core.caChecks({ bills, cancelled, series, sales: live, purchaseBills, unpaid180, pendingBefore, expenses: expenses || [], creditNotes,
+        matchesDayBook, slipCount: bills.filter((b) => !b.deleted).length, dayBookTotal: slipsTotal });
+      return { month, from, to, shop: raw.shop, gst_pct: pct,
+        sales, sales_totals: salesTotals, slips_total: slipsTotal, cancelled_later_total: laterTotal, matches_day_book: matchesDayBook,
+        hsn: core.hsnSummary(live), series, bills,
+        purchases, purchase_totals: core.registerTotals(purchases.map((x) => ({ ...x, slip_no: `${x.bill_no}|${x.supplier}` }))), purchase_bills: purchaseBills,
+        expenses, credit_notes: creditNotes, cancelled, unpaid180, pending_before: pendingBefore, gst3b: g3b, checks, sent: raw.sent || [] };
     },
 
     // ---------- the Day book (7 Nov 2026, plan v2 step 11) ----------
@@ -2296,7 +2388,7 @@ Question: ${question}`;
 }
 
 /** Operations that change something need a request key; readers don't. */
-export const READ_OPS = new Set(['dayBook', 'salesDays', 'stockOn', 'gstContext', 'slipGstGet', 'tallyPending', 'gstMonth', 'customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
+export const READ_OPS = new Set(['dayBook', 'salesDays', 'stockOn', 'gstContext', 'slipGstGet', 'tallyPending', 'gstMonth', 'gstBills', 'customerBrief', 'customerJoinPreview', 'customerJoins', 'cashRoom', 'supplierKhata', 'cheques', 'reviewList', 'accounts', 'weighingList', 'weighedList', 'askSteelQuestion', 'khata', 'reminderList', 'reminderPreview', 'daySummary', 'eveningGet', 'deletedSlips', 'deletePreview',
   'stockData', 'stockItem', 'purchaseContext', 'purchases', 'purchase', 'readPurchaseBill',
   'cashBook', 'expenses', 'uploadReceipt', 'expenseFile', 'accountBalances', 'accountBook', 'suppliers', 'passkeys']);
 

@@ -26,6 +26,7 @@ export const MENU = [                      // laptop left menu + the "More" scre
   { id: 'cheques', route: '/cheques', word: 'nav_cheques', icon: 'ScrollText', perm: 'money' },
   { id: 'review', route: '/review', word: 'nav_review', icon: 'ListChecks', perm: 'money' },
   { id: 'ca', route: '/ca', word: 'nav_ca', icon: 'FileSpreadsheet', perm: 'khata' },   // GST for the CA's Tally bills (F10)
+  { id: 'gstbills', route: '/gst-bills', word: 'nav_gstbills', icon: 'ReceiptText', perm: 'khata' },   // every GST slip with its Tally bill no. (22 Nov 2026)
   { id: 'reminders', route: '/reminders', word: 'nav_reminders', icon: 'BellRing', perm: 'khata', badge: 'reminders' },
   { id: 'rates', route: '/rates', word: 'nav_rates', icon: 'Tag', perm: 'rates' },
   { id: 'people', route: '/people', word: 'nav_people', icon: 'Users', perm: 'people' },

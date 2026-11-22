@@ -16,7 +16,7 @@ import { Sheet } from '../../ui/Sheet.jsx';
 import './review.css';
 
 const KIND_ICON = { twin_payment: 'Copy', cash_limit: 'Banknote', cash_exception: 'ShieldAlert', cash_out: 'Banknote', cash_occasion: 'Banknote',
-  maybe_same_customer: 'Users', gst_check: 'Percent', cheque: 'FileText', cheque_twice: 'ScrollText', supplier_check: 'Truck', paid_twice: 'Copy', direct_pending: 'Truck' };
+  maybe_same_customer: 'Users', gst_check: 'Percent', cheque: 'FileText', cheque_twice: 'ScrollText', supplier_check: 'Truck', paid_twice: 'Copy', direct_pending: 'Truck', tally_cancel: 'FileX' };
 const tz = () => company.value?.timezone;
 const when = (iso) => (iso ? `${shortDate(iso, tz())} · ${time(iso, tz())}` : '');
 
@@ -51,12 +51,14 @@ function Card({ r, onAnswer }) {
       </div>
       {r.kind === 'twin_payment' && <div class="rv-facts"><TwinSide x={d.twin} /><TwinSide x={d.new} /><div class="faint rv-hint">{t('rv_twin_hint')}</div></div>}
       {d.text && <div class="rv-facts"><div class="rv-hint">{d.text}</div></div>}
+      {r.kind === 'tally_cancel' && <div class="rv-facts"><div class="rv-hint">{t('rv_tally_facts', d.slip_no, d.tally_no, money(Number(d.total), true))}{d.reason ? ` · ${d.reason}` : ''}</div></div>}
       {r.answer && <div class="rv-answer"><Icon name="MessageSquareText" size={14} />{r.answer}{r.answered_by ? ` — ${r.answered_by}, ${when(r.answered_at)}` : ''}</div>}
       <div class="row rv-btns">
         {r.customer_id && <button class="btn btn-ghost" onClick={() => go(`/customer/${r.customer_id}`)}><Icon name="BookOpenText" size={16} />{t('rv_open_khata')}</button>}
         {r.supplier_id && <button class="btn btn-ghost" onClick={() => go(`/supplier/${r.supplier_id}`)}><Icon name="Truck" size={16} />{t('sk_open_khata')}</button>}
         {r.kind === 'maybe_same_customer' && d.other_id && <button class="btn btn-ghost" onClick={() => go(`/customer/${d.other_id}`)}><Icon name="Users" size={16} />{t('rv_open_other', d.other || '')}</button>}
         {r.kind === 'cheque_twice' && <button class="btn btn-ghost" onClick={() => go('/cheques')}><Icon name="ScrollText" size={16} />{t('nav_cheques')}</button>}
+        {r.kind === 'tally_cancel' && <button class="btn btn-ghost" onClick={() => go(`/gst-bills?tab=deleted&month=${String(r.created_at || '').slice(0, 7)}`)}><Icon name="ReceiptText" size={16} />{t('gbl_what_ca_did')}</button>}
         {r.status === 'open' ? <button class="btn btn-brand" onClick={() => onAnswer(r)}><Icon name="Check" size={16} stroke={2.6} />{t('rv_checked')}</button>
           : <button class="btn btn-ghost" onClick={() => onAnswer(r, true)}><Icon name="Undo2" size={16} />{t('rv_reopen')}</button>}
       </div>

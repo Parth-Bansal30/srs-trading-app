@@ -77,7 +77,7 @@ export function AddSheet() {
         </div>
         {big && rest.length > 0 && <div class="faint" style="font-size:12.5px;font-weight:600;text-align:center;margin-top:12px">{t('add_hold')}</div>}
       </Sheet>
-      <CustomerPicker open={!!pick} customers={customers} regulars={regs} title={pick === 'giveback' ? t('add_giveback_who') : t('add_pay_who')}
+      <CustomerPicker open={!!pick} customers={customers} refresh regulars={regs} title={pick === 'giveback' ? t('add_giveback_who') : t('add_pay_who')}
         onClose={() => setPick(null)}
         onPick={(c) => { const p = pick; setPick(null); go(`/customer/${c.id}?${p === 'giveback' ? 'giveback' : 'pay'}=1`); }} />
     </>

@@ -97,7 +97,7 @@ export function DirectSlip({ id }) {
       <div class="quotebar">
         <button class="btn btn-accent btn-block" disabled={a.busy || !!bad} onClick={save}><Icon name="ReceiptText" size={19} />{bad ? t(bad) : t('dd_save')}</button>
       </div>
-      <CustomerPicker open={picking} customers={cat.customers} onClose={() => setPicking(false)} onPick={(c) => { setCust(c); setPicking(false); }} title={t('dd_customer')} />
+      <CustomerPicker open={picking} customers={cat.customers} refresh onClose={() => setPicking(false)} onPick={(c) => { setCust(c); setPicking(false); }} title={t('dd_customer')} />
     </>
   );
 }

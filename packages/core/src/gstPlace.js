@@ -37,6 +37,9 @@ export function gstSplit(gst, kind) {
   return null;
 }
 
+/** A supplier GST status whose bills' GST may not count (the CA decides). */
+export const SUP_BAD = ['cancelled', 'suspended', 'inactive', 'not_found'];
+
 /** HSN as the CA enters it: 4, 6 or 8 digits. */
 export const hsnOk = (h) => /^(\d{4}|\d{6}|\d{8})$/.test(String(h || '').trim());
 
@@ -123,10 +126,12 @@ export function purchaseRows(bill, shopState) {
     const flags = [];
     if (!g.charges && !g.hsn) flags.push('hsn_missing');
     if (!sup) flags.push('no_gstin');
+    if (SUP_BAD.includes(bill.gst_status)) flags.push(`sup_${bill.gst_status}`);   // the supplier's GST no. (22 Nov 2026)
     return {
       date: bill.date, bill_no: bill.bill_no || '', supplier: bill.supplier || '', gstin: bill.gstin || '', state: sup ? stateName(sup) : '',
       hsn: g.hsn, desc: g.desc.join(', '), kg: g.kg, taxable: g.taxable, cgst: split ? split.cgst : null, sgst: split ? split.sgst : null,
       igst: split ? split.igst : null, gst, round_off: ro, total: r2(g.taxable + gst + ro), stock_effect: bill.stock_effect || 'stock', flags,
+      sup_bad: SUP_BAD.includes(bill.gst_status),
     };
   });
 }

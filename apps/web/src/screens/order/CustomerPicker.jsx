@@ -1,16 +1,16 @@
 // Choose a customer (search by name or number) or add a new one.
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { newKey } from '../../lib/api.js';
 import { t } from '../../lib/i18n.js';
 import { can } from '../../lib/session.js';
 import { useAction } from '../../lib/action.js';
-import { forgetCatalog } from '../../lib/catalog.js';
+import { forgetCatalog, loadCatalog } from '../../lib/catalog.js';
 import { avatarColour, firstLetter } from '../../lib/customers.js';
 import { Sheet } from '../../ui/Sheet.jsx';
 import { Icon } from '../../ui/kit.jsx';
 import { useSameCustomer } from '../khata/SameCustomer.jsx';
 
-export function CustomerPicker({ open, customers, onClose, onPick, title, regulars = [], noAdd = false }) {
+export function CustomerPicker({ open, customers, onClose, onPick, title, regulars = [], noAdd = false, refresh = false }) {
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -18,6 +18,20 @@ export function CustomerPicker({ open, customers, onClose, onPick, title, regula
   const add = useAction('createCustomer');
   const same = useSameCustomer(customers);   // "already in khata?" (F9)
   const newId = useRef(newKey());   // the new customer's id is chosen here (works without internet too)
+  const [, bump] = useState(0);
+  // `refresh` (the full customer list is passed): a customer added on another phone a moment ago is fetched
+  // when the picker opens, so nobody adds the same customer twice because the phone's copy was a minute old.
+  useEffect(() => {
+    if (!open || !refresh) return undefined;
+    let live = true;
+    loadCatalog(true).then((c) => {
+      if (!live) return;
+      const have = new Set(customers.map((x) => x.id));
+      const fresh = (c.customers || []).filter((x) => !have.has(x.id));
+      if (fresh.length) { customers.push(...fresh); bump((n) => n + 1); }
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [open]);
   const s = q.trim().toLowerCase();
   const list = customers.filter((c) => c.active && !c.joined_into && (c.name.toLowerCase().includes(s) || (c.phone || '').replace(/\D/g, '').includes(s.replace(/\D/g, '') || '§')));
   const save = async (notSame = same.notSame) => {

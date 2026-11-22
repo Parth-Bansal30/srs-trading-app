@@ -1230,6 +1230,73 @@ test('GST for the CA (F10): the month\'s registers add up to the slips; the Tall
 });
 
 
+test('CA file v2: the Tally total and credit notes go to the database; GST bills say where each stands; the month follows the rules', async () => {
+  const calls = [];
+  const day = (d) => `2026-10-${String(d).padStart(2, '0')}`;
+  const item = (id, kg, rate) => ({ id, grade_code: 'EN8', shape: 'round', unit: 'mm', dims: ['40'], sell_rate: rate, cut_rate: 0, density: 7850, actual_weight: kg, by_weight: true, lengths: [] });
+  const det = (no, extra = {}) => ({ delivery: 'pickup', dest_state: '07', pos: { from: '07', to: '07', kind: 'local', sure: true, reason: null }, tally_no: no, tally_date: day(5),
+    items: [{ item_id: 'x', hsn: '7214', gst_rate: 18, hsn_checked: true }], ...extra });
+  const rpc = async (fn, args) => { calls.push({ fn, args });
+    if (fn === 'api_gst_bills') return { last_tally: { no: 'SRS/26-27/0134', date: day(9) }, waiting_before: 2, bills: [
+      { id: 'b1', slip_no: 601, date: day(3), customer: 'A', gstin: '06AABCS1429B1ZY', base: 1000, gst: 180, total: 1180, status: 'done', pos: { kind: 'inter', to: '06', sure: true }, tally_no: 'SRS/26-27/0131', tally_total: 1180 },
+      { id: 'b2', slip_no: 602, date: day(4), customer: 'B', gstin: null, base: 100000, gst: 18000, total: 118000, status: 'done', has_address: false, pos: { kind: 'inter', to: '06', sure: true }, tally_no: 'SRS/26-27/0132', tally_total: 118500 },
+      { id: 'b3', slip_no: 603, date: day(6), customer: 'C', gstin: null, base: 500, gst: 90, total: 590, status: 'done', pos: null, tally_no: null },
+      { id: 'b4', slip_no: 604, date: day(7), customer: 'D', gstin: null, base: 500, gst: 90, total: 590, status: 'deleted', deleted_on: day(20), pos: { kind: 'local' }, tally_no: 'SRS/26-27/0133', cancel_how: null }] };
+    if (fn === 'api_gst_month') return { shop: { name: 'Test Steels', gstin: '07AABCS1429B1ZW', state: '07' }, settings: { gst_pct: 18, min_inch: 1 },
+      slips: [
+        { id: 's1', slip_no: 701, date: day(2), customer: 'Laxmi', gstin: '07AABCS1429B1ZW', gst_pct: 18, base: 7400, gst: 1332, total: 8732, status: 'done', has_address: true,
+          gst_details: det('SRS/26-27/0131', { tally_total: 8732 }), items: [item('x', 100, 74)] },
+        { id: 's2', slip_no: 702, date: day(3), customer: 'Walk-in', gstin: null, gst_pct: 18, base: 74000, gst: 13320, total: 87320, status: 'done', has_address: false,
+          gst_details: det('SRS/26-27/0133', { tally_total: 87000, tally_date: '2026-11-01' }), items: [item('x', 1000, 74)] },
+        { id: 's3', slip_no: 703, date: day(4), customer: 'Gone', gstin: null, gst_pct: 18, base: 740, gst: 133.2, total: 873.2, status: 'deleted', deleted_on: day(9),
+          gst_details: det('SRS/26-27/0134'), items: [item('x', 10, 74)] }],
+      cancelled: [{ id: 's3', slip_no: 703, customer: 'Gone', date: day(4), deleted_on: day(9), tally_no: 'SRS/26-27/0134', total: 873.2, gst: 133.2, taxable: 740,
+        pos: { kind: 'local', to: '07' }, how: null }],
+      purchases: [{ bill_no: 'PK/1', date: day(1), supplier: 'P K', gstin: '06AABCS1429B1ZY', gst_status: 'cancelled', gst: 1800, freight: 0, other: 0, round_off: 0, total: 11800,
+        stock_effect: 'stock', lines: [{ hsn: '7214', description: 'MS', kg: 150, amount: 10000 }] }],
+      expenses: [{ date: day(5), bill_no: 'B-1', paid_to: 'Blades', seller_gstin: '07AABCS1429B1ZW', category: 'blade', amount: '1180', gst_amount: '180' }],
+      supplier_notes: [{ date: day(8), note_no: 'CN-1', kind: 'return', amount: '1180', supplier: 'P K', gstin: '06AABCS1429B1ZY', bill: { bill_no: 'PK/1', gst: '1800', total: '11800' } }],
+      unpaid180: [], pending_before: [{ id: 'p0', slip_no: 590, date: '2026-09-28', customer: 'Old', total: '500' }], sent: [] };
+    return { ok: true }; };
+  const { ops } = makeOps({ core, rpc, companySettings: async () => ({}), askModel: null });
+
+  await ops.slipTally(owner, { order_id: '11111111-2222-4333-8444-000000000001', tally_no: ' SRS/26-27/0131 ', tally_date: '2026-10-03', tally_total: '1180' }, 'k', 'h');
+  assert.deepEqual([calls.at(-1).args.p_no, calls.at(-1).args.p_total], ['SRS/26-27/0131', 1180]);
+  await ops.slipTally(owner, { order_id: '11111111-2222-4333-8444-000000000001', tally_no: 'X1' }, 'k', 'h');
+  assert.equal(calls.at(-1).args.p_total, null, 'the total is optional');
+  await rejects(ops.slipTally(owner, { order_id: '11111111-2222-4333-8444-000000000001', tally_no: 'X1', tally_total: 'abc' }, 'k', 'h'), 400);
+  await rejects(ops.tallyCancel(owner, { order_id: '11111111-2222-4333-8444-000000000001', how: 'credit_note' }, 'k', 'h'), 400);
+  await rejects(ops.tallyCancel(sales, { order_id: '11111111-2222-4333-8444-000000000001', how: 'bill_cancelled' }, 'k', 'h'), 403);
+  await ops.tallyCancel(owner, { order_id: '11111111-2222-4333-8444-000000000001', how: 'bill_cancelled', cn_no: 'ignored' }, 'k', 'h');
+  assert.deepEqual([calls.at(-1).fn, calls.at(-1).args.p_how, calls.at(-1).args.p_no], ['api_tally_cancel', 'bill_cancelled', null]);
+  await rejects(ops.caSent(owner, { month: '2026-13', how: 'share' }, 'k', 'h'), 400);
+  await ops.caSent(owner, { month: '2026-10', how: 'share', slips: 3, total: 96925.2 }, 'k', 'h');
+  assert.deepEqual([calls.at(-1).args.p_month, calls.at(-1).args.p_slips], ['2026-10', 3]);
+
+  const b = await ops.gstBills(owner, { month: '2026-10' });
+  assert.deepEqual([calls.at(-1).args.p_from, calls.at(-1).args.p_to], ['2026-10-01', '2026-10-31']);
+  assert.deepEqual(b.bills.map((x) => x.state), ['done', 'differs', 'waiting', 'deleted']);
+  assert.deepEqual(b.bills.map((x) => x.table), ['b2b', 'b2cl', 'b2cs', 'b2cs'], 'no GST no., another state, over ₹1 lakh = B2C large');
+  assert.equal(b.bills[1].b2c_details, true, 'over ₹50,000 without a GST no. and no address');
+  assert.deepEqual([b.bills[3].need, b.bills[3].cancel_done], ['cancel_bill', false]);
+  assert.deepEqual([b.next_tally, b.waiting_before, b.counts], ['SRS/26-27/0135', 2, { waiting: 1, done: 1, differs: 1, deleted: 1 }]);
+
+  const m = await ops.gstMonth(owner, { month: '2026-10' });
+  assert.equal(m.sales.filter((r) => !r.excluded).length, 2, 'the slip deleted this month after its bill is not a sale');
+  assert.ok(m.sales.find((r) => r.slip_no === 703).flags.includes('cancelled_same'));
+  assert.deepEqual(m.sales.find((r) => r.slip_no === 702).flags, ['tally_differs', 'tally_month', 'b2c_address']);
+  assert.equal(m.sales_totals.total, 96052, 'the register: the two live slips');
+  assert.equal(m.matches_day_book, true);
+  assert.deepEqual([m.hsn.b2b.length, m.hsn.b2c[0].qty, m.hsn.totals.all.taxable], [1, 1000, 81400]);
+  assert.deepEqual([m.series.series[0].from, m.series.series[0].to, m.series.series[0].cancelled, m.series.series[0].missing], ['SRS/26-27/0131', 'SRS/26-27/0134', 1, ['SRS/26-27/0132']]);
+  assert.deepEqual([m.cancelled[0].need, m.expenses[0].claim, m.credit_notes[0].gst], ['cancel_bill', true, 180]);
+  assert.equal(m.gst3b.itc_left_out.tax, 1800, 'a supplier with a cancelled GST no.: left out of the rough credit');
+  assert.equal(m.gst3b.itc_net.tax, 0, '180 on the blades − 180 credit note');
+  assert.deepEqual(m.checks.map((c) => c.id), ['tally_cancel', 'tally_differs', 'sup_gst', 'pending_before', 'tally_gap', 'tally_month', 'b2c_details', 'daybook']);
+  await rejects(ops.gstBills(owner, { month: 'Oct' }), 400);
+  await rejects(ops.gstBills(sales, { month: '2026-10' }), 403);
+});
+
 test('statement photos (F11): only with permission and a yes; every line is "read from a photo"; balance-proven lines say so', async () => {
   const { photoStatementRows } = await import('./ops.js');
   const answer = 'Here: ' + JSON.stringify({ opening: 10000, closing: 13500, lines: [
